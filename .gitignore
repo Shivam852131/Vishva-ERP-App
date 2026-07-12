@@ -1,0 +1,15 @@
+node_modules/
+.env
+*.log
+dist/
+build/
+**/android/app/build/
+**/android/app/.cxx/
+**/android/.gradle/
+**/android/local.properties
+**/ios/build/
+**/ios/Pods/
+*.keystore
+!**/android/app/debug.keystore
+**/android/keystore.properties
+.DS_Store

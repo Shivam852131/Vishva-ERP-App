@@ -1,0 +1,509 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  student
+  faculty
+  parent
+  college_admin
+  super_admin
+}
+
+enum UserStatus {
+  active
+  suspended
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         Role
+  phone        String?
+  college      String?
+  department   String?
+  studentCode  String?    @unique
+  year         Int?
+  cgpa         Float?
+  status       UserStatus @default(active)
+  createdAt    DateTime   @default(now())
+
+  parentUserId String?
+  parentUser   User?  @relation("ParentChild", fields: [parentUserId], references: [id])
+  children     User[] @relation("ParentChild")
+
+  authTokens         AuthToken[]
+  facultyCourses     Course[]              @relation("CourseFaculty")
+  enrollments        CourseEnrollment[]
+  scheduleFor        Schedule[]
+  submissions        Submission[]
+  examResults        ExamResult[]
+  generatedExams     GeneratedExam[]
+  attendanceSessions AttendanceSession[]
+  rollEntries        AttendanceRollEntry[]
+  attendanceRecords  AttendanceRecord[]
+  faceProfile        FaceProfile?
+  fees               Fee[]
+  announcements      Announcement[]
+  bookIssues         BookIssue[]
+  hostelAllocations  HostelAllocation[]
+  transportEnrolls   TransportEnrollment[]
+  grievances         Grievance[]
+  chatSent           ChatMessage[]         @relation("ChatFrom")
+  chatReceived       ChatMessage[]         @relation("ChatTo")
+  aiSessions         AiSession[]
+  studyPlans         StudyPlan[]
+}
+
+model AuthToken {
+  token     String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model College {
+  id           String  @id @default(cuid())
+  name         String
+  code         String
+  students     Int     @default(0)
+  faculty      Int     @default(0)
+  admins       Int     @default(0)
+  address      String  @default("")
+  contactEmail String  @default("")
+}
+
+model Course {
+  id        String   @id @default(cuid())
+  code      String
+  name      String
+  credits   Int      @default(3)
+  color     String   @default("#059669")
+  facultyId String?
+  faculty   User?    @relation("CourseFaculty", fields: [facultyId], references: [id])
+  createdAt DateTime @default(now())
+
+  enrollments        CourseEnrollment[]
+  schedules          Schedule[]
+  timetableSlots     TimetableSlot[]
+  assignments        Assignment[]
+  notes              Note[]
+  exams              Exam[]
+  examResults        ExamResult[]
+  attendanceSessions AttendanceSession[]
+  attendanceRecords  AttendanceRecord[]
+}
+
+model CourseEnrollment {
+  id        String @id @default(cuid())
+  courseId  String
+  course    Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, studentId])
+}
+
+model Classroom {
+  id              String  @id @default(cuid())
+  name            String
+  building        String  @default("")
+  floor           Int     @default(1)
+  capacity        Int     @default(40)
+  lat             Float   @default(0)
+  lng             Float   @default(0)
+  radiusM         Int     @default(25)
+  beacons         Json    @default("[]")
+  wifiBssids      Json    @default("[]")
+  wifiSsidPattern String  @default("VIT-Campus")
+  active          Boolean @default(true)
+
+  schedules Schedule[]
+}
+
+model Schedule {
+  id                 String     @id @default(cuid())
+  collegeId          String?
+  courseId           String
+  course             Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  facultyId          String?
+  faculty            User?      @relation(fields: [facultyId], references: [id])
+  classroomId        String?
+  classroom          Classroom? @relation(fields: [classroomId], references: [id])
+  day                String
+  startTime          String
+  endTime            String
+  attendanceMethod   String     @default("qr")
+  gracePeriodMinutes Int        @default(5)
+  autoNotifyAbsent   Boolean    @default(true)
+  active             Boolean    @default(true)
+
+  attendanceSessions AttendanceSession[]
+}
+
+model TimetableSlot {
+  id       String @id @default(cuid())
+  day      String
+  start    String
+  end      String
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  room     String @default("TBD")
+}
+
+model Assignment {
+  id          String   @id @default(cuid())
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  description String   @default("")
+  dueDate     DateTime
+  maxMarks    Int      @default(20)
+  createdAt   DateTime @default(now())
+
+  submissions Submission[]
+}
+
+model Submission {
+  id           String     @id @default(cuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  content      String     @default("")
+  submittedAt  DateTime   @default(now())
+  status       String     @default("submitted")
+
+  @@unique([assignmentId, studentId])
+}
+
+model Note {
+  id           String   @id @default(cuid())
+  courseId     String?
+  course       Course?  @relation(fields: [courseId], references: [id])
+  subject      String
+  className    String   @default("All Classes")
+  title        String
+  type         String   @default("notes")
+  url          String   @default("")
+  uploadedBy   String
+  description  String   @default("")
+  downloads    Int      @default(0)
+  helpfulCount Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
+model Exam {
+  id        String   @id @default(cuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  examType  String
+  date      DateTime
+  startTime String
+  endTime   String
+  venue     String
+  maxMarks  Int
+}
+
+model ExamResult {
+  id        String @id @default(cuid())
+  studentId String
+  student   User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  marks     Int
+  maxMarks  Int
+  grade     String
+  semester  String
+}
+
+model GeneratedExam {
+  id             String   @id @default(cuid())
+  title          String
+  subject        String
+  totalQuestions Int
+  totalMarks     Int
+  difficulty     String
+  createdById    String
+  createdBy      User     @relation(fields: [createdById], references: [id])
+  instructions   String   @default("Answer all questions.")
+  createdAt      DateTime @default(now())
+}
+
+model QuestionBankItem {
+  id            String @id @default(cuid())
+  subject       String
+  unit          String
+  chapter       String
+  questionText  String
+  questionType  String
+  options       Json   @default("[]")
+  correctAnswer String
+  difficulty    String
+  marks         Int
+  imageUrl      String @default("")
+}
+
+model AttendanceSession {
+  id              String    @id @default(cuid())
+  scheduleId      String?
+  schedule        Schedule? @relation(fields: [scheduleId], references: [id])
+  courseId        String
+  course          Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  facultyId       String?
+  faculty         User?     @relation(fields: [facultyId], references: [id])
+  classroomName   String?
+  method          String
+  code            String
+  startedAt       DateTime  @default(now())
+  expiresAt       DateTime
+  active          Boolean   @default(true)
+  locationLat     Float?
+  locationLng     Float?
+  locationRadiusM Int?
+
+  rollEntries AttendanceRollEntry[]
+}
+
+model AttendanceRollEntry {
+  id        String            @id @default(cuid())
+  sessionId String
+  session   AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  checkIn   DateTime?
+  checkOut  DateTime?
+  method    String
+  status    String
+
+  @@unique([sessionId, studentId])
+}
+
+model AttendanceRecord {
+  id        String   @id @default(cuid())
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  date      DateTime
+  present   Boolean
+  method    String
+}
+
+model FaceProfile {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Fee {
+  id        String    @id @default(cuid())
+  studentId String
+  student   User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  type      String
+  amount    Int
+  currency  String    @default("INR")
+  dueDate   DateTime
+  status    String    @default("pending")
+  paidAt    DateTime?
+  semester  String
+
+  receipts PaymentReceipt[]
+}
+
+model PaymentReceipt {
+  id        String    @id @default(cuid())
+  type      String
+  feeId     String?
+  fee       Fee?      @relation(fields: [feeId], references: [id])
+  amount    Int
+  currency  String    @default("INR")
+  paymentId String
+  orderId   String?
+  planId    String?
+  status    String    @default("paid")
+  createdAt DateTime  @default(now())
+  paidAt    DateTime?
+}
+
+model Subscription {
+  id         String   @id @default(cuid())
+  active     Boolean  @default(true)
+  plan       String   @default("pro")
+  status     String   @default("active")
+  renewsAt   DateTime
+  expiresAt  DateTime
+  seatsUsed  Int      @default(0)
+  seatsLimit Int      @default(5000)
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  audience     String
+  title        String
+  body         String
+  recipientIds Json     @default("[]")
+  readBy       Json     @default("[]")
+  createdAt    DateTime @default(now())
+}
+
+model Reminder {
+  id       String @id @default(cuid())
+  type     String
+  priority Int    @default(0)
+  title    String
+  body     String
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  audience    String   @default("all")
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  date        DateTime
+  venue       String
+  description String
+}
+
+model Book {
+  id            String @id @default(cuid())
+  title         String
+  author        String
+  isbn          String
+  category      String
+  totalCopies   Int
+  shelfLocation String
+
+  issues BookIssue[]
+}
+
+model BookIssue {
+  id         String    @id @default(cuid())
+  bookId     String
+  book       Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  issuedAt   DateTime  @default(now())
+  dueDate    DateTime
+  returnedAt DateTime?
+  fine       Int       @default(0)
+}
+
+model Hostel {
+  id         String @id @default(cuid())
+  name       String
+  type       String
+  totalRooms Int
+  wardenName String
+  contact    String
+
+  allocations HostelAllocation[]
+}
+
+model HostelAllocation {
+  id          String   @id @default(cuid())
+  hostelId    String
+  hostel      Hostel   @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  roomNumber  String
+  studentId   String
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  allocatedAt DateTime @default(now())
+  active      Boolean  @default(true)
+}
+
+model TransportRoute {
+  id            String  @id @default(cuid())
+  routeName     String
+  vehicleNumber String
+  driverName    String
+  driverPhone   String
+  active        Boolean @default(true)
+
+  stops       TransportStop[]
+  enrollments TransportEnrollment[]
+}
+
+model TransportStop {
+  id      String         @id @default(cuid())
+  routeId String
+  route   TransportRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  name    String
+  time    String
+  order   Int            @default(0)
+}
+
+model TransportEnrollment {
+  id        String         @id @default(cuid())
+  routeId   String
+  route     TransportRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  active    Boolean        @default(true)
+}
+
+model Grievance {
+  id          String   @id @default(cuid())
+  studentId   String
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  category    String
+  subject     String
+  description String
+  isAnonymous Boolean  @default(false)
+  status      String   @default("open")
+  createdAt   DateTime @default(now())
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  fromId    String
+  from      User     @relation("ChatFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  toId      String
+  to        User     @relation("ChatTo", fields: [toId], references: [id], onDelete: Cascade)
+  message   String
+  createdAt DateTime @default(now())
+}
+
+model AiSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages AiMessage[]
+}
+
+model AiMessage {
+  id        String    @id @default(cuid())
+  sessionId String
+  session   AiSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userMsg   String
+  aiMsg     String
+  createdAt DateTime  @default(now())
+}
+
+model StudyPlan {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  planType  String   @default("study")
+  goal      String
+  plan      Json
+  createdAt DateTime @default(now())
+}
