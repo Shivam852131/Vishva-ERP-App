@@ -1,18 +1,28 @@
 const express = require('express');
 const { prisma } = require('../db');
-const { hashPassword } = require('../auth');
+const { hashPassword, requireRole } = require('../auth');
 const { sendError, serializeUser, parseCsv } = require('../utils');
 
 const router = express.Router();
 
-router.get('/admin/users', async (req, res) => {
+const PRIVILEGED_ROLES = new Set(['college_admin', 'super_admin']);
+
+// Mounted at /api/admin/users in server.js (not the shared /api prefix), so this
+// router.use() gate cannot intercept requests meant for other routers.
+router.use(requireRole('college_admin', 'super_admin'));
+
+router.get('/', async (req, res) => {
   const role = req.query.role;
   const users = await prisma.user.findMany({ where: role ? { role } : {} });
   res.json(users.map(serializeUser));
 });
 
-router.post('/admin/users', async (req, res) => {
+router.post('/', async (req, res) => {
   if (!req.body.name || !req.body.email) return sendError(res, 'Name and email are required.');
+  const role = req.body.role || 'student';
+  if (PRIVILEGED_ROLES.has(role) && req.user.role !== 'super_admin') {
+    return sendError(res, 'Only a super admin can create admin accounts.', 403);
+  }
   const existing = await prisma.user.findUnique({ where: { email: String(req.body.email).toLowerCase() } });
   if (existing) return sendError(res, 'Email already exists.');
   const user = await prisma.user.create({
@@ -20,7 +30,7 @@ router.post('/admin/users', async (req, res) => {
       name: req.body.name,
       email: String(req.body.email).toLowerCase(),
       passwordHash: await hashPassword(req.body.password || 'password123'),
-      role: req.body.role || 'student',
+      role,
       phone: req.body.phone || null,
       department: req.body.department || null,
       college: req.body.college || 'Vishva Institute of Technology',
@@ -44,7 +54,7 @@ router.post('/admin/users', async (req, res) => {
   res.json(serializeUser(user));
 });
 
-router.put('/admin/users/:id', async (req, res) => {
+router.put('/:id', async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!user) return sendError(res, 'User not found.', 404);
   const updated = await prisma.user.update({
@@ -61,9 +71,12 @@ router.put('/admin/users/:id', async (req, res) => {
   res.json(serializeUser(updated));
 });
 
-router.post('/admin/users/:id/status', async (req, res) => {
+router.post('/:id/status', async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!user) return sendError(res, 'User not found.', 404);
+  if (PRIVILEGED_ROLES.has(user.role) && req.user.role !== 'super_admin') {
+    return sendError(res, 'Only a super admin can modify admin accounts.', 403);
+  }
   const updated = await prisma.user.update({
     where: { id: user.id },
     data: { status: req.body.status === 'suspended' ? 'suspended' : 'active' },
@@ -71,14 +84,17 @@ router.post('/admin/users/:id/status', async (req, res) => {
   res.json({ ok: true, status: updated.status });
 });
 
-router.delete('/admin/users/:id', async (req, res) => {
+router.delete('/:id', async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!user) return sendError(res, 'User not found.', 404);
+  if (PRIVILEGED_ROLES.has(user.role) && req.user.role !== 'super_admin') {
+    return sendError(res, 'Only a super admin can delete admin accounts.', 403);
+  }
   await prisma.user.delete({ where: { id: user.id } });
   res.json({ ok: true });
 });
 
-router.post('/admin/users/bulk-import', async (req, res) => {
+router.post('/bulk-import', async (req, res) => {
   const rows = parseCsv(req.body.csv_text);
   if (rows.length < 2) return sendError(res, 'CSV must contain a header and at least one row.');
   const headers = rows[0].split(',').map(item => item.trim());
@@ -97,6 +113,10 @@ router.post('/admin/users/bulk-import', async (req, res) => {
     }
     if (existingEmails.has(row.email.toLowerCase())) {
       skipped.push({ line: index + 2, email: row.email, reason: 'Email already exists' });
+      continue;
+    }
+    if (PRIVILEGED_ROLES.has(row.role) && req.user.role !== 'super_admin') {
+      skipped.push({ line: index + 2, email: row.email, reason: 'Only a super admin can bulk-create admin accounts' });
       continue;
     }
     const user = await prisma.user.create({

@@ -1,6 +1,6 @@
 const express = require('express');
 const { prisma } = require('../db');
-const { authUser } = require('../auth');
+const { authUser, requireRole } = require('../auth');
 const { sendError, daysFromNow } = require('../utils');
 
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder';
@@ -45,16 +45,19 @@ function createFeesRouter(io) {
     res.json(fees.map(serializeFee));
   });
 
-  router.get('/fees/all', async (_req, res) => {
+  router.get('/fees/all', requireRole('college_admin', 'super_admin'), async (_req, res) => {
     const fees = await prisma.fee.findMany();
     res.json(fees.map(serializeFee));
   });
 
   router.post('/fees/pay', async (req, res) => {
+    const user = await authUser(req);
+    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
     const fee = req.body.fee_id
       ? await prisma.fee.findUnique({ where: { id: req.body.fee_id } })
-      : await prisma.fee.findFirst({ where: { status: 'pending' } });
+      : await prisma.fee.findFirst({ where: { status: 'pending', ...(isAdmin ? {} : { studentId: user.id }) } });
     if (!fee) return sendError(res, 'Fee not found.', 404);
+    if (!isAdmin && fee.studentId !== user.id) return sendError(res, 'This fee does not belong to you.', 403);
     res.json({
       demo: true,
       key_id: RAZORPAY_KEY_ID,
@@ -67,7 +70,10 @@ function createFeesRouter(io) {
   });
 
   router.post('/payments/verify', async (req, res) => {
+    const user = await authUser(req);
+    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
     if (req.body.purpose === 'subscription') {
+      if (!isAdmin) return sendError(res, 'Only an admin can manage the college subscription.', 403);
       const plan = req.body.plan_id || 'pro';
       const renews = daysFromNow(plan === 'enterprise' ? 365 : plan === 'pro' ? 180 : 30);
       let subscription = await prisma.subscription.findFirst();
@@ -104,6 +110,7 @@ function createFeesRouter(io) {
     }
     const fee = await prisma.fee.findUnique({ where: { id: req.body.fee_id } });
     if (!fee) return sendError(res, 'Fee not found.', 404);
+    if (!isAdmin && fee.studentId !== user.id) return sendError(res, 'This fee does not belong to you.', 403);
     const updatedFee = await prisma.fee.update({ where: { id: fee.id }, data: { status: 'paid', paidAt: new Date() } });
     const receipt = await prisma.paymentReceipt.create({
       data: {
@@ -122,7 +129,7 @@ function createFeesRouter(io) {
     res.json({ verified: true, receipt_id: receipt.id });
   });
 
-  router.get('/payments/receipts', async (_req, res) => {
+  router.get('/payments/receipts', requireRole('college_admin', 'super_admin'), async (_req, res) => {
     const receipts = await prisma.paymentReceipt.findMany({ orderBy: { createdAt: 'desc' } });
     res.json(receipts.map(receipt => ({
       id: receipt.id,
@@ -139,7 +146,7 @@ function createFeesRouter(io) {
     })));
   });
 
-  router.post('/fees/create', async (req, res) => {
+  router.post('/fees/create', requireRole('college_admin', 'super_admin'), async (req, res) => {
     const fee = await prisma.fee.create({
       data: {
         studentId: req.body.student_id,
@@ -156,7 +163,7 @@ function createFeesRouter(io) {
     res.json(serializeFee(fee));
   });
 
-  router.post('/fees/:feeId/remind', async (req, res) => {
+  router.post('/fees/:feeId/remind', requireRole('college_admin', 'super_admin'), async (req, res) => {
     const fee = await prisma.fee.findUnique({ where: { id: req.params.feeId } });
     if (!fee) return sendError(res, 'Fee not found.', 404);
     await pushNotification({ audience: 'students', title: 'Fee reminder', body: `${fee.type} is still pending.`, recipientIds: [fee.studentId] });
@@ -177,7 +184,7 @@ function createFeesRouter(io) {
     });
   });
 
-  router.post('/subscription/create-order', async (req, res) => {
+  router.post('/subscription/create-order', requireRole('college_admin', 'super_admin'), async (req, res) => {
     const planId = req.body.plan_id || 'pro';
     res.json({
       demo: true,

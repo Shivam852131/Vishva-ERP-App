@@ -1,5 +1,6 @@
 const express = require('express');
 const { prisma } = require('../db');
+const { requireRole } = require('../auth');
 const { sendError } = require('../utils');
 
 const router = express.Router();
@@ -22,7 +23,7 @@ router.get('/colleges', async (_req, res) => {
   res.json(colleges.map(serializeCollege));
 });
 
-router.post('/colleges', async (req, res) => {
+router.post('/colleges', requireRole('super_admin'), async (req, res) => {
   const college = await prisma.college.create({
     data: {
       name: req.body.name,
@@ -37,7 +38,7 @@ router.post('/colleges', async (req, res) => {
   res.json(serializeCollege(college));
 });
 
-router.put('/colleges/:id', async (req, res) => {
+router.put('/colleges/:id', requireRole('super_admin'), async (req, res) => {
   const college = await prisma.college.findUnique({ where: { id: req.params.id } });
   if (!college) return sendError(res, 'College not found.', 404);
   const updated = await prisma.college.update({
@@ -52,7 +53,7 @@ router.put('/colleges/:id', async (req, res) => {
   res.json(serializeCollege(updated));
 });
 
-router.delete('/colleges/:id', async (req, res) => {
+router.delete('/colleges/:id', requireRole('super_admin'), async (req, res) => {
   const college = await prisma.college.findUnique({ where: { id: req.params.id } });
   if (!college) return sendError(res, 'College not found.', 404);
   await prisma.college.delete({ where: { id: college.id } });

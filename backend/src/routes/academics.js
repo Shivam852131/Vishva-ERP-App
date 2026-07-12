@@ -1,7 +1,7 @@
 const express = require('express');
 const { prisma } = require('../db');
-const { authUser } = require('../auth');
-const { sendError } = require('../utils');
+const { authUser, requireRole } = require('../auth');
+const { sendError, paginationParams, sendPaginated } = require('../utils');
 
 const router = express.Router();
 
@@ -78,7 +78,7 @@ router.get('/courses', async (_req, res) => {
   res.json(courses.map(serializeCourse));
 });
 
-router.post('/admin/courses', async (req, res) => {
+router.post('/admin/courses', requireRole('college_admin', 'super_admin'), async (req, res) => {
   const faculty = req.body.faculty_id ? await prisma.user.findUnique({ where: { id: req.body.faculty_id } }) : null;
   const course = await prisma.course.create({
     data: {
@@ -93,7 +93,7 @@ router.post('/admin/courses', async (req, res) => {
   res.json(serializeCourse(course));
 });
 
-router.put('/admin/courses/:id', async (req, res) => {
+router.put('/admin/courses/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
   const course = await prisma.course.findUnique({ where: { id: req.params.id } });
   if (!course) return sendError(res, 'Course not found.', 404);
   const faculty = req.body.faculty_id ? await prisma.user.findUnique({ where: { id: req.body.faculty_id } }) : null;
@@ -110,7 +110,7 @@ router.put('/admin/courses/:id', async (req, res) => {
   res.json(serializeCourse(updated));
 });
 
-router.delete('/admin/courses/:id', async (req, res) => {
+router.delete('/admin/courses/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
   const course = await prisma.course.findUnique({ where: { id: req.params.id } });
   if (!course) return sendError(res, 'Course not found.', 404);
   await prisma.course.delete({ where: { id: course.id } });
@@ -122,7 +122,7 @@ router.get('/timetable', async (_req, res) => {
   res.json(slots.map(serializeTimetableSlot));
 });
 
-router.post('/admin/timetable', async (req, res) => {
+router.post('/admin/timetable', requireRole('college_admin', 'super_admin'), async (req, res) => {
   const course = await prisma.course.findUnique({ where: { id: req.body.course_id }, include: { faculty: true } });
   if (!course) return sendError(res, 'Course not found.', 404);
   const slot = await prisma.timetableSlot.create({
@@ -138,7 +138,7 @@ router.post('/admin/timetable', async (req, res) => {
   res.json(serializeTimetableSlot(slot));
 });
 
-router.delete('/admin/timetable/:id', async (req, res) => {
+router.delete('/admin/timetable/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
   const slot = await prisma.timetableSlot.findUnique({ where: { id: req.params.id } });
   if (!slot) return sendError(res, 'Timetable slot not found.', 404);
   await prisma.timetableSlot.delete({ where: { id: slot.id } });
@@ -150,7 +150,7 @@ router.get('/assignments', async (_req, res) => {
   res.json(assignments.map(serializeAssignment));
 });
 
-router.post('/assignments', async (req, res) => {
+router.post('/assignments', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
   const course = await prisma.course.findUnique({ where: { id: req.body.course_id } });
   if (!course) return sendError(res, 'Course not found.', 404);
   const assignment = await prisma.assignment.create({
@@ -166,7 +166,7 @@ router.post('/assignments', async (req, res) => {
   res.json(serializeAssignment(assignment));
 });
 
-router.post('/assignments/submit', async (req, res) => {
+router.post('/assignments/submit', requireRole('student'), async (req, res) => {
   const user = await authUser(req);
   const assignment = await prisma.assignment.findUnique({ where: { id: req.body.assignment_id } });
   if (!assignment) return sendError(res, 'Assignment not found.', 404);
@@ -194,6 +194,7 @@ router.get('/notes', async (_req, res) => {
 });
 
 router.post('/notes', async (req, res) => {
+  const user = await authUser(req);
   const subject = req.body.subject || req.body.course_name || 'General';
   const note = await prisma.note.create({
     data: {
@@ -202,7 +203,7 @@ router.post('/notes', async (req, res) => {
       title: req.body.title || 'Shared note',
       type: req.body.type || 'notes',
       url: req.body.url || '',
-      uploadedBy: req.body.uploaded_by || 'Community Member',
+      uploadedBy: user.name,
       description: req.body.description || '',
     },
     include: { course: true },
@@ -210,8 +211,9 @@ router.post('/notes', async (req, res) => {
   res.json(serializeNote(note));
 });
 
-router.get('/results/me', async (_req, res) => {
-  const results = await prisma.examResult.findMany({ where: { studentId: 'stu-001' }, include: { course: true } });
+router.get('/results/me', requireRole('student'), async (req, res) => {
+  const user = await authUser(req);
+  const results = await prisma.examResult.findMany({ where: { studentId: user.id }, include: { course: true } });
   res.json(results.map(result => ({
     id: result.id,
     course_id: result.courseId,
@@ -251,7 +253,7 @@ router.get('/exams', async (_req, res) => {
   })));
 });
 
-router.get('/exams/my-hallticket', async (req, res) => {
+router.get('/exams/my-hallticket', requireRole('student'), async (req, res) => {
   const user = await authUser(req);
   const exams = await prisma.exam.findMany({ include: { course: true } });
   res.json({
@@ -275,7 +277,7 @@ router.get('/exams/generated', async (_req, res) => {
   })));
 });
 
-router.post('/exams/generate', async (req, res) => {
+router.post('/exams/generate', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
   const user = await authUser(req);
   const exam = await prisma.generatedExam.create({
     data: {
@@ -318,9 +320,13 @@ router.get('/question-bank/stats', async (_req, res) => {
   res.json({ total, subjects: subjects.map(row => row.subject), easy, medium, hard });
 });
 
-router.get('/question-bank', async (_req, res) => {
-  const questions = await prisma.questionBankItem.findMany();
-  res.json(questions.map(question => ({
+router.get('/question-bank', async (req, res) => {
+  const { skip, take } = paginationParams(req.query);
+  const [questions, total] = await Promise.all([
+    prisma.questionBankItem.findMany({ skip, take }),
+    prisma.questionBankItem.count(),
+  ]);
+  sendPaginated(res, questions.map(question => ({
     id: question.id,
     subject: question.subject,
     unit: question.unit,
@@ -332,10 +338,10 @@ router.get('/question-bank', async (_req, res) => {
     difficulty: question.difficulty,
     marks: question.marks,
     image_url: question.imageUrl,
-  })));
+  })), total);
 });
 
-router.post('/question-bank', async (req, res) => {
+router.post('/question-bank', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
   const question = await prisma.questionBankItem.create({
     data: {
       subject: req.body.subject || 'General',
@@ -365,7 +371,7 @@ router.post('/question-bank', async (req, res) => {
   });
 });
 
-router.delete('/question-bank/:id', async (req, res) => {
+router.delete('/question-bank/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
   const question = await prisma.questionBankItem.findUnique({ where: { id: req.params.id } });
   if (!question) return sendError(res, 'Question not found.', 404);
   await prisma.questionBankItem.delete({ where: { id: question.id } });

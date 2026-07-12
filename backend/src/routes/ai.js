@@ -70,6 +70,10 @@ function createAiRouter(io) {
   });
 
   router.get('/ai/history/:sessionId', async (req, res) => {
+    const user = await authUser(req);
+    const session = await prisma.aiSession.findUnique({ where: { id: req.params.sessionId } });
+    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
+    if (!session || (!isAdmin && session.userId !== user.id)) return sendError(res, 'Session not found.', 404);
     const messages = await prisma.aiMessage.findMany({
       where: { sessionId: req.params.sessionId },
       orderBy: { createdAt: 'asc' },
@@ -102,8 +106,13 @@ function createAiRouter(io) {
     res.json({ reply });
   });
 
-  router.get('/ai/study-plans', async (_req, res) => {
-    const plans = await prisma.studyPlan.findMany({ orderBy: { createdAt: 'desc' } });
+  router.get('/ai/study-plans', async (req, res) => {
+    const user = await authUser(req);
+    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
+    const plans = await prisma.studyPlan.findMany({
+      where: isAdmin ? {} : { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+    });
     res.json(plans.map(plan => ({
       id: plan.id,
       plan_type: plan.planType,
@@ -130,8 +139,10 @@ function createAiRouter(io) {
   });
 
   router.post('/ai/study-plans/:planId/toggle', async (req, res) => {
+    const user = await authUser(req);
+    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
     const plan = await prisma.studyPlan.findUnique({ where: { id: req.params.planId } });
-    if (!plan) return sendError(res, 'Plan not found.', 404);
+    if (!plan || (!isAdmin && plan.userId !== user.id)) return sendError(res, 'Plan not found.', 404);
     const planData = plan.plan;
     const day = planData.days && planData.days[Number(req.body.day_index)];
     const task = day && day.tasks[Number(req.body.task_index)];
@@ -143,6 +154,10 @@ function createAiRouter(io) {
   });
 
   router.delete('/ai/study-plans/:planId', async (req, res) => {
+    const user = await authUser(req);
+    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
+    const plan = await prisma.studyPlan.findUnique({ where: { id: req.params.planId } });
+    if (!plan || (!isAdmin && plan.userId !== user.id)) return sendError(res, 'Plan not found.', 404);
     await prisma.studyPlan.deleteMany({ where: { id: req.params.planId } });
     io.emit('study-plans:update', { planId: req.params.planId });
     res.json({ ok: true });

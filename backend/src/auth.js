@@ -1,8 +1,17 @@
-const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { prisma } = require('./db');
+const { sendError } = require('./utils');
 
 const SALT_ROUNDS = 10;
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required.');
+}
+
+const PUBLIC_PATHS = new Set(['/auth/login', '/auth/register']);
 
 function hashPassword(password) {
   return bcrypt.hash(password, SALT_ROUNDS);
@@ -12,29 +21,45 @@ function comparePassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
 
-async function issueToken(userId) {
-  const token = `token-${crypto.randomBytes(24).toString('hex')}`;
-  await prisma.authToken.create({ data: { token, userId } });
-  return token;
+function issueToken(user) {
+  return jwt.sign({ sub: user.id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
 async function userFromToken(token) {
   if (!token) return null;
-  const record = await prisma.authToken.findUnique({ where: { token }, include: { user: true } });
-  return record ? record.user : null;
+  let payload;
+  try {
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+  return prisma.user.findUnique({ where: { id: payload.sub } });
 }
 
-async function authMiddleware(req, _res, next) {
+async function authMiddleware(req, res, next) {
+  if (PUBLIC_PATHS.has(req.path)) return next();
   const authHeader = String(req.headers.authorization || '');
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!token) return sendError(res, 'Authentication required.', 401);
+  const user = await userFromToken(token);
+  if (!user) return sendError(res, 'Invalid or expired token.', 401);
+  if (user.status === 'suspended') return sendError(res, 'This account is suspended.', 403);
   req.token = token;
-  req.user = await userFromToken(token);
+  req.user = user;
   next();
 }
 
 async function authUser(req) {
-  if (req.user) return req.user;
-  return prisma.user.findFirst({ where: { role: 'student' } });
+  return req.user || null;
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return sendError(res, 'You do not have permission to perform this action.', 403);
+    }
+    next();
+  };
 }
 
 module.exports = {
@@ -44,4 +69,5 @@ module.exports = {
   userFromToken,
   authMiddleware,
   authUser,
+  requireRole,
 };

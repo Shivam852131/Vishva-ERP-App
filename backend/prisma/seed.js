@@ -111,9 +111,10 @@ async function main() {
       role: 'parent',
       phone: '+91 90123 45678',
       college: 'Vishva Institute of Technology',
-      parentUserId: stu001.id,
     },
   });
+  // stu001's parentUserId points at their parent account (par001), not the other way around.
+  await prisma.user.update({ where: { id: stu001.id }, data: { parentUserId: par001.id } });
 
   const adm001 = await prisma.user.create({
     data: {

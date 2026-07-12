@@ -39,7 +39,6 @@ model User {
   parentUser   User?  @relation("ParentChild", fields: [parentUserId], references: [id])
   children     User[] @relation("ParentChild")
 
-  authTokens         AuthToken[]
   facultyCourses     Course[]              @relation("CourseFaculty")
   enrollments        CourseEnrollment[]
   scheduleFor        Schedule[]
@@ -60,13 +59,6 @@ model User {
   chatReceived       ChatMessage[]         @relation("ChatTo")
   aiSessions         AiSession[]
   studyPlans         StudyPlan[]
-}
-
-model AuthToken {
-  token     String   @id
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
 }
 
 model College {
@@ -99,6 +91,8 @@ model Course {
   examResults        ExamResult[]
   attendanceSessions AttendanceSession[]
   attendanceRecords  AttendanceRecord[]
+
+  @@index([facultyId])
 }
 
 model CourseEnrollment {
@@ -109,6 +103,7 @@ model CourseEnrollment {
   student   User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, studentId])
+  @@index([studentId])
 }
 
 model Classroom {
@@ -146,6 +141,10 @@ model Schedule {
   active             Boolean    @default(true)
 
   attendanceSessions AttendanceSession[]
+
+  @@index([courseId])
+  @@index([facultyId])
+  @@index([classroomId])
 }
 
 model TimetableSlot {
@@ -182,6 +181,7 @@ model Submission {
   status       String     @default("submitted")
 
   @@unique([assignmentId, studentId])
+  @@index([studentId])
 }
 
 model Note {
@@ -222,6 +222,9 @@ model ExamResult {
   maxMarks  Int
   grade     String
   semester  String
+
+  @@index([studentId])
+  @@index([courseId])
 }
 
 model GeneratedExam {
@@ -249,6 +252,8 @@ model QuestionBankItem {
   difficulty    String
   marks         Int
   imageUrl      String @default("")
+
+  @@index([subject])
 }
 
 model AttendanceSession {
@@ -270,6 +275,9 @@ model AttendanceSession {
   locationRadiusM Int?
 
   rollEntries AttendanceRollEntry[]
+
+  @@index([facultyId])
+  @@index([courseId])
 }
 
 model AttendanceRollEntry {
@@ -295,6 +303,9 @@ model AttendanceRecord {
   date      DateTime
   present   Boolean
   method    String
+
+  @@index([studentId])
+  @@index([courseId])
 }
 
 model FaceProfile {
@@ -316,6 +327,8 @@ model Fee {
   semester  String
 
   receipts PaymentReceipt[]
+
+  @@index([studentId])
 }
 
 model PaymentReceipt {
@@ -476,6 +489,9 @@ model ChatMessage {
   to        User     @relation("ChatTo", fields: [toId], references: [id], onDelete: Cascade)
   message   String
   createdAt DateTime @default(now())
+
+  @@index([fromId])
+  @@index([toId])
 }
 
 model AiSession {
@@ -487,6 +503,8 @@ model AiSession {
   updatedAt DateTime @updatedAt
 
   messages AiMessage[]
+
+  @@index([userId])
 }
 
 model AiMessage {
@@ -506,4 +524,6 @@ model StudyPlan {
   goal      String
   plan      Json
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }

@@ -1,6 +1,6 @@
 const express = require('express');
 const { prisma } = require('../db');
-const { authUser } = require('../auth');
+const { authUser, requireRole } = require('../auth');
 const { sendError } = require('../utils');
 
 function notificationVisibleToUser(notification, user) {
@@ -60,7 +60,7 @@ function createNotificationsRouter(io) {
     })));
   });
 
-  router.post('/announcements', async (req, res) => {
+  router.post('/announcements', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const user = await authUser(req);
     const announcement = await prisma.announcement.create({
       data: {

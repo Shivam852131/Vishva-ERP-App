@@ -1,5 +1,6 @@
 const express = require('express');
 const { prisma } = require('../db');
+const { authUser, requireRole } = require('../auth');
 const { serializeUser } = require('../utils');
 
 const router = express.Router();
@@ -36,15 +37,23 @@ async function buildStudentAttendance(studentId) {
   };
 }
 
-async function buildStudentDashboard() {
+async function buildStudentDashboard(studentId) {
   const [assignments, pendingFees, timetable] = await Promise.all([
-    prisma.assignment.count({ where: { submissions: { none: { studentId: 'stu-001' } } } }),
-    prisma.fee.count({ where: { status: 'pending', studentId: 'stu-001' } }),
+    prisma.assignment.count({ where: { submissions: { none: { studentId } } } }),
+    prisma.fee.count({ where: { status: 'pending', studentId } }),
     prisma.timetableSlot.findMany({ take: 3, include: { course: true } }),
   ]);
+  const results = await prisma.examResult.findMany({ where: { studentId } });
+  const avgCgpa = results.length
+    ? Number((results.reduce((sum, r) => sum + (r.marks / r.maxMarks) * 10, 0) / results.length).toFixed(2))
+    : null;
+  const attendance = await buildStudentAttendance(studentId);
+  const overallAttendance = attendance.by_course.length
+    ? Math.round(attendance.by_course.reduce((sum, c) => sum + c.percentage, 0) / attendance.by_course.length)
+    : 0;
   return {
-    attendance: 82,
-    cgpa: 8.7,
+    attendance: overallAttendance,
+    cgpa: avgCgpa,
     pending_assignments: assignments,
     pending_fees: pendingFees,
     upcoming_classes: timetable.map(slot => ({
@@ -61,29 +70,43 @@ async function buildStudentDashboard() {
   };
 }
 
-async function buildFacultyDashboard() {
+async function buildFacultyDashboard(facultyId) {
   const [courses, assignmentCount] = await Promise.all([
-    prisma.course.findMany({ where: { facultyId: 'fac-001' } }),
-    prisma.assignment.count(),
+    prisma.course.findMany({ where: { facultyId } }),
+    prisma.assignment.count({ where: { course: { facultyId } } }),
   ]);
+  const courseIds = courses.map(c => c.id);
+  const students = courseIds.length
+    ? await prisma.courseEnrollment.count({ where: { courseId: { in: courseIds } } })
+    : 0;
   return {
     courses,
-    students: 126,
-    today_classes: 3,
+    students,
+    today_classes: courses.length,
     assignments: assignmentCount,
   };
 }
 
-async function buildParentDashboard() {
-  const [child, results, fees] = await Promise.all([
-    prisma.user.findUnique({ where: { id: 'stu-001' } }),
-    prisma.examResult.findMany({ where: { studentId: 'stu-001' }, include: { course: true } }),
-    prisma.fee.findMany({ where: { studentId: 'stu-001' } }),
+async function buildParentDashboard(parentId) {
+  const child = await prisma.user.findFirst({ where: { parentUserId: parentId } });
+  if (!child) {
+    return { child: null, attendance: 0, cgpa: null, results: [], fees: [] };
+  }
+  const [results, fees, attendance] = await Promise.all([
+    prisma.examResult.findMany({ where: { studentId: child.id }, include: { course: true } }),
+    prisma.fee.findMany({ where: { studentId: child.id } }),
+    buildStudentAttendance(child.id),
   ]);
+  const overallAttendance = attendance.by_course.length
+    ? Math.round(attendance.by_course.reduce((sum, c) => sum + c.percentage, 0) / attendance.by_course.length)
+    : 0;
+  const avgCgpa = results.length
+    ? Number((results.reduce((sum, r) => sum + (r.marks / r.maxMarks) * 10, 0) / results.length).toFixed(2))
+    : null;
   return {
     child: serializeUser(child),
-    attendance: 82,
-    cgpa: 8.7,
+    attendance: overallAttendance,
+    cgpa: avgCgpa,
     results: results.map(result => ({
       id: result.id,
       course_id: result.courseId,
@@ -120,22 +143,40 @@ async function buildAdminDashboard() {
   return { students, faculty, parents, courses, colleges, pending_fees: pendingFees };
 }
 
-router.get('/dashboard/student', async (_req, res) => res.json(await buildStudentDashboard()));
-router.get('/dashboard/faculty', async (_req, res) => res.json(await buildFacultyDashboard()));
-router.get('/dashboard/parent', async (_req, res) => res.json(await buildParentDashboard()));
-router.get('/dashboard/admin', async (_req, res) => res.json(await buildAdminDashboard()));
+router.get('/dashboard/student', requireRole('student'), async (req, res) => {
+  const user = await authUser(req);
+  res.json(await buildStudentDashboard(user.id));
+});
+router.get('/dashboard/faculty', requireRole('faculty'), async (req, res) => {
+  const user = await authUser(req);
+  res.json(await buildFacultyDashboard(user.id));
+});
+router.get('/dashboard/parent', requireRole('parent'), async (req, res) => {
+  const user = await authUser(req);
+  res.json(await buildParentDashboard(user.id));
+});
+router.get('/dashboard/admin', requireRole('college_admin', 'super_admin'), async (_req, res) => res.json(await buildAdminDashboard()));
 
-router.get('/analytics/dashboard/student', async (_req, res) => {
-  const attendance = await buildStudentAttendance('stu-001');
+router.get('/analytics/dashboard/student', requireRole('student'), async (req, res) => {
+  const user = await authUser(req);
+  const attendance = await buildStudentAttendance(user.id);
+  const results = await prisma.examResult.findMany({ where: { studentId: user.id } });
+  const avgMarks = results.length ? Math.round(results.reduce((sum, r) => sum + (r.marks / r.maxMarks) * 100, 0) / results.length) : 0;
+  const avgCgpa = results.length
+    ? Number((results.reduce((sum, r) => sum + (r.marks / r.maxMarks) * 10, 0) / results.length).toFixed(2))
+    : null;
+  const overallAttendance = attendance.by_course.length
+    ? Math.round(attendance.by_course.reduce((sum, c) => sum + c.percentage, 0) / attendance.by_course.length)
+    : 0;
   const [issueCount, overdueCount, openGrievances] = await Promise.all([
-    prisma.bookIssue.count({ where: { studentId: 'stu-001' } }),
-    prisma.bookIssue.count({ where: { studentId: 'stu-001', fine: { gt: 0 } } }),
-    prisma.grievance.count({ where: { status: { not: 'resolved' } } }),
+    prisma.bookIssue.count({ where: { studentId: user.id } }),
+    prisma.bookIssue.count({ where: { studentId: user.id, fine: { gt: 0 } } }),
+    prisma.grievance.count({ where: { studentId: user.id, status: { not: 'resolved' } } }),
   ]);
   res.json({
-    attendance: 82,
-    cgpa: 8.7,
-    avg_marks: 84,
+    attendance: overallAttendance,
+    cgpa: avgCgpa,
+    avg_marks: avgMarks,
     books_issued: issueCount,
     overdue_books: overdueCount,
     open_grievances: openGrievances,
@@ -143,37 +184,51 @@ router.get('/analytics/dashboard/student', async (_req, res) => {
   });
 });
 
-router.get('/analytics/faculty', async (_req, res) => {
+router.get('/analytics/faculty', requireRole('faculty'), async (req, res) => {
+  const user = await authUser(req);
   const [courses, submissions, assignmentCount] = await Promise.all([
-    prisma.course.findMany({ where: { facultyId: 'fac-001' } }),
-    prisma.submission.count(),
-    prisma.assignment.count(),
+    prisma.course.findMany({ where: { facultyId: user.id } }),
+    prisma.submission.count({ where: { assignment: { course: { facultyId: user.id } } } }),
+    prisma.assignment.count({ where: { course: { facultyId: user.id } } }),
   ]);
+  const courseIds = courses.map(c => c.id);
+  const totalStudents = courseIds.length
+    ? await prisma.courseEnrollment.count({ where: { courseId: { in: courseIds } } })
+    : 0;
+  const totalClasses = courseIds.length
+    ? await prisma.attendanceSession.count({ where: { courseId: { in: courseIds } } })
+    : 0;
   res.json({
     total_courses: courses.length,
-    total_students: 126,
+    total_students: totalStudents,
     total_assignments: assignmentCount,
     total_submissions: submissions,
-    total_classes: 84,
+    total_classes: totalClasses,
     courses,
   });
 });
 
-router.get('/analytics/admin', async (_req, res) => {
+router.get('/analytics/admin', requireRole('college_admin', 'super_admin'), async (_req, res) => {
   const base = await buildAdminDashboard();
-  const [books, booksIssued, pendingFees, openGrievances] = await Promise.all([
+  const [books, booksIssued, pendingFees, openGrievances, hostelOccupants] = await Promise.all([
     prisma.book.count(),
     prisma.bookIssue.count(),
     prisma.fee.count({ where: { status: 'pending' } }),
     prisma.grievance.count({ where: { status: { not: 'resolved' } } }),
+    prisma.hostelAllocation.count({ where: { active: true } }),
   ]);
+  const [totalStudents, allRecords] = await Promise.all([
+    prisma.user.count({ where: { role: 'student' } }),
+    prisma.attendanceRecord.count(),
+  ]);
+  const presentRecords = await prisma.attendanceRecord.count({ where: { present: true } });
   res.json({
     ...base,
-    attendance_rate: 84,
-    student_faculty_ratio: 15,
+    attendance_rate: allRecords ? Math.round((presentRecords / allRecords) * 100) : 0,
+    student_faculty_ratio: base.faculty ? Number((totalStudents / base.faculty).toFixed(1)) : 0,
     books,
     books_issued: booksIssued,
-    hostel_occupants: 436,
+    hostel_occupants: hostelOccupants,
     pending_fees: pendingFees,
     open_grievances: openGrievances,
   });

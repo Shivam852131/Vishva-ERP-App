@@ -1,6 +1,6 @@
 const express = require('express');
 const { prisma } = require('../db');
-const { authUser } = require('../auth');
+const { authUser, requireRole } = require('../auth');
 const { sendError, makeCode, isoDate } = require('../utils');
 
 function createAttendanceRouter(io) {
@@ -60,7 +60,7 @@ function createAttendanceRouter(io) {
     });
   });
 
-  router.get('/attendance/sessions/mine', async (req, res) => {
+  router.get('/attendance/sessions/mine', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const user = await authUser(req);
     const sessions = await prisma.attendanceSession.findMany({
       where: { facultyId: user.id },
@@ -79,7 +79,7 @@ function createAttendanceRouter(io) {
     })));
   });
 
-  router.post('/attendance/sessions', async (req, res) => {
+  router.post('/attendance/sessions', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const user = await authUser(req);
     const course = await prisma.course.findUnique({ where: { id: req.body.course_id } });
     if (!course) return sendError(res, 'Course not found.', 404);
@@ -120,7 +120,7 @@ function createAttendanceRouter(io) {
     });
   });
 
-  router.get('/attendance/sessions/:id', async (req, res) => {
+  router.get('/attendance/sessions/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const session = await getSessionBySid(req.params.id);
     if (!session) return sendError(res, 'Session not found.', 404);
     const enrolled = await studentsForCourse(session.courseId);
@@ -147,7 +147,7 @@ function createAttendanceRouter(io) {
     });
   });
 
-  router.post('/attendance/checkin', async (req, res) => {
+  router.post('/attendance/checkin', requireRole('student'), async (req, res) => {
     const user = await authUser(req);
     const session = await getSessionBySid(req.body.session_id);
     if (!session) return sendError(res, 'Session not found.', 404);
@@ -183,7 +183,7 @@ function createAttendanceRouter(io) {
     res.json({ ok: true, status: entry.status, checked_in_at: entry.checkIn.toISOString(), message: 'Checked in', detail: `${session.course.name} via ${method.toUpperCase()}` });
   });
 
-  router.post('/attendance/sessions/:id/close', async (req, res) => {
+  router.post('/attendance/sessions/:id/close', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const session = await getSessionBySid(req.params.id);
     if (!session) return sendError(res, 'Session not found.', 404);
     const closedAt = new Date();
@@ -244,7 +244,7 @@ function createAttendanceRouter(io) {
     };
   }
 
-  router.get('/admin/attendance/live', async (_req, res) => {
+  router.get('/admin/attendance/live', requireRole('faculty', 'college_admin', 'super_admin'), async (_req, res) => {
     const sessions = await prisma.attendanceSession.findMany({ where: { active: true } });
     const activeClasses = await Promise.all(sessions.map(async session => {
       const detail = await buildLiveDetail(session.id);
@@ -263,13 +263,13 @@ function createAttendanceRouter(io) {
     });
   });
 
-  router.get('/admin/attendance/live/:sid', async (req, res) => {
+  router.get('/admin/attendance/live/:sid', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const detail = await buildLiveDetail(req.params.sid);
     if (!detail) return sendError(res, 'Live session not found.', 404);
     res.json(detail);
   });
 
-  router.get('/admin/attendance/daily', async (_req, res) => {
+  router.get('/admin/attendance/daily', requireRole('faculty', 'college_admin', 'super_admin'), async (_req, res) => {
     const sessions = await prisma.attendanceSession.findMany({ where: { active: true } });
     const totals = await Promise.all(sessions.map(session => buildLiveDetail(session.id)));
     const totalEnrolled = totals.reduce((sum, item) => sum + item.total_enrolled, 0) || 1;
@@ -283,7 +283,7 @@ function createAttendanceRouter(io) {
     });
   });
 
-  router.get('/admin/attendance/reports', async (_req, res) => {
+  router.get('/admin/attendance/reports', requireRole('faculty', 'college_admin', 'super_admin'), async (_req, res) => {
     const courses = await prisma.course.findMany();
     const byCourse = await Promise.all(courses.map(async course => {
       const enrolled = await prisma.courseEnrollment.count({ where: { courseId: course.id } });
@@ -329,7 +329,7 @@ function createAttendanceRouter(io) {
     });
   });
 
-  router.post('/admin/attendance/override/:sid', async (req, res) => {
+  router.post('/admin/attendance/override/:sid', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const session = await getSessionBySid(req.params.sid);
     if (!session) return sendError(res, 'Session not found.', 404);
     const student = await prisma.user.findUnique({ where: { id: req.body.student_id } });
@@ -358,7 +358,7 @@ function createAttendanceRouter(io) {
     res.json({ ok: true });
   });
 
-  router.post('/admin/notifications/absentees', async (req, res) => {
+  router.post('/admin/notifications/absentees', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const session = req.body.course_id
       ? await prisma.attendanceSession.findFirst({ where: { courseId: req.body.course_id, active: true } })
       : await prisma.attendanceSession.findFirst({ where: { active: true } });
@@ -398,7 +398,7 @@ function createAttendanceRouter(io) {
     res.json(results);
   });
 
-  router.post('/admin/classrooms', async (req, res) => {
+  router.post('/admin/classrooms', requireRole('college_admin', 'super_admin'), async (req, res) => {
     const classroom = await prisma.classroom.create({
       data: {
         name: req.body.name,
@@ -463,7 +463,7 @@ function createAttendanceRouter(io) {
     res.json(withCounts);
   });
 
-  router.post('/admin/schedules', async (req, res) => {
+  router.post('/admin/schedules', requireRole('college_admin', 'super_admin'), async (req, res) => {
     const [course, faculty, classroom] = await Promise.all([
       prisma.course.findUnique({ where: { id: req.body.course_id } }),
       prisma.user.findUnique({ where: { id: req.body.faculty_id } }),
