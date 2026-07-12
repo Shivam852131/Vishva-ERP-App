@@ -16,5 +16,22 @@ services:
       timeout: 5s
       retries: 10
 
+  postgres-test:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vishva
+      POSTGRES_PASSWORD: vishva
+      POSTGRES_DB: vishva_erp_test
+    ports:
+      - '5433:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U vishva -d vishva_erp_test']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   vishva_erp_pgdata:

@@ -8,7 +8,9 @@
     "postinstall": "prisma generate",
     "db:up": "docker compose up -d",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "db:test:up": "docker compose up -d postgres-test",
+    "test": "npm run db:test:up && jest --runInBand"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
@@ -29,6 +31,8 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "prisma": "^6.9.0"
+    "jest": "^29.7.0",
+    "prisma": "^6.9.0",
+    "supertest": "^7.0.0"
   }
 }
