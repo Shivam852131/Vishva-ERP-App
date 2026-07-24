@@ -1,0 +1,284 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from '@/src/components/LinearGradient';
+import { theme } from '@/src/theme';
+import { Card, SectionTitle, GradientButton } from '@/src/ui';
+import { useRouter } from '@/src/navigation/router';
+import { ErrorBoundary } from '@/src/ErrorBoundary';
+import {
+  Sparkles, FileText, Download, Check, Clock, BookOpen,
+  Layers, Hash, ChevronRight, X,
+} from 'lucide-react-native';
+
+const SUBJECTS = ['Mathematics', 'Physics', 'Chemistry', 'Computer Science', 'English', 'Biology', 'History'];
+const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Mixed'];
+const QUESTION_COUNTS = [10, 20, 30, 50];
+const MARKS_OPTIONS = [50, 100, 150, 200];
+const Q_TYPES = [
+  { key: 'mcq', label: 'MCQ' },
+  { key: 'short', label: 'Short Answer' },
+  { key: 'long', label: 'Long Answer' },
+  { key: 'truefalse', label: 'True/False' },
+];
+
+type GeneratedPaper = {
+  id: string; subject: string; difficulty: string; totalMarks: number;
+  questionCount: number; types: string[]; date: string; questions: any[];
+};
+
+const MOCK_QUESTIONS: Record<string, any[]> = {
+  Mathematics: [
+    { q: 'Solve: 2x² + 5x - 3 = 0', type: 'short', marks: 5 },
+    { q: 'The derivative of sin(x) is:', type: 'mcq', options: ['cos(x)', '-cos(x)', 'tan(x)', 'sin(x)'], marks: 1 },
+    { q: '∫(3x² + 2x + 1)dx = ?', type: 'mcq', options: ['x³ + x² + x + C', '3x + 2', 'x³ + x² + C', '6x + 2'], marks: 1 },
+    { q: 'Prove that √2 is irrational.', type: 'long', marks: 10 },
+    { q: 'If A = {1,2,3} and B = {2,3,4}, then A ∩ B = {2,3}', type: 'truefalse', marks: 1 },
+    { q: 'Find the limit: lim(x→0) sin(x)/x', type: 'short', marks: 5 },
+    { q: 'The area under the curve y = x² from x=0 to x=3 is:', type: 'mcq', options: ['9', '27', '3', '18'], marks: 1 },
+    { q: 'Solve the differential equation dy/dx = 2y', type: 'long', marks: 10 },
+    { q: 'If f(x) = x³ - 3x, find f\'(x)', type: 'short', marks: 5 },
+    { q: 'A bag contains 3 red and 5 blue balls. Probability of drawing red is 3/8', type: 'truefalse', marks: 1 },
+  ],
+  Physics: [
+    { q: 'State Newton\'s Third Law of Motion.', type: 'short', marks: 5 },
+    { q: 'SI unit of force is:', type: 'mcq', options: ['Joule', 'Newton', 'Watt', 'Pascal'], marks: 1 },
+    { q: 'The acceleration due to gravity on Earth is approximately:', type: 'mcq', options: ['8.9 m/s²', '9.8 m/s²', '10.8 m/s²', '7.8 m/s²'], marks: 1 },
+    { q: 'Derive the expression for kinetic energy of a moving body.', type: 'long', marks: 10 },
+    { q: 'Speed of light in vacuum is constant', type: 'truefalse', marks: 1 },
+    { q: 'A body of mass 5kg is moving with velocity 10m/s. Find its kinetic energy.', type: 'short', marks: 5 },
+  ],
+  Chemistry: [
+    { q: 'What is the atomic number of Carbon?', type: 'mcq', options: ['4', '6', '8', '12'], marks: 1 },
+    { q: 'Define Molarity.', type: 'short', marks: 5 },
+    { q: 'Explain the process of photosynthesis with a balanced equation.', type: 'long', marks: 10 },
+    { q: 'NaCl is an ionic compound', type: 'truefalse', marks: 1 },
+  ],
+  'Computer Science': [
+    { q: 'What is the time complexity of binary search?', type: 'mcq', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], marks: 1 },
+    { q: 'Explain the difference between stack and queue.', type: 'short', marks: 5 },
+    { q: 'Write an algorithm for Bubble Sort and analyze its complexity.', type: 'long', marks: 10 },
+    { q: 'A linked list allows random access of elements', type: 'truefalse', marks: 1 },
+  ],
+};
+
+export default function QuestionPaperGenerator() {
+  const routerNav = useRouter();
+  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
+  const [subject, setSubject] = useState('');
+  const [difficulty, setDifficulty] = useState('Medium');
+  const [questionCount, setQuestionCount] = useState(20);
+  const [totalMarks, setTotalMarks] = useState(100);
+  const [selectedTypes, setSelectedTypes] = useState(['mcq', 'short', 'long']);
+  const [generating, setGenerating] = useState(false);
+  const [generatedPaper, setGeneratedPaper] = useState<GeneratedPaper | null>(null);
+  const [history, setHistory] = useState<GeneratedPaper[]>([]);
+  const [showSubjects, setShowSubjects] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+  }, []);
+
+  const toggleType = (key: string) => {
+    setSelectedTypes(prev => prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key]);
+  };
+
+  const handleGenerate = () => {
+    if (!subject) return Alert.alert('Select Subject', 'Please choose a subject');
+    if (selectedTypes.length === 0) return Alert.alert('Select Types', 'Choose at least one question type');
+    setGenerating(true);
+    setTimeout(() => {
+      const pool = MOCK_QUESTIONS[subject] || MOCK_QUESTIONS[Mathematics];
+      const qs = pool.slice(0, Math.min(questionCount, pool.length)).map((q, i) => ({ ...q, id: i + 1 }));
+      const paper: GeneratedPaper = {
+        id: Date.now().toString(), subject, difficulty, totalMarks, questionCount: qs.length,
+        types: [...selectedTypes], date: new Date().toLocaleDateString(), questions: qs,
+      };
+      setGeneratedPaper(paper);
+      setHistory(prev => [paper, ...prev]);
+      setGenerating(false);
+    }, 2000);
+  };
+
+  return (
+    <ErrorBoundary>
+      <Animated.View style={{ flex: 1, backgroundColor: theme.colors.surface, opacity: fadeAnim }}>
+        <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+          <View style={styles.hero}>
+            <LinearGradient colors={[theme.colors.brand, '#4338CA']} style={styles.heroGrad}>
+              <Pressable onPress={() => routerNav.back()} style={styles.backBtn}>
+                <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
+              </Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={styles.heroIcon}><Sparkles size={22} color="#fff" /></View>
+                <View>
+                  <Text style={styles.heroTitle}>AI Question Paper Generator</Text>
+                  <Text style={styles.heroSub}>Create exams with smart question selection</Text>
+                </View>
+              </View>
+            </LinearGradient>
+          </View>
+
+          <View style={styles.tabs}>
+            {(['generate', 'history'] as const).map(t => (
+              <Pressable key={t} onPress={() => setActiveTab(t)} style={[styles.tabBtn, activeTab === t && styles.tabActive]}>
+                <Text style={[styles.tabTxt, activeTab === t && { color: '#fff' }]}>{t === 'generate' ? 'Generate' : 'History'}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+            {activeTab === 'generate' ? (
+              <>
+                <SectionTitle>Select Subject</SectionTitle>
+                <Pressable onPress={() => setShowSubjects(!showSubjects)} style={styles.picker}>
+                  <Text style={{ color: subject ? theme.colors.text : theme.colors.muted, fontSize: 14 }}>
+                    {subject || 'Choose a subject...'}
+                  </Text>
+                  <ChevronRight size={16} color={theme.colors.muted} />
+                </Pressable>
+                {showSubjects && (
+                  <Card style={{ padding: 0 }}>
+                    {SUBJECTS.map(s => (
+                      <Pressable key={s} onPress={() => { setSubject(s); setShowSubjects(false); }}
+                        style={[styles.subjectItem, subject === s && styles.subjectActive]}>
+                        <Text style={[styles.subjectText, subject === s && { color: '#fff', fontWeight: '700' }]}>{s}</Text>
+                        {subject === s && <Check size={16} color="#fff" />}
+                      </Pressable>
+                    ))}
+                  </Card>
+                )}
+
+                <SectionTitle>Difficulty</SectionTitle>
+                <View style={styles.chipRow}>
+                  {DIFFICULTIES.map(d => (
+                    <Pressable key={d} onPress={() => setDifficulty(d)}
+                      style={[styles.chip, difficulty === d && styles.chipActive]}>
+                      <Text style={[styles.chipText, difficulty === d && { color: '#fff' }]}>{d}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <SectionTitle>Questions</SectionTitle>
+                <View style={styles.chipRow}>
+                  {QUESTION_COUNTS.map(n => (
+                    <Pressable key={n} onPress={() => setQuestionCount(n)}
+                      style={[styles.chip, questionCount === n && styles.chipActive]}>
+                      <Text style={[styles.chipText, questionCount === n && { color: '#fff' }]}>{n}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <SectionTitle>Total Marks</SectionTitle>
+                <View style={styles.chipRow}>
+                  {MARKS_OPTIONS.map(m => (
+                    <Pressable key={m} onPress={() => setTotalMarks(m)}
+                      style={[styles.chip, totalMarks === m && styles.chipActive]}>
+                      <Text style={[styles.chipText, totalMarks === m && { color: '#fff' }]}>{m}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <SectionTitle>Question Types</SectionTitle>
+                <View style={styles.chipRow}>
+                  {Q_TYPES.map(t => (
+                    <Pressable key={t.key} onPress={() => toggleType(t.key)}
+                      style={[styles.chip, selectedTypes.includes(t.key) && styles.chipActive]}>
+                      <Text style={[styles.chipText, selectedTypes.includes(t.key) && { color: '#fff' }]}>{t.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <GradientButton label={generating ? 'Generating...' : 'Generate Paper'} onPress={handleGenerate} loading={generating} />
+
+                {generatedPaper && (
+                  <Card style={{ padding: 16, gap: 12 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontWeight: '800', fontSize: 16, color: theme.colors.text }}>Generated Paper</Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <Pressable style={styles.iconBtn}><Download size={16} color={theme.colors.brand} /></Pressable>
+                        <Pressable onPress={() => setGeneratedPaper(null)} style={styles.iconBtn}><X size={16} color={theme.colors.error} /></Pressable>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <View style={styles.metaChip}><BookOpen size={12} color={theme.colors.brand} /><Text style={styles.metaText}>{generatedPaper.subject}</Text></View>
+                      <View style={styles.metaChip}><Layers size={12} color={theme.colors.brand} /><Text style={styles.metaText}>{generatedPaper.difficulty}</Text></View>
+                      <View style={styles.metaChip}><Hash size={12} color={theme.colors.brand} /><Text style={styles.metaText}>{generatedPaper.totalMarks} marks</Text></View>
+                    </View>
+                    {generatedPaper.questions.map((q: any, i: number) => (
+                      <View key={i} style={styles.questionItem}>
+                        <Text style={styles.qNum}>{q.id}.</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.qText}>{q.q}</Text>
+                          <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                            <Text style={styles.qType}>{q.type.toUpperCase()}</Text>
+                            <Text style={styles.qMarks}>{q.marks} mark{q.marks > 1 ? 's' : ''}</Text>
+                          </View>
+                          {q.options && q.options.map((o: string, j: number) => (
+                            <Text key={j} style={styles.qOption}>{String.fromCharCode(65 + j)}. {o}</Text>
+                          ))}
+                        </View>
+                      </View>
+                    ))}
+                  </Card>
+                )}
+              </>
+            ) : (
+              <>
+                {history.length === 0 ? (
+                  <Card style={{ padding: 40, alignItems: 'center', gap: 8 }}>
+                    <FileText size={40} color={theme.colors.muted} />
+                    <Text style={{ color: theme.colors.muted }}>No papers generated yet</Text>
+                  </Card>
+                ) : history.map(p => (
+                  <Card key={p.id} style={{ padding: 16, gap: 8 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontWeight: '700', color: theme.colors.text }}>{p.subject}</Text>
+                      <Text style={{ fontSize: 12, color: theme.colors.muted }}>{p.date}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <Text style={{ fontSize: 12, color: theme.colors.muted }}>{p.questionCount} Qs</Text>
+                      <Text style={{ fontSize: 12, color: theme.colors.muted }}>{p.totalMarks} marks</Text>
+                      <Text style={{ fontSize: 12, color: theme.colors.muted }}>{p.difficulty}</Text>
+                    </View>
+                  </Card>
+                ))}
+              </>
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Animated.View>
+    </ErrorBoundary>
+  );
+}
+
+const styles = StyleSheet.create({
+  hero: { marginBottom: 0 },
+  heroGrad: { paddingHorizontal: 16, paddingVertical: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, gap: 12 },
+  heroIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  heroSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
+  backBtn: { position: 'absolute', top: 16, left: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  tabs: { flexDirection: 'row', backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3, marginHorizontal: 16, marginVertical: 12 },
+  tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: theme.radius.pill },
+  tabActive: { backgroundColor: theme.colors.brand },
+  tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 13 },
+  picker: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: theme.colors.border },
+  subjectItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  subjectActive: { backgroundColor: theme.colors.brand },
+  subjectText: { fontSize: 14, color: theme.colors.text },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  chipActive: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },
+  chipText: { fontSize: 13, color: theme.colors.text, fontWeight: '600' },
+  iconBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.border },
+  metaChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.colors.brandTertiary, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  metaText: { fontSize: 11, fontWeight: '600', color: theme.colors.brand },
+  questionItem: { flexDirection: 'row', gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.divider },
+  qNum: { fontSize: 14, fontWeight: '800', color: theme.colors.brand, width: 28 },
+  qText: { fontSize: 13, color: theme.colors.text, lineHeight: 18 },
+  qType: { fontSize: 10, fontWeight: '700', color: theme.colors.muted, backgroundColor: theme.colors.surfaceTertiary, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, overflow: 'hidden' },
+  qMarks: { fontSize: 10, fontWeight: '600', color: theme.colors.brand },
+  qOption: { fontSize: 12, color: theme.colors.muted, marginLeft: 8, marginTop: 2 },
+});

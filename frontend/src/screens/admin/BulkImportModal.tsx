@@ -4,6 +4,7 @@ import { X, FileSpreadsheet, CheckCircle, AlertTriangle } from 'lucide-react-nat
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
+import { Button } from '@/src/ui';
 
 const SAMPLE = `name,email,role,password,department,parent_name,parent_email
 John Doe,john.doe@campus.edu,student,pass123,Computer Science,Mary Doe,mary.doe@mail.com
@@ -53,7 +54,7 @@ export default function BulkImportModal({ visible, onClose, onDone }: BulkImport
               <FileSpreadsheet color={theme.colors.brand} size={20} />
               <Text style={styles.title}>Bulk Import (CSV)</Text>
             </View>
-            <Pressable testID="import-close" accessibilityLabel="Close" onPress={onClose} hitSlop={10}>
+            <Pressable testID="import-close" accessibilityLabel="Close" accessibilityRole="button" onPress={onClose} hitSlop={10}>
               <X color={theme.colors.muted} size={22} />
             </Pressable>
           </View>
@@ -68,6 +69,7 @@ export default function BulkImportModal({ visible, onClose, onDone }: BulkImport
                 <Pressable
                   testID="import-sample"
                   accessibilityLabel="Fill with sample data"
+                  accessibilityRole="button"
                   onPress={() => setText(SAMPLE)}
                   style={styles.sampleBtn}
                 >
@@ -99,15 +101,15 @@ export default function BulkImportModal({ visible, onClose, onDone }: BulkImport
                   </View>
                 )}
                 {err ? <Text style={styles.err}>{err}</Text> : null}
-                <Pressable
+                <Button
                   testID="import-run"
                   accessibilityLabel="Run import"
                   onPress={run}
-                  disabled={busy || !text.trim()}
-                  style={[styles.cta, !text.trim() && { opacity: 0.5 }]}
-                >
-                  {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaTxt}>Import {totalRows} User{totalRows !== 1 ? 's' : ''}</Text>}
-                </Pressable>
+                  loading={busy}
+                  disabled={!text.trim()}
+                  label={`Import ${totalRows} User${totalRows !== 1 ? 's' : ''}`}
+                  style={{ marginTop: theme.spacing.lg }}
+                />
               </>
             ) : (
               <>
@@ -132,9 +134,13 @@ export default function BulkImportModal({ visible, onClose, onDone }: BulkImport
                     ))}
                   </View>
                 )}
-                <Pressable testID="import-done" accessibilityLabel="Done" onPress={onClose} style={styles.cta}>
-                  <Text style={styles.ctaTxt}>Done</Text>
-                </Pressable>
+                <Button
+                  testID="import-done"
+                  accessibilityLabel="Done"
+                  onPress={onClose}
+                  label="Done"
+                  style={{ marginTop: theme.spacing.lg }}
+                />
               </>
             )}
             <View style={{ height: 30 }} />

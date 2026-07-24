@@ -1,166 +1,244 @@
 const express = require('express');
-const { prisma } = require('../db');
-const { authUser } = require('../auth');
-const { sendError, isoDate, daysFromNow } = require('../utils');
+const { getDB, oid } = require('../db');
+const { serializeUser, sendError, makeCode, nowIso } = require('../utils');
 
-function aiReply(prompt, mode) {
-  const base = String(prompt || '').trim() || 'your question';
-  if (mode === 'doubt') {
-    return `Here is a clear explanation for ${base}: break it into concepts, identify one worked example, and then solve one similar practice problem yourself.`;
+function generateMockResponse(type, message) {
+  const topic = message.substring(0, 80).replace(/[?!.]+$/, '').trim();
+
+  switch (type) {
+    case 'doubt_solver':
+      return `Based on your question about "${topic}", here's a detailed explanation: The concept involves understanding the fundamental principles and applying them step by step. First, identify the core components of the problem. Then, analyze how they relate to each other. The key insight is that this topic builds on previously learned concepts, so reviewing foundational material can be helpful. Consider working through practice examples to solidify your understanding.`;
+
+    case 'academic_advisor':
+      return `For your academic progress, I recommend: Focus on maintaining a consistent study schedule. Break down complex subjects into manageable chunks. Regular revision is more effective than cramming before exams. Consider forming study groups for collaborative learning. Pay attention to subjects where you feel less confident and allocate extra time for them. Track your progress weekly to stay on top of your goals.`;
+
+    case 'study_coach':
+      return `Here's a study tip: Try the Pomodoro Technique — study for 25 minutes, then take a 5-minute break. After four cycles, take a longer 15-30 minute break. This helps maintain focus and prevents burnout. Active recall and spaced repetition are proven techniques for long-term retention. Quiz yourself regularly rather than passively re-reading material.`;
+
+    case 'code_helper':
+      return `Here's how to approach this coding problem: Break the problem into smaller sub-problems. Identify the inputs and expected outputs clearly. Consider edge cases early. Start with a brute-force approach to get a working solution, then optimize. Use meaningful variable names and add comments for complex logic. Test your solution with different inputs including edge cases before finalizing.`;
+
+    default:
+      return `Thank you for your question about "${topic}". Here's what I can help with: This is an interesting topic that touches on several key concepts. To give you the best guidance, I'd recommend exploring the subject from both theoretical and practical perspectives. Feel free to ask follow-up questions for more specific information.`;
   }
-  if (mode === 'study') {
-    return `For ${base}, spend one session on understanding core ideas, one on examples, and one on recall practice. End with a quick self-test.`;
-  }
-  return `For ${base}, start with the key definition, then connect it to one practical example and one exam-style takeaway.`;
 }
 
-function generateStudyPlan(body) {
-  const totalDays = Math.max(1, Math.min(30, Number(body.days || 7)));
-  const hoursPerDay = Math.max(1, Math.min(12, Number(body.hours_per_day || 3)));
-  const goal = body.goal || `${body.plan_type || 'study'} plan`;
-  const days = Array.from({ length: totalDays }, (_, index) => ({
-    day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index % 7],
-    date: isoDate(daysFromNow(index)),
-    focus: index % 2 === 0 ? 'Revision and active recall' : 'Problem solving and notes review',
-    tasks: [
-      { time: '07:00', task: `Warm-up review for ${goal}`, course: 'General', done: false },
-      { time: '18:00', task: `Focused ${hoursPerDay}h study block`, course: 'General', done: false },
-      { time: '21:00', task: 'Quick recap and self-test', course: 'General', done: false },
-    ],
-  }));
+function generateStudyPlan(subjects, hoursPerDay, days, examDate) {
+  const plan = [];
+  const subjectsList = Array.isArray(subjects) ? subjects : subjects.split(',').map(s => s.trim());
+  const totalDays = parseInt(days) || 7;
+  const hours = parseInt(hoursPerDay) || 4;
+  const hoursPerSubjectPerDay = Math.floor(hours / subjectsList.length) || 1;
+
+  for (let day = 1; day <= totalDays; day++) {
+    const date = new Date();
+    date.setDate(date.getDate() + day);
+    const dateStr = date.toISOString().split('T')[0];
+
+    subjectsList.forEach((subject) => {
+      plan.push({
+        subject,
+        topic: `Review and practice ${subject} - Day ${day}`,
+        date: dateStr,
+        duration: `${hoursPerSubjectPerDay}h`,
+        completed: false,
+      });
+    });
+  }
+
   return {
-    plan_type: body.plan_type || 'study',
-    goal,
-    plan: {
-      title: `${totalDays}-Day ${body.plan_type === 'revision' ? 'Revision' : 'Study'} Plan`,
-      tips: ['Use 45-minute focus blocks', 'Review weak topics before ending the day', 'Keep one short recall session daily'],
-      days,
-    },
+    title: `Study Plan - ${subjectsList.join(', ')}`,
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: examDate || new Date(Date.now() + totalDays * 86400000).toISOString().split('T')[0],
+    tasks: plan,
   };
 }
 
 function createAiRouter(io) {
   const router = express.Router();
 
-  async function ensureAiSession(sessionId, userId, title) {
-    let session = sessionId ? await prisma.aiSession.findUnique({ where: { id: sessionId } }) : null;
-    if (!session) {
-      session = await prisma.aiSession.create({
-        data: { ...(sessionId ? { id: sessionId } : {}), userId, title },
-      });
+  router.get('/sessions', async (req, res) => {
+    try {
+      const db = getDB();
+      const sessions = await db.collection('ai_sessions')
+        .find({ userId: oid(req.user._id) })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.json(sessions);
+    } catch (err) {
+      sendError(res, err);
     }
-    return session;
-  }
-
-  router.get('/ai/sessions', async (req, res) => {
-    const user = await authUser(req);
-    const sessions = await prisma.aiSession.findMany({
-      where: { userId: user.id },
-      orderBy: { updatedAt: 'desc' },
-      include: { _count: { select: { messages: true } } },
-    });
-    res.json(sessions.map(session => ({
-      session_id: session.id,
-      user_id: session.userId,
-      title: session.title,
-      created_at: session.createdAt.toISOString(),
-      updated_at: session.updatedAt.toISOString(),
-      message_count: session._count.messages,
-    })));
   });
 
-  router.get('/ai/history/:sessionId', async (req, res) => {
-    const user = await authUser(req);
-    const session = await prisma.aiSession.findUnique({ where: { id: req.params.sessionId } });
-    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
-    if (!session || (!isAdmin && session.userId !== user.id)) return sendError(res, 'Session not found.', 404);
-    const messages = await prisma.aiMessage.findMany({
-      where: { sessionId: req.params.sessionId },
-      orderBy: { createdAt: 'asc' },
-    });
-    res.json(messages.map(message => ({
-      id: message.id,
-      user_msg: message.userMsg,
-      ai_msg: message.aiMsg,
-      created_at: message.createdAt.toISOString(),
-    })));
+  router.get('/sessions/:id/messages', async (req, res) => {
+    try {
+      const db = getDB();
+      const messages = await db.collection('ai_messages')
+        .find({ sessionId: oid(req.params.id) })
+        .sort({ createdAt: 1 })
+        .toArray();
+
+      res.json(messages);
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
-  router.post('/ai/doubt', async (req, res) => {
-    const user = await authUser(req);
-    const session = await ensureAiSession(req.body.session_id, user.id, 'Doubt Solver');
-    const reply = aiReply(req.body.message, 'doubt');
-    await prisma.aiMessage.create({ data: { sessionId: session.id, userMsg: req.body.message || '', aiMsg: reply } });
-    await prisma.aiSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
-    io.emit('ai:sessions:update', { sessionId: session.id, userId: user.id });
-    res.json({ reply });
+  router.post('/chat', async (req, res) => {
+    try {
+      const db = getDB();
+      const { sessionId, message, type } = req.body;
+      const aiType = type || 'general';
+      const currentUserId = req.user._id;
+
+      let sid = sessionId;
+
+      if (!sid) {
+        const session = {
+          userId: oid(currentUserId),
+          type: aiType,
+          title: message.substring(0, 60),
+          createdAt: nowIso(),
+        };
+        const { insertedId } = await db.collection('ai_sessions').insertOne(session);
+        sid = insertedId;
+      }
+
+      const userMessage = {
+        sessionId: oid(sid),
+        role: 'user',
+        content: message,
+        createdAt: nowIso(),
+      };
+      await db.collection('ai_messages').insertOne(userMessage);
+
+      const assistantContent = generateMockResponse(aiType, message);
+      const assistantMessage = {
+        sessionId: oid(sid),
+        role: 'assistant',
+        content: assistantContent,
+        createdAt: nowIso(),
+      };
+      await db.collection('ai_messages').insertOne(assistantMessage);
+
+      io.to(currentUserId.toString()).emit('ai:message', {
+        sessionId: sid,
+        userMessage,
+        assistantMessage,
+      });
+
+      res.status(201).json({ sessionId: sid, message: assistantMessage });
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
-  router.post('/ai/chat', async (req, res) => {
-    const user = await authUser(req);
-    const session = await ensureAiSession(req.body.session_id, user.id, 'Academic Advisor');
-    const reply = aiReply(req.body.message, req.body.context || 'general');
-    await prisma.aiMessage.create({ data: { sessionId: session.id, userMsg: req.body.message || '', aiMsg: reply } });
-    await prisma.aiSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
-    io.emit('ai:sessions:update', { sessionId: session.id, userId: user.id });
-    res.json({ reply });
+  router.post('/doubt-solver', async (req, res) => {
+    try {
+      const { question } = req.body;
+      if (!question) return sendError(res, 'Question is required', 400);
+
+      const answer = generateMockResponse('doubt_solver', question);
+      res.json({ question, answer });
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
-  router.get('/ai/study-plans', async (req, res) => {
-    const user = await authUser(req);
-    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
-    const plans = await prisma.studyPlan.findMany({
-      where: isAdmin ? {} : { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-    });
-    res.json(plans.map(plan => ({
-      id: plan.id,
-      plan_type: plan.planType,
-      goal: plan.goal,
-      created_at: plan.createdAt.toISOString(),
-      plan: plan.plan,
-    })));
+  router.post('/academic-advisor', async (req, res) => {
+    try {
+      const { question } = req.body;
+      if (!question) return sendError(res, 'Question is required', 400);
+
+      const advice = generateMockResponse('academic_advisor', question);
+      res.json({ question, advice });
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
-  router.post('/ai/study-plan', async (req, res) => {
-    const user = await authUser(req);
-    const result = generateStudyPlan(req.body || {});
-    const created = await prisma.studyPlan.create({
-      data: { userId: user.id, planType: result.plan_type, goal: result.goal, plan: result.plan },
-    });
-    io.emit('study-plans:update', { planId: created.id });
-    res.json({
-      id: created.id,
-      plan_type: created.planType,
-      goal: created.goal,
-      created_at: created.createdAt.toISOString(),
-      plan: created.plan,
-    });
+  router.post('/study-plan', async (req, res) => {
+    try {
+      const db = getDB();
+      const { subjects, hoursPerDay, days, examDate } = req.body;
+
+      if (!subjects) return sendError(res, 'Subjects are required', 400);
+
+      const planData = generateStudyPlan(subjects, hoursPerDay, days, examDate);
+
+      const plan = {
+        userId: oid(req.user._id),
+        ...planData,
+        createdAt: nowIso(),
+      };
+
+      const { insertedId } = await db.collection('study_plans').insertOne(plan);
+
+      res.status(201).json({ ...plan, _id: insertedId });
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
-  router.post('/ai/study-plans/:planId/toggle', async (req, res) => {
-    const user = await authUser(req);
-    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
-    const plan = await prisma.studyPlan.findUnique({ where: { id: req.params.planId } });
-    if (!plan || (!isAdmin && plan.userId !== user.id)) return sendError(res, 'Plan not found.', 404);
-    const planData = plan.plan;
-    const day = planData.days && planData.days[Number(req.body.day_index)];
-    const task = day && day.tasks[Number(req.body.task_index)];
-    if (!task) return sendError(res, 'Task not found.', 404);
-    task.done = !task.done;
-    await prisma.studyPlan.update({ where: { id: plan.id }, data: { plan: planData } });
-    io.emit('study-plans:update', { planId: plan.id });
-    res.json({ ok: true });
+  router.get('/study-plans', async (req, res) => {
+    try {
+      const db = getDB();
+      const plans = await db.collection('study_plans')
+        .find({ userId: oid(req.user._id) })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.json(plans);
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
-  router.delete('/ai/study-plans/:planId', async (req, res) => {
-    const user = await authUser(req);
-    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
-    const plan = await prisma.studyPlan.findUnique({ where: { id: req.params.planId } });
-    if (!plan || (!isAdmin && plan.userId !== user.id)) return sendError(res, 'Plan not found.', 404);
-    await prisma.studyPlan.deleteMany({ where: { id: req.params.planId } });
-    io.emit('study-plans:update', { planId: req.params.planId });
-    res.json({ ok: true });
+  router.post('/study-plans/:id/toggle', async (req, res) => {
+    try {
+      const db = getDB();
+      const { taskIndex } = req.body;
+
+      const plan = await db.collection('study_plans').findOne({
+        _id: oid(req.params.id),
+        userId: oid(req.user._id),
+      });
+
+      if (!plan) return sendError(res, 'Plan not found', 404);
+
+      const index = parseInt(taskIndex);
+      if (isNaN(index) || index < 0 || index >= plan.tasks.length) {
+        return sendError(res, 'Invalid task index', 400);
+      }
+
+      plan.tasks[index].completed = !plan.tasks[index].completed;
+
+      await db.collection('study_plans').updateOne(
+        { _id: oid(req.params.id) },
+        { $set: { tasks: plan.tasks } }
+      );
+
+      res.json(plan);
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  router.delete('/study-plans/:id', async (req, res) => {
+    try {
+      const db = getDB();
+      const result = await db.collection('study_plans').deleteOne({
+        _id: oid(req.params.id),
+        userId: oid(req.user._id),
+      });
+
+      if (result.deletedCount === 0) return sendError(res, 'Plan not found', 404);
+
+      res.json({ message: 'Plan deleted' });
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
   return router;

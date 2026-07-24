@@ -1,453 +1,272 @@
-const { PrismaClient } = require('@prisma/client');
+require('dotenv').config();
+const { MongoClient, ObjectId } = require('mongodb');
 const bcrypt = require('bcrypt');
 
-const prisma = new PrismaClient();
+const MONGODB_URI = process.env.MONGODB_LOCAL_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017';
+const DB_NAME = process.env.MONGODB_DB || 'vishva_erp';
+const SALT_ROUNDS = 10;
 
-function daysFromNow(days) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date;
-}
+async function seed() {
+  console.log('[Seed] Connecting to MongoDB...');
+  const client = new MongoClient(MONGODB_URI);
+  await client.connect();
+  const db = client.db(DB_NAME);
 
-function isoDate(date) {
-  return new Date(date.toISOString().slice(0, 10));
-}
+  // Clear all collections
+  const collections = await db.listCollections().toArray();
+  for (const c of collections) {
+    await db.dropCollection(c.name);
+  }
+  console.log('[Seed] Cleared existing data.');
 
-async function hash(password) {
-  return bcrypt.hash(password, 10);
-}
+  const hash = await bcrypt.hash('password123', SALT_ROUNDS);
+  const now = new Date();
+  const daysAgo = (d) => { const dt = new Date(); dt.setDate(dt.getDate() - d); return dt; };
+  const daysFromNow = (d) => { const dt = new Date(); dt.setDate(dt.getDate() + d); return dt; };
 
-async function main() {
-  console.log('Seeding database...');
+  // ──── USERS ────
+  const users = [
+    { name: 'Aarav Sharma', email: 'aarav@campus.edu', passwordHash: hash, role: 'student', phone: '+919876543210', college: 'Vishva Institute of Technology', department: 'Computer Science', studentCode: 'VIT-001', year: 3, cgpa: 8.7, status: 'active' },
+    { name: 'Isha Patel', email: 'isha@campus.edu', passwordHash: hash, role: 'student', phone: '+919876543211', college: 'Vishva Institute of Technology', department: 'Computer Science', studentCode: 'VIT-002', year: 2, cgpa: 9.1, status: 'active' },
+    { name: 'Neel Gupta', email: 'neel@campus.edu', passwordHash: hash, role: 'student', phone: '+919876543212', college: 'Vishva Institute of Technology', department: 'Electronics', studentCode: 'VIT-003', year: 3, cgpa: 7.8, status: 'active' },
+    { name: 'Dr. Meera Iyer', email: 'meera@campus.edu', passwordHash: hash, role: 'faculty', phone: '+919876543213', college: 'Vishva Institute of Technology', department: 'Computer Science', status: 'active' },
+    { name: 'Prof. Kabir Khan', email: 'kabir@campus.edu', passwordHash: hash, role: 'faculty', phone: '+919876543214', college: 'Vishva Institute of Technology', department: 'Electronics', status: 'active' },
+    { name: 'Rohit Sharma', email: 'rohit@campus.edu', passwordHash: hash, role: 'parent', phone: '+919876543215', college: 'Vishva Institute of Technology', status: 'active' },
+    { name: 'Ananya Reddy', email: 'ananya@campus.edu', passwordHash: hash, role: 'college_admin', phone: '+919876543216', college: 'Vishva Institute of Technology', status: 'active' },
+    { name: 'Vikram Singh', email: 'vikram@campus.edu', passwordHash: hash, role: 'super_admin', phone: '+919876543217', college: 'Vishva Institute of Technology', status: 'active' },
+  ];
 
-  const [studentPass, facultyPass, parentPass, adminPass, superPass] = await Promise.all([
-    hash('password123'),
-    hash('password123'),
-    hash('password123'),
-    hash('password123'),
-    hash('password123'),
+  const userResult = await db.collection('users').insertMany(users.map(u => ({ ...u, createdAt: now, updatedAt: now })));
+  const userIds = Object.values(userResult.insertedIds);
+  const [student1Id, student2Id, student3Id, faculty1Id, faculty2Id, parentId, adminId, superAdminId] = userIds;
+
+  // Link parent to student
+  await db.collection('users').updateOne({ _id: student1Id }, { $set: { parentId: parentId } });
+
+  // ──── COLLEGES ────
+  const collegesResult = await db.collection('colleges').insertMany([
+    { name: 'Vishva Institute of Technology', code: 'VIT', address: '123 College Road, Bangalore', phone: '+918012345678', email: 'info@vit.edu', createdAt: now },
+    { name: 'Vishva College of Arts & Science', code: 'VCAS', address: '456 University Road, Mumbai', phone: '+912212345678', email: 'info@vcas.edu', createdAt: now },
+  ]);
+  const [college1Id] = Object.values(collegesResult.insertedIds);
+
+  // ──── COURSES ────
+  const coursesResult = await db.collection('courses').insertMany([
+    { code: 'CS301', name: 'Data Structures & Algorithms', department: 'Computer Science', credits: 4, facultyId: faculty1Id, semester: 5, college: 'Vishva Institute of Technology', createdAt: now },
+    { code: 'CS305', name: 'Database Management Systems', department: 'Computer Science', credits: 4, facultyId: faculty1Id, semester: 5, college: 'Vishva Institute of Technology', createdAt: now },
+    { code: 'AI401', name: 'Machine Learning', department: 'Computer Science', credits: 3, facultyId: faculty1Id, semester: 7, college: 'Vishva Institute of Technology', createdAt: now },
+    { code: 'EC220', name: 'Digital Electronics', department: 'Electronics', credits: 3, facultyId: faculty2Id, semester: 3, college: 'Vishva Institute of Technology', createdAt: now },
+  ]);
+  const [course1Id, course2Id, course3Id, course4Id] = Object.values(coursesResult.insertedIds);
+
+  // ──── ENROLLMENTS ────
+  await db.collection('course_enrollments').insertMany([
+    { studentId: student1Id, courseId: course1Id, createdAt: now },
+    { studentId: student1Id, courseId: course2Id, createdAt: now },
+    { studentId: student2Id, courseId: course1Id, createdAt: now },
+    { studentId: student2Id, courseId: course2Id, createdAt: now },
+    { studentId: student2Id, courseId: course3Id, createdAt: now },
+    { studentId: student3Id, courseId: course4Id, createdAt: now },
+    { studentId: student3Id, courseId: course1Id, createdAt: now },
+    { studentId: student1Id, courseId: course3Id, createdAt: now },
   ]);
 
-  const stu001 = await prisma.user.create({
-    data: {
-      id: 'stu-001',
-      name: 'Aarav Sharma',
-      email: 'student@campus.edu',
-      passwordHash: studentPass,
-      role: 'student',
-      phone: '+91 98765 43210',
-      college: 'Vishva Institute of Technology',
-      department: 'Computer Science',
-      studentCode: 'VIT-CS-2026-014',
-      year: 3,
-      cgpa: 8.7,
-    },
-  });
+  // ──── CLASSROOMS ────
+  const classroomsResult = await db.collection('classrooms').insertMany([
+    { name: 'CS-301', building: 'Block A', capacity: 60, beacons: ['B1:A0:01'], wifiBssids: ['AA:BB:CC:DD:EE:01'], latitude: 12.9716, longitude: 77.5946, createdAt: now },
+    { name: 'EC-201', building: 'Block B', capacity: 45, beacons: ['B2:A0:01'], wifiBssids: ['AA:BB:CC:DD:EE:02'], latitude: 12.9720, longitude: 77.5950, createdAt: now },
+  ]);
+  const [classroom1Id, classroom2Id] = Object.values(classroomsResult.insertedIds);
 
-  const stu002 = await prisma.user.create({
-    data: {
-      id: 'stu-002',
-      name: 'Isha Patel',
-      email: 'isha@campus.edu',
-      passwordHash: studentPass,
-      role: 'student',
-      phone: '+91 93456 78901',
-      college: 'Vishva Institute of Technology',
-      department: 'Computer Science',
-      studentCode: 'VIT-CS-2026-018',
-      year: 3,
-      cgpa: 8.9,
-    },
-  });
+  // ──── TIMETABLE SLOTS ────
+  await db.collection('timetable_slots').insertMany([
+    { courseId: course1Id, dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:30', room: 'CS-301', facultyId: faculty1Id, createdAt: now },
+    { courseId: course1Id, dayOfWeek: 'Wednesday', startTime: '09:00', endTime: '10:30', room: 'CS-301', facultyId: faculty1Id, createdAt: now },
+    { courseId: course2Id, dayOfWeek: 'Tuesday', startTime: '11:00', endTime: '12:30', room: 'CS-301', facultyId: faculty1Id, createdAt: now },
+    { courseId: course2Id, dayOfWeek: 'Thursday', startTime: '11:00', endTime: '12:30', room: 'CS-301', facultyId: faculty1Id, createdAt: now },
+    { courseId: course3Id, dayOfWeek: 'Friday', startTime: '14:00', endTime: '15:30', room: 'CS-301', facultyId: faculty1Id, createdAt: now },
+    { courseId: course4Id, dayOfWeek: 'Monday', startTime: '14:00', endTime: '15:30', room: 'EC-201', facultyId: faculty2Id, createdAt: now },
+  ]);
 
-  const stu003 = await prisma.user.create({
-    data: {
-      id: 'stu-003',
-      name: 'Neel Verma',
-      email: 'neel@campus.edu',
-      passwordHash: studentPass,
-      role: 'student',
-      phone: '+91 92345 67890',
-      college: 'Vishva Institute of Technology',
-      department: 'Electronics',
-      studentCode: 'VIT-EC-2027-022',
-      year: 2,
-      cgpa: 7.8,
-    },
-  });
+  // ──── SCHEDULES ────
+  await db.collection('schedules').insertMany([
+    { courseId: course1Id, classroomId: classroom1Id, dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:30', semester: 5, createdAt: now },
+    { courseId: course2Id, classroomId: classroom1Id, dayOfWeek: 'Tuesday', startTime: '11:00', endTime: '12:30', semester: 5, createdAt: now },
+  ]);
 
-  const fac001 = await prisma.user.create({
-    data: {
-      id: 'fac-001',
-      name: 'Dr. Meera Iyer',
-      email: 'faculty@campus.edu',
-      passwordHash: facultyPass,
-      role: 'faculty',
-      phone: '+91 99887 66554',
-      college: 'Vishva Institute of Technology',
-      department: 'Computer Science',
-    },
-  });
+  // ──── ATTENDANCE RECORDS ────
+  const attRecords = [];
+  for (let i = 0; i < 24; i++) {
+    const dt = daysAgo(30 - i);
+    attRecords.push({ studentId: student1Id, courseId: course1Id, date: dt.toISOString().slice(0, 10), status: i < 4 ? 'absent' : 'present', createdAt: now });
+  }
+  await db.collection('attendance_records').insertMany(attRecords);
 
-  const fac002 = await prisma.user.create({
-    data: {
-      id: 'fac-002',
-      name: 'Prof. Kabir Khan',
-      email: 'kabir@campus.edu',
-      passwordHash: facultyPass,
-      role: 'faculty',
-      phone: '+91 99880 11122',
-      college: 'Vishva Institute of Technology',
-      department: 'Electronics',
-    },
-  });
+  // ──── EXAMS ────
+  const examsResult = await db.collection('exams').insertMany([
+    { courseId: course1Id, title: 'Mid-Term Exam', date: daysFromNow(30).toISOString().slice(0, 10), duration: 120, totalMarks: 100, type: 'midterm', createdAt: now },
+    { courseId: course2Id, title: 'Quiz 1', date: daysFromNow(14).toISOString().slice(0, 10), duration: 30, totalMarks: 20, type: 'quiz', createdAt: now },
+  ]);
+  const [exam1Id, exam2Id] = Object.values(examsResult.insertedIds);
 
-  const par001 = await prisma.user.create({
-    data: {
-      id: 'par-001',
-      name: 'Rohit Sharma',
-      email: 'parent@campus.edu',
-      passwordHash: parentPass,
-      role: 'parent',
-      phone: '+91 90123 45678',
-      college: 'Vishva Institute of Technology',
-    },
-  });
-  // stu001's parentUserId points at their parent account (par001), not the other way around.
-  await prisma.user.update({ where: { id: stu001.id }, data: { parentUserId: par001.id } });
+  // ──── EXAM RESULTS ────
+  await db.collection('exam_results').insertMany([
+    { studentId: student1Id, examId: exam1Id, courseId: course1Id, marks: 82, grade: 'A', semester: 5, createdAt: now },
+    { studentId: student1Id, examId: exam2Id, courseId: course2Id, marks: 18, grade: 'A+', semester: 5, createdAt: now },
+    { studentId: student2Id, examId: exam1Id, courseId: course1Id, marks: 91, grade: 'A+', semester: 5, createdAt: now },
+    { studentId: student3Id, examId: exam1Id, courseId: course1Id, marks: 65, grade: 'B+', semester: 5, createdAt: now },
+  ]);
 
-  const adm001 = await prisma.user.create({
-    data: {
-      id: 'adm-001',
-      name: 'Ananya Rao',
-      email: 'admin@campus.edu',
-      passwordHash: adminPass,
-      role: 'college_admin',
-      phone: '+91 91234 56789',
-      college: 'Vishva Institute of Technology',
-      department: 'Administration',
-    },
-  });
+  // ──── FEES ────
+  const feesResult = await db.collection('fees').insertMany([
+    { userId: student1Id, type: 'Tuition Fee', amount: 45000, dueDate: daysFromNow(15).toISOString().slice(0, 10), status: 'pending', semester: 5, createdAt: now },
+    { userId: student1Id, type: 'Hostel Fee', amount: 25000, dueDate: daysFromNow(15).toISOString().slice(0, 10), status: 'paid', semester: 5, receiptId: null, createdAt: now },
+    { userId: student2Id, type: 'Tuition Fee', amount: 45000, dueDate: daysAgo(5).toISOString().slice(0, 10), status: 'overdue', semester: 3, createdAt: now },
+    { userId: student3Id, type: 'Tuition Fee', amount: 42000, dueDate: daysFromNow(20).toISOString().slice(0, 10), status: 'pending', semester: 3, createdAt: now },
+  ]);
 
-  await prisma.user.create({
-    data: {
-      id: 'sup-001',
-      name: 'Vikram Sen',
-      email: 'super@campus.edu',
-      passwordHash: superPass,
-      role: 'super_admin',
-      phone: '+91 90000 11111',
-      college: 'Vishva ERP Network',
-      department: 'Platform Operations',
-    },
-  });
+  // ──── NOTIFICATIONS ────
+  await db.collection('notifications').insertMany([
+    { audience: 'students', title: 'Exam Schedule Released', body: 'Mid-term exam schedule has been published.', recipientIds: [], readBy: [], createdAt: now },
+    { audience: 'all', title: 'Holiday Notice', body: 'College will remain closed on Monday for Republic Day.', recipientIds: [], readBy: [], createdAt: now },
+    { audience: 'parents', title: 'PTM Scheduled', body: 'Parent-Teacher meeting on Feb 5 at 10 AM.', recipientIds: [], readBy: [], createdAt: now },
+  ]);
 
-  await prisma.college.createMany({
-    data: [
-      { id: 'col-1', name: 'Vishva Institute of Technology', code: 'VIT', students: 1240, faculty: 82, admins: 9, address: 'Knowledge Park, Mumbai', contactEmail: 'hello@vit.edu' },
-      { id: 'col-2', name: 'Vishva School of Management', code: 'VSM', students: 620, faculty: 41, admins: 5, address: 'Lake Road, Pune', contactEmail: 'office@vsm.edu' },
-    ],
-  });
+  // ──── ASSIGNMENTS ────
+  const assignmentsResult = await db.collection('assignments').insertMany([
+    { courseId: course1Id, title: 'Implement Red-Black Tree', description: 'Implement insert, delete, and search operations for a Red-Black Tree in your preferred language.', dueDate: daysFromNow(7).toISOString().slice(0, 10), maxMarks: 100, createdById: faculty1Id, createdAt: now },
+    { courseId: course2Id, title: 'ER Diagram Project', description: 'Design an ER diagram for a hospital management system.', dueDate: daysFromNow(14).toISOString().slice(0, 10), maxMarks: 50, createdById: faculty1Id, createdAt: now },
+    { courseId: course1Id, title: 'Graph Algorithms Lab', description: 'Implement BFS and DFS with shortest path on a sample graph.', dueDate: daysAgo(3).toISOString().slice(0, 10), maxMarks: 50, createdById: faculty1Id, createdAt: now },
+  ]);
 
-  const c101 = await prisma.course.create({ data: { id: 'c-101', code: 'CS301', name: 'Data Structures', facultyId: fac001.id, credits: 4, color: '#059669' } });
-  const c102 = await prisma.course.create({ data: { id: 'c-102', code: 'CS305', name: 'Database Systems', facultyId: fac001.id, credits: 4, color: '#2563EB' } });
-  const c103 = await prisma.course.create({ data: { id: 'c-103', code: 'AI401', name: 'Applied Machine Learning', facultyId: fac002.id, credits: 3, color: '#7C3AED' } });
-  const c104 = await prisma.course.create({ data: { id: 'c-104', code: 'EC220', name: 'Digital Electronics', facultyId: fac002.id, credits: 3, color: '#F59E0B' } });
+  // ──── SUBMISSIONS ────
+  await db.collection('submissions').insertMany([
+    { assignmentId: Object.values(assignmentsResult.insertedIds)[2], studentId: student1Id, content: 'Completed BFS and DFS implementation with shortest path.', submittedAt: daysAgo(4).toISOString(), marks: 45, feedback: 'Good work, but optimize the space complexity.', createdAt: now },
+  ]);
 
-  await prisma.courseEnrollment.createMany({
-    data: [
-      { courseId: c101.id, studentId: stu001.id },
-      { courseId: c101.id, studentId: stu002.id },
-      { courseId: c101.id, studentId: stu003.id },
-      { courseId: c102.id, studentId: stu001.id },
-      { courseId: c102.id, studentId: stu002.id },
-      { courseId: c103.id, studentId: stu001.id },
-      { courseId: c103.id, studentId: stu003.id },
-      { courseId: c104.id, studentId: stu003.id },
-    ],
-  });
+  // ──── NOTES ────
+  await db.collection('notes').insertMany([
+    { courseId: course1Id, title: 'Binary Trees Lecture Notes', content: 'Comprehensive notes on binary tree traversals, BST operations, and balanced trees.', createdById: faculty1Id, createdAt: now },
+    { courseId: course2Id, title: 'Normalization Guide', content: 'Step-by-step guide to 1NF, 2NF, 3NF, and BCNF with examples.', createdById: faculty1Id, createdAt: now },
+  ]);
 
-  await prisma.timetableSlot.createMany({
-    data: [
-      { day: 'Mon', start: '09:00', end: '10:00', courseId: c101.id, room: 'A-204' },
-      { day: 'Mon', start: '10:15', end: '11:15', courseId: c102.id, room: 'Lab-3' },
-      { day: 'Tue', start: '11:30', end: '12:30', courseId: c103.id, room: 'AI Studio' },
-      { day: 'Wed', start: '14:00', end: '15:00', courseId: c104.id, room: 'E-112' },
-      { day: 'Thu', start: '09:00', end: '10:30', courseId: c102.id, room: 'Lab-3' },
-      { day: 'Fri', start: '12:00', end: '13:00', courseId: c101.id, room: 'A-204' },
-    ],
-  });
+  // ──── EVENTS ────
+  await db.collection('events').insertMany([
+    { title: 'Tech Fest 2026', description: 'Annual technical festival with workshops, hackathons, and guest lectures.', date: daysFromNow(45).toISOString().slice(0, 10), type: 'festival', audience: 'all', createdAt: now },
+    { title: 'Placement Drive', description: 'Campus placement drive by leading tech companies.', date: daysFromNow(30).toISOString().slice(0, 10), type: 'placement', audience: 'students', createdAt: now },
+  ]);
 
-  const room1 = await prisma.classroom.create({
-    data: {
-      id: 'room-1', name: 'A-204', building: 'Academic Block A', floor: 2, capacity: 72,
-      lat: 19.076, lng: 72.8777, radiusM: 35,
-      beacons: [{ uuid: 'beacon-a204', major: 1, minor: 204, name: 'A204 Door' }],
-      wifiBssids: ['VIT-A204-01'], wifiSsidPattern: 'VIT-Campus', active: true,
-    },
-  });
-  const room2 = await prisma.classroom.create({
-    data: {
-      id: 'room-2', name: 'Lab-3', building: 'Computing Center', floor: 1, capacity: 48,
-      lat: 19.077, lng: 72.878, radiusM: 25,
-      beacons: [], wifiBssids: ['VIT-LAB3-01'], wifiSsidPattern: 'VIT-Lab', active: true,
-    },
-  });
+  // ──── BOOKS ────
+  const booksResult = await db.collection('books').insertMany([
+    { title: 'Introduction to Algorithms (CLRS)', author: 'Thomas H. Cormen', isbn: '978-0262033848', department: 'Computer Science', available: 3, total: 5, createdAt: now },
+    { title: 'Database System Concepts', author: 'Abraham Silberschatz', isbn: '978-0078022159', department: 'Computer Science', available: 2, total: 4, createdAt: now },
+    { title: 'Digital Design', author: 'M. Morris Mano', isbn: '978-0132774208', department: 'Electronics', available: 4, total: 4, createdAt: now },
+  ]);
+  const [book1Id, book2Id] = Object.values(booksResult.insertedIds);
 
-  const sch1 = await prisma.schedule.create({
-    data: {
-      id: 'sch-1', collegeId: 'col-1', courseId: c101.id, facultyId: fac001.id, classroomId: room1.id,
-      day: 'monday', startTime: '09:00', endTime: '10:00', attendanceMethod: 'qr',
-      gracePeriodMinutes: 10, autoNotifyAbsent: true, active: true,
-    },
-  });
-  const sch2 = await prisma.schedule.create({
-    data: {
-      id: 'sch-2', collegeId: 'col-1', courseId: c102.id, facultyId: fac001.id, classroomId: room2.id,
-      day: 'thursday', startTime: '09:00', endTime: '10:30', attendanceMethod: 'face',
-      gracePeriodMinutes: 5, autoNotifyAbsent: true, active: true,
-    },
-  });
+  // ──── BOOK ISSUES ────
+  await db.collection('book_issues').insertMany([
+    { bookId: book1Id, userId: student1Id, issueDate: daysAgo(20).toISOString().slice(0, 10), dueDate: daysAgo(6).toISOString().slice(0, 10), returnDate: null, fine: 0, status: 'overdue', createdAt: now },
+    { bookId: book2Id, userId: student2Id, issueDate: daysAgo(10).toISOString().slice(0, 10), dueDate: daysFromNow(4).toISOString().slice(0, 10), returnDate: null, fine: 0, status: 'issued', createdAt: now },
+  ]);
 
-  const courseCycle = [c101, c102, c103, c104];
-  const attendanceRecords = Array.from({ length: 24 }, (_, index) => {
-    const course = courseCycle[index % courseCycle.length];
-    return {
-      studentId: stu001.id,
-      courseId: course.id,
-      date: isoDate(daysFromNow(index - 26)),
-      present: index % 7 !== 0,
-      method: index % 3 === 0 ? 'qr' : index % 3 === 1 ? 'gps' : 'face',
-    };
-  });
-  await prisma.attendanceRecord.createMany({ data: attendanceRecords });
+  // ──── HOSTELS ────
+  const hostelsResult = await db.collection('hostels').insertMany([
+    { name: 'Gandhi Hall', type: 'boys', capacity: 200, occupied: 145, facilities: ['WiFi', 'Mess', 'Gym', 'Laundry'], warden: 'Mr. Verma', phone: '+919876500001', createdAt: now },
+    { name: 'Sarojini Hall', type: 'girls', capacity: 150, occupied: 120, facilities: ['WiFi', 'Mess', 'Gym', 'Library'], warden: 'Mrs. Nair', phone: '+919876500002', createdAt: now },
+  ]);
+  const [hostel1Id] = Object.values(hostelsResult.insertedIds);
 
-  await prisma.examResult.createMany({
-    data: [
-      { studentId: stu001.id, courseId: c101.id, marks: 88, maxMarks: 100, grade: 'A', semester: 'Semester 5' },
-      { studentId: stu001.id, courseId: c102.id, marks: 92, maxMarks: 100, grade: 'A+', semester: 'Semester 5' },
-      { studentId: stu001.id, courseId: c103.id, marks: 81, maxMarks: 100, grade: 'A', semester: 'Semester 5' },
-      { studentId: stu001.id, courseId: c104.id, marks: 74, maxMarks: 100, grade: 'B+', semester: 'Semester 4' },
-    ],
-  });
+  await db.collection('hostel_allocations').insertMany([
+    { hostelId: hostel1Id, studentId: student1Id, room: 'A-201', bed: '1', startDate: daysAgo(180).toISOString().slice(0, 10), status: 'active', createdAt: now },
+  ]);
 
-  await prisma.fee.createMany({
-    data: [
-      { id: 'fee-1', studentId: stu001.id, type: 'Tuition Fee', amount: 3850000, currency: 'INR', dueDate: daysFromNow(12), status: 'pending', semester: 'Semester 5' },
-      { id: 'fee-2', studentId: stu001.id, type: 'Library Deposit', amount: 50000, currency: 'INR', dueDate: daysFromNow(-20), status: 'paid', paidAt: daysFromNow(-18), semester: 'Annual' },
-      { id: 'fee-3', studentId: stu001.id, type: 'Hostel Charges', amount: 850000, currency: 'INR', dueDate: daysFromNow(24), status: 'pending', semester: 'Semester 5' },
-      { id: 'fee-4', studentId: stu002.id, type: 'Tuition Fee', amount: 3650000, currency: 'INR', dueDate: daysFromNow(18), status: 'pending', semester: 'Semester 5' },
-    ],
-  });
+  // ──── TRANSPORT ────
+  const routesResult = await db.collection('transport_routes').insertMany([
+    { name: 'Route A - Koramangala', routeNumber: 'A1', stops: [{ name: 'Koramangala', time: '07:30', location: { lat: 12.9352, lng: 77.6245 } }, { name: 'HSR Layout', time: '07:50', location: { lat: 12.9116, lng: 77.6389 } }, { name: 'College', time: '08:30', location: { lat: 12.9716, lng: 77.5946 } }], fare: 1500, timing: '07:30 - 16:30', createdAt: now },
+    { name: 'Route B - Whitefield', routeNumber: 'B1', stops: [{ name: 'Whitefield', time: '07:00', location: { lat: 12.9698, lng: 77.7500 } }, { name: 'Marathahalli', time: '07:30', location: { lat: 12.9592, lng: 77.6974 } }, { name: 'College', time: '08:30', location: { lat: 12.9716, lng: 77.5946 } }], fare: 2000, timing: '07:00 - 16:30', createdAt: now },
+  ]);
+  const [route1Id] = Object.values(routesResult.insertedIds);
 
-  await prisma.paymentReceipt.create({
-    data: {
-      id: 'rcpt-1', type: 'fee', feeId: 'fee-2', amount: 50000, currency: 'INR',
-      paymentId: 'pay_demo_seed', orderId: 'order_demo_seed', paidAt: daysFromNow(-18),
-      status: 'paid',
-    },
-  });
+  await db.collection('transport_enrollments').insertMany([
+    { routeId: route1Id, studentId: student1Id, startDate: daysAgo(180).toISOString().slice(0, 10), status: 'active', createdAt: now },
+  ]);
 
-  await prisma.notification.createMany({
-    data: [
-      { id: 'n-1', audience: 'all', title: 'Mid-sem timetable published', body: 'Check the Exams module for final dates and venues.', createdAt: daysFromNow(-1), readBy: [] },
-      { id: 'n-2', audience: 'students', title: 'Library renewal reminder', body: 'Renew borrowed books before Friday to avoid fine.', createdAt: daysFromNow(-2), readBy: [] },
-      { id: 'n-3', audience: 'all', title: 'Campus innovation fair', body: 'Project registrations close this weekend.', createdAt: daysFromNow(-4), readBy: [stu001.id] },
-    ],
-  });
+  // ──── GRIEVANCES ────
+  await db.collection('grievances').insertMany([
+    { userId: student1Id, category: 'Academic', subject: 'Late Assignment Submission', description: 'Need extension for DS assignment due to medical reasons.', status: 'open', priority: 'medium', responses: [], createdAt: now },
+    { userId: student2Id, category: 'Facility', subject: 'WiFi Not Working', description: 'WiFi in Block A has been down for 2 days.', status: 'in_progress', priority: 'high', responses: [{ text: 'IT team has been notified.', by: 'admin', date: now.toISOString() }], createdAt: now },
+  ]);
 
-  await prisma.reminder.createMany({
-    data: [
-      { id: 'r-1', type: 'attendance', priority: 0, title: 'Attendance risk in EC220', body: 'Attend the next 3 Digital Electronics classes to stay above 75%.' },
-      { id: 'r-2', type: 'assignment', priority: 1, title: 'DBMS lab due tomorrow', body: 'Submit the normalization worksheet before 8 PM.' },
-      { id: 'r-3', type: 'exam', priority: 2, title: 'AI quiz preparation', body: 'Revise supervised learning metrics for Thursday quiz.' },
-    ],
-  });
+  // ──── ANNOUNCEMENTS ────
+  await db.collection('announcements').insertMany([
+    { title: 'Mid-Term Exam Schedule', body: 'Mid-term exams will begin from March 15. Check your department notice board for detailed schedule.', audience: 'students', createdById: faculty1Id, createdAt: now },
+    { title: 'Annual Day Celebration', body: 'Annual day celebration on February 20. All students and faculty are invited.', audience: 'all', createdById: adminId, createdAt: now },
+  ]);
 
-  const as1 = await prisma.assignment.create({
-    data: { id: 'as-1', courseId: c102.id, title: 'Normalization Case Study', description: 'Design normalized tables for hostel allocation workflow.', dueDate: daysFromNow(1), maxMarks: 20 },
-  });
-  const as2 = await prisma.assignment.create({
-    data: { id: 'as-2', courseId: c101.id, title: 'AVL Tree Implementation', description: 'Implement insertion, deletion and traversal operations.', dueDate: daysFromNow(5), maxMarks: 30 },
-  });
-  await prisma.assignment.create({
-    data: { id: 'as-3', courseId: c103.id, title: 'Model Evaluation Report', description: 'Compare precision, recall, F1 and ROC-AUC on the provided dataset.', dueDate: daysFromNow(8), maxMarks: 25 },
-  });
-  await prisma.submission.create({
-    data: { id: 'sub-1', assignmentId: as2.id, studentId: stu001.id, content: 'Submitted through ERP portal', submittedAt: daysFromNow(-1), status: 'submitted' },
-  });
+  // ──── SUBSCRIPTION ────
+  await db.collection('subscriptions').insertMany([
+    { userId: adminId, plan: 'pro', status: 'active', startDate: daysAgo(30).toISOString().slice(0, 10), endDate: daysFromNow(335).toISOString().slice(0, 10), amount: 2999, createdAt: now },
+  ]);
 
-  await prisma.note.createMany({
-    data: [
-      { id: 'note-1', courseId: c102.id, subject: 'Database Systems', className: 'Year 3', title: 'SQL Joins and Indexes', type: 'pdf', url: 'https://example.com/sql.pdf', uploadedBy: 'Dr. Meera Iyer', createdAt: daysFromNow(-3), description: 'Faculty-approved revision notes covering joins, indexes, query plans, and common exam mistakes.', downloads: 128, helpfulCount: 42 },
-      { id: 'note-2', courseId: c101.id, subject: 'Data Structures', className: 'Year 3', title: 'Balanced Trees Quick Guide', type: 'slides', url: 'https://example.com/trees.pdf', uploadedBy: 'Isha Patel', createdAt: daysFromNow(-5), description: 'Peer summary for AVL trees, rotations, and insertion examples with diagrams.', downloads: 96, helpfulCount: 31 },
-    ],
-  });
+  // ──── QUESTION BANK ────
+  await db.collection('question_bank_items').insertMany([
+    { subject: 'Data Structures', topic: 'Binary Trees', question: 'What is the time complexity of searching in a balanced BST?', options: ['O(n)', 'O(log n)', 'O(1)', 'O(n log n)'], correctAnswer: 1, difficulty: 'easy', marks: 1, type: 'mcq', createdAt: now },
+    { subject: 'Data Structures', topic: 'Graphs', question: 'Implement Dijkstra\'s algorithm for shortest path.', options: [], correctAnswer: -1, difficulty: 'hard', marks: 10, type: 'coding', createdAt: now },
+    { subject: 'DBMS', topic: 'Normalization', question: 'Explain the difference between 2NF and 3NF with examples.', options: [], correctAnswer: -1, difficulty: 'medium', marks: 5, type: 'subjective', createdAt: now },
+  ]);
 
-  await prisma.event.createMany({
-    data: [
-      { id: 'ev-1', title: 'TechnoVishva Hackathon', date: daysFromNow(9), venue: 'Innovation Hub', description: '24-hour problem solving sprint for ERP, AI and sustainability ideas.' },
-      { id: 'ev-2', title: 'Alumni Leadership Talk', date: daysFromNow(15), venue: 'Auditorium', description: 'Product leaders discuss career paths and industry expectations.' },
-    ],
-  });
+  // ──── ATTENDANCE SESSIONS ────
+  const sessionsResult = await db.collection('attendance_sessions').insertMany([
+    { courseId: course1Id, facultyId: faculty1Id, date: daysAgo(2).toISOString().slice(0, 10), type: 'qr', qrCode: 'QR-DS-2026-001', startTime: '09:00', endTime: '10:30', isActive: false, location: { lat: 12.9716, lng: 77.5946 }, radius: 50, createdAt: now },
+    { courseId: course1Id, facultyId: faculty1Id, date: now.toISOString().slice(0, 10), type: 'qr', qrCode: 'QR-DS-2026-002', startTime: '09:00', endTime: '10:30', isActive: true, location: { lat: 12.9716, lng: 77.5946 }, radius: 50, createdAt: now },
+  ]);
 
-  const book1 = await prisma.book.create({ data: { id: 'book-1', title: 'Clean Architecture', author: 'Robert C. Martin', isbn: '9780134494166', category: 'Software Engineering', totalCopies: 7, shelfLocation: 'CS-A3' } });
-  const book2 = await prisma.book.create({ data: { id: 'book-2', title: 'Database System Concepts', author: 'Silberschatz, Korth, Sudarshan', isbn: '9780073523323', category: 'Database', totalCopies: 4, shelfLocation: 'CS-B1' } });
-  await prisma.book.create({ data: { id: 'book-3', title: 'Artificial Intelligence: A Modern Approach', author: 'Russell and Norvig', isbn: '9780134610993', category: 'AI', totalCopies: 2, shelfLocation: 'AI-C2' } });
+  // ──── AI SESSIONS ────
+  const aiSessionResult = await db.collection('ai_sessions').insertMany([
+    { userId: student1Id, type: 'doubt_solver', title: 'Binary Tree Doubt', createdAt: now },
+  ]);
+  const [aiSessionId] = Object.values(aiSessionResult.insertedIds);
 
-  await prisma.bookIssue.createMany({
-    data: [
-      { id: 'issue-1', bookId: book2.id, studentId: stu001.id, issuedAt: daysFromNow(-7), dueDate: daysFromNow(7), fine: 0 },
-      { id: 'issue-2', bookId: book1.id, studentId: stu001.id, issuedAt: daysFromNow(-22), dueDate: daysFromNow(-2), fine: 40 },
-    ],
-  });
+  await db.collection('ai_messages').insertMany([
+    { sessionId: aiSessionId, role: 'user', content: 'What is the difference between a binary tree and a BST?', createdAt: now },
+    { sessionId: aiSessionId, role: 'assistant', content: 'A binary tree is a tree data structure where each node has at most two children. A Binary Search Tree (BST) is a special type of binary tree where the left child contains only nodes with values less than the parent node, and the right child contains only nodes with values greater than the parent node.', createdAt: now },
+  ]);
 
-  const hostel1 = await prisma.hostel.create({ data: { id: 'hostel-1', name: 'Nalanda Block', type: 'Boys', totalRooms: 120, wardenName: 'Mr. Ramesh Nair', contact: '+91 98765 00010' } });
-  await prisma.hostel.create({ data: { id: 'hostel-2', name: 'Gargi Block', type: 'Girls', totalRooms: 110, wardenName: 'Ms. Kavita Menon', contact: '+91 98765 00011' } });
+  // ──── STUDY PLANS ────
+  await db.collection('study_plans').insertMany([
+    { userId: student1Id, title: 'DBMS Revision Plan', startDate: now.toISOString().slice(0, 10), endDate: daysFromNow(7).toISOString().slice(0, 10), tasks: [
+      { subject: 'DBMS', topic: 'ER Diagrams', date: now.toISOString().slice(0, 10), duration: 60, completed: true },
+      { subject: 'DBMS', topic: 'Normalization', date: daysFromNow(1).toISOString().slice(0, 10), duration: 90, completed: false },
+      { subject: 'DBMS', topic: 'SQL Joins', date: daysFromNow(2).toISOString().slice(0, 10), duration: 60, completed: false },
+      { subject: 'DBMS', topic: 'Transactions', date: daysFromNow(3).toISOString().slice(0, 10), duration: 90, completed: false },
+    ], createdAt: now },
+  ]);
 
-  await prisma.hostelAllocation.create({
-    data: { id: 'alloc-1', hostelId: hostel1.id, roomNumber: 'B-214', studentId: stu001.id, allocatedAt: daysFromNow(-120), active: true },
-  });
+  // ──── CHAT MESSAGES ────
+  await db.collection('chat_messages').insertMany([
+    { senderId: faculty1Id, receiverId: student1Id, content: 'Hello Aarav, please submit your assignment by Friday.', read: true, createdAt: daysAgo(1) },
+    { senderId: student1Id, receiverId: faculty1Id, content: 'Sure Dr. Meera, I will submit it by Thursday.', read: true, createdAt: daysAgo(1) },
+  ]);
 
-  const route1 = await prisma.transportRoute.create({
-    data: {
-      id: 'route-1', routeName: 'Green Line - Central City', vehicleNumber: 'VIT BUS 07',
-      driverName: 'Suresh Kumar', driverPhone: '+91 99880 00001', active: true,
-      stops: { create: [
-        { name: 'Central Metro', time: '07:35', order: 0 },
-        { name: 'River Road', time: '07:50', order: 1 },
-        { name: 'Campus Gate', time: '08:15', order: 2 },
-      ] },
-    },
-  });
-  await prisma.transportRoute.create({
-    data: {
-      id: 'route-2', routeName: 'Blue Line - North Campus', vehicleNumber: 'VIT BUS 12',
-      driverName: 'Imran Sheikh', driverPhone: '+91 99880 00002', active: true,
-      stops: { create: [
-        { name: 'Lake View', time: '07:20', order: 0 },
-        { name: 'IT Park', time: '07:45', order: 1 },
-        { name: 'Campus Gate', time: '08:10', order: 2 },
-      ] },
-    },
-  });
+  // ──── REMINDERS ────
+  await db.collection('reminders').insertMany([
+    { userId: student1Id, title: 'Assignment Due', body: 'Red-Black Tree assignment is due in 7 days.', date: daysFromNow(7).toISOString().slice(0, 10), createdAt: now },
+    { userId: student1Id, title: 'Fee Payment', body: 'Tuition fee of ₹45,000 due in 15 days.', date: daysFromNow(15).toISOString().slice(0, 10), createdAt: now },
+  ]);
 
-  await prisma.transportEnrollment.create({
-    data: { id: 'enroll-1', routeId: route1.id, studentId: stu001.id, active: true },
-  });
+  console.log('[Seed] Seeded successfully!');
+  console.log(`  Users: ${userResult.insertedCount}`);
+  console.log(`  Courses: ${coursesResult.insertedCount}`);
+  console.log(`  Attendance Records: ${attRecords.length}`);
+  console.log(`  Fees: ${feesResult.insertedCount}`);
+  console.log(`  Books: ${booksResult.insertedCount}`);
 
-  await prisma.grievance.createMany({
-    data: [
-      { id: 'gr-1', studentId: stu001.id, category: 'Facilities', subject: 'Wi-Fi coverage in Lab-3', description: 'Connectivity drops during database lab sessions.', isAnonymous: false, status: 'open', createdAt: daysFromNow(-2) },
-      { id: 'gr-2', studentId: stu002.id, category: 'Academics', subject: 'Need extra doubt class', description: 'Requesting a revision session before mid-sem exams.', isAnonymous: false, status: 'in_review', createdAt: daysFromNow(-6) },
-    ],
-  });
-
-  await prisma.exam.createMany({
-    data: [
-      { id: 'exam-1', courseId: c102.id, examType: 'Mid Semester', date: isoDate(daysFromNow(11)), startTime: '10:00', endTime: '12:00', venue: 'Hall A', maxMarks: 50 },
-      { id: 'exam-2', courseId: c103.id, examType: 'Quiz 2', date: isoDate(daysFromNow(4)), startTime: '14:00', endTime: '15:00', venue: 'AI Studio', maxMarks: 20 },
-    ],
-  });
-
-  await prisma.announcement.createMany({
-    data: [
-      { id: 'ann-1', title: 'ERP maintenance window', body: 'Attendance and payments will remain available while reports refresh overnight.', audience: 'all', createdById: adm001.id, createdAt: daysFromNow(-1) },
-      { id: 'ann-2', title: 'Faculty development program', body: 'AI-assisted assessment workshop is scheduled for Friday afternoon.', audience: 'faculty', createdById: adm001.id, createdAt: daysFromNow(-5) },
-    ],
-  });
-
-  await prisma.subscription.create({
-    data: { active: true, plan: 'pro', status: 'active', renewsAt: daysFromNow(48), expiresAt: daysFromNow(48), seatsUsed: 2321, seatsLimit: 5000 },
-  });
-
-  await prisma.questionBankItem.createMany({
-    data: [
-      { id: 'qb-1', subject: 'Database Systems', unit: 'Unit 1', chapter: 'Normalization', questionText: 'Explain 3NF with an example.', questionType: 'subjective', options: [], correctAnswer: 'A relation is in 3NF when it is in 2NF and has no transitive dependency.', difficulty: 'medium', marks: 5 },
-      { id: 'qb-2', subject: 'Database Systems', unit: 'Unit 2', chapter: 'SQL', questionText: 'Which clause filters grouped rows?', questionType: 'mcq', options: ['ORDER BY', 'GROUP BY', 'HAVING', 'WHERE'], correctAnswer: 'HAVING', difficulty: 'easy', marks: 1 },
-      { id: 'qb-3', subject: 'Data Structures', unit: 'Unit 3', chapter: 'Trees', questionText: 'What is the balance factor of a node?', questionType: 'subjective', options: [], correctAnswer: 'The height difference between left and right subtree.', difficulty: 'medium', marks: 3 },
-    ],
-  });
-
-  await prisma.generatedExam.create({
-    data: { id: 'gen-1', title: 'DBMS Mid-Sem Practice Paper', subject: 'Database Systems', totalQuestions: 20, totalMarks: 50, difficulty: 'medium', createdById: fac001.id, createdAt: daysFromNow(-2), instructions: 'Answer all questions.' },
-  });
-
-  await prisma.studyPlan.create({
-    data: {
-      id: 'plan-1', userId: stu001.id, planType: 'study', goal: 'Raise attendance and prepare for DBMS mid-sem', createdAt: daysFromNow(-1),
-      plan: {
-        title: 'Balanced 7-Day Study Plan',
-        tips: ['Study in 45-minute focus blocks', 'Revise weak course before sleep'],
-        days: [
-          {
-            day: 'Mon',
-            date: isoDate(new Date()).toISOString().slice(0, 10),
-            focus: 'DBMS joins and indexing',
-            tasks: [
-              { time: '18:00', task: 'Solve 20 SQL join questions', course: 'CS305', done: false },
-              { time: '20:00', task: 'Review indexing notes', course: 'CS305', done: true },
-            ],
-          },
-        ],
-      },
-    },
-  });
-
-  const aiSession = await prisma.aiSession.create({
-    data: { id: 'ai-chat-1', userId: stu001.id, title: 'DBMS revision', createdAt: daysFromNow(-1), updatedAt: daysFromNow(-1) },
-  });
-  await prisma.aiMessage.createMany({
-    data: [
-      { sessionId: aiSession.id, userMsg: 'Explain normalization in simple words.', aiMsg: 'Normalization is a way to organize data so that it avoids duplication and stays consistent.', createdAt: daysFromNow(-1) },
-      { sessionId: aiSession.id, userMsg: 'What should I revise next?', aiMsg: 'Focus on joins, keys, and indexing because they usually connect theory and SQL practice.', createdAt: daysFromNow(-1) },
-    ],
-  });
-
-  await prisma.faceProfile.create({ data: { userId: stu001.id } });
-
-  const session1 = await prisma.attendanceSession.create({
-    data: {
-      id: 'sess-1', scheduleId: sch1.id, courseId: c101.id, facultyId: fac001.id, classroomName: 'A-204',
-      method: 'qr', code: '482913', startedAt: new Date(), expiresAt: new Date(Date.now() + 35 * 60000),
-      active: true, locationLat: room1.lat, locationLng: room1.lng, locationRadiusM: room1.radiusM,
-    },
-  });
-  await prisma.attendanceRollEntry.createMany({
-    data: [
-      { sessionId: session1.id, studentId: stu001.id, checkIn: new Date(Date.now() - 14 * 60000), method: 'qr', status: 'present' },
-      { sessionId: session1.id, studentId: stu002.id, checkIn: new Date(Date.now() - 11 * 60000), method: 'qr', status: 'late' },
-    ],
-  });
-
-  const session2 = await prisma.attendanceSession.create({
-    data: {
-      id: 'sess-2', scheduleId: sch2.id, courseId: c102.id, facultyId: fac001.id, classroomName: 'Lab-3',
-      method: 'face', code: '719204', startedAt: new Date(), expiresAt: new Date(Date.now() + 45 * 60000),
-      active: true, locationLat: room2.lat, locationLng: room2.lng, locationRadiusM: room2.radiusM,
-    },
-  });
-  await prisma.attendanceRollEntry.create({
-    data: { sessionId: session2.id, studentId: stu001.id, checkIn: new Date(Date.now() - 8 * 60000), method: 'face', status: 'present' },
-  });
-
-  const chat1 = await prisma.chatMessage.create({
-    data: { fromId: fac001.id, toId: stu001.id, message: 'Please review the DBMS lab feedback before class.', createdAt: daysFromNow(-1) },
-  });
-  await prisma.chatMessage.create({
-    data: { fromId: stu001.id, toId: fac001.id, message: 'Sure maam, I will update the ER diagram tonight.', createdAt: daysFromNow(-1) },
-  });
-  void chat1;
-  void par001;
-
-  console.log('Seed complete.');
+  await client.close();
+  process.exit(0);
 }
 
-main()
-  .catch(error => {
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+seed().catch(err => {
+  console.error('[Seed] Failed:', err);
+  process.exit(1);
+});

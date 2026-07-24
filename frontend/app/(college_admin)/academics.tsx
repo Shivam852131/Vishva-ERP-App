@@ -6,7 +6,7 @@ import type { Course, TimetableSlot } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
-import { ChipBtn, EmptyState } from '@/src/ui';
+import { ChipBtn, EmptyState, AsyncView } from '@/src/ui';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -16,8 +16,8 @@ export default function Academics() {
   const [day, setDay] = useState('Mon');
   const [confirmSlot, setConfirmSlot] = useState('');
 
-  const { data: courses = [], loading: coursesLoading, refresh: refreshCourses } = useFetch<Course[]>('/courses');
-  const { data: slots = [], loading: slotsLoading, refresh: refreshSlots } = useFetch<TimetableSlot[]>('/timetable');
+  const { data: courses = [], loading: coursesLoading, error: coursesError, refresh: refreshCourses } = useFetch<Course[]>('/courses');
+  const { data: slots = [], loading: slotsLoading, error: slotsError, refresh: refreshSlots } = useFetch<TimetableSlot[]>('/timetable');
   const { data: faculty = [], loading: facultyLoading, refresh: refreshFaculty } = useFetch<any[]>('/admin/users?role=faculty');
   const { mutate: saveCourseApi, loading: cBusy } = useMutate();
   const { mutate: deleteCourseApi } = useMutate();

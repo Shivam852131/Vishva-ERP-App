@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { api, getToken, setAuth as storeAuth, getUser, clearAuth as clearStoredAuth } from '../api';
+import { api, getToken, setAuth as storeAuth, getUser, clearAuth as clearStoredAuth, setUnauthorizedHandler } from '../api';
 import type { AuthUser, AuthResp, LoginReq, UserRole } from '../types';
 import { disconnectRealtime, reconnectRealtime } from '@/src/realtime/socket';
 
@@ -21,21 +21,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const t = await getToken();
-    if (t) {
-      setToken(t);
-      try {
-        const u = await api<AuthUser>('/auth/me');
-        setUser(u);
-        await reconnectRealtime();
-      } catch {
-        await clearStoredAuth();
-        disconnectRealtime();
-        setToken(null);
-        setUser(null);
+    try {
+      const t = await getToken();
+      if (t) {
+        setToken(t);
+        try {
+          const u = await api<AuthUser>('/auth/me');
+          setUser(u);
+          await reconnectRealtime().catch(() => {});
+        } catch {
+          await clearStoredAuth();
+          disconnectRealtime();
+          setToken(null);
+          setUser(null);
+        }
       }
+    } catch {
+      // Ensure loading is always set to false even if getToken throws
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -66,6 +71,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
   }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => { logout(); });
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
 
   return (
     <AuthContext.Provider value={{ user, token, loading, login, register, logout, refresh }}>

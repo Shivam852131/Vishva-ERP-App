@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppImage as Image } from '@/src/components/AppImage';
 import { LinearGradient } from '@/src/components/LinearGradient';
@@ -37,7 +37,9 @@ export default function LiveSession() {
     try {
       await closeSessionApi(`/attendance/sessions/${id}/close`, { method: 'POST' });
       await refresh();
-    } catch {}
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not close session');
+    }
   };
 
   const s = data?.session;

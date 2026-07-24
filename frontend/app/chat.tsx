@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { router } from '@/src/navigation/router';
@@ -9,13 +9,13 @@ import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import type { ChatUser, ChatMessage } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
-import { Card, EmptyState } from '@/src/ui';
+import { Card, EmptyState, AsyncView } from '@/src/ui';
 import { api } from '@/src/api';
 import { subscribeRealtime } from '@/src/realtime/socket';
 
 export default function Chat() {
   const { user: me } = useAuth();
-  const { data: users, loading: usersLoading } = useFetch<ChatUser[]>('/chat/users');
+  const { data: users, loading: usersLoading, error: usersError, refresh: refreshUsers } = useFetch<ChatUser[]>('/chat/users');
   const [sel, setSel] = useState<ChatUser | null>(null);
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [msgsLoading, setMsgsLoading] = useState(false);
@@ -60,7 +60,10 @@ export default function Chat() {
       const doc = await sendMsg('/chat/send', { method: 'POST', body: JSON.stringify({ to_user_id: sel.id, message: t }) });
       if (doc) setMsgs(m => [...m, doc]);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch {}
+    } catch (e: any) {
+      setInput(t);
+      Alert.alert('Error', e?.message || 'Message could not be sent');
+    }
   };
 
   const usersSafe = users || [];
@@ -71,7 +74,7 @@ export default function Chat() {
         <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
           <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.headerGrad}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Pressable onPress={() => router.back()} accessibilityLabel="Go back">
+              <Pressable onPress={() => router.back()} accessibilityLabel="Go back" accessibilityRole="button">
                 <ArrowLeft color="#fff" size={22} />
               </Pressable>
               <Text style={styles.headerTitle}>Messages</Text>
@@ -79,12 +82,17 @@ export default function Chat() {
             </View>
             <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 4 }}>{usersSafe.length} contacts</Text>
           </LinearGradient>
-          {usersLoading ? (
-            <ActivityIndicator color={theme.colors.brandPrimary} style={{ marginTop: 40 }} />
-          ) : (
-            <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: 10 }}>
+          <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: 10 }}>
+            <AsyncView
+              loading={usersLoading && !users}
+              error={usersError}
+              onRetry={refreshUsers}
+              empty={!usersLoading && usersSafe.length === 0}
+              emptyTitle="No contacts"
+              emptySub="Other users will appear here"
+            >
               {usersSafe.map(u => (
-                <Pressable key={u.id} onPress={() => setSel(u)} style={styles.userRow} testID={`chat-user-${u.id}`} accessibilityLabel={`Chat with ${u.name}`}>
+                <Pressable key={u.id} onPress={() => setSel(u)} style={styles.userRow} testID={`chat-user-${u.id}`} accessibilityLabel={`Chat with ${u.name}`} accessibilityRole="button">
                   <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.avatar}>
                     <Text style={styles.avatarTxt}>{u.name?.[0]}</Text>
                   </LinearGradient>
@@ -95,9 +103,8 @@ export default function Chat() {
                   <ChevronRight color={theme.colors.muted} size={18} />
                 </Pressable>
               ))}
-              {usersSafe.length === 0 && <EmptyState title="No contacts" sub="Other users will appear here" />}
-            </ScrollView>
-          )}
+            </AsyncView>
+          </ScrollView>
         </SafeAreaView>
       </ErrorBoundary>
     );
@@ -109,7 +116,7 @@ export default function Chat() {
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.chatHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Pressable onPress={() => setSel(null)} accessibilityLabel="Back to contacts">
+              <Pressable onPress={() => setSel(null)} accessibilityLabel="Back to contacts" accessibilityRole="button">
                 <ArrowLeft color="#fff" size={22} />
               </Pressable>
               <View style={styles.chatAvatar}>
@@ -153,6 +160,7 @@ export default function Chat() {
               style={[styles.sendBtn, { opacity: sending || !input.trim() ? 0.5 : 1 }]}
               testID="chat-send"
               accessibilityLabel="Send message"
+              accessibilityRole="button"
             >
               {sending ? <ActivityIndicator color="#fff" size="small" /> : <Send color="#fff" size={18} />}
             </Pressable>

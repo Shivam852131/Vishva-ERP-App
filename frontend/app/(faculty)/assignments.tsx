@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Modal,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, X, Calendar, FileText, Award } from 'lucide-react-native';
@@ -21,11 +22,12 @@ import {
   EmptyState,
   ChipBtn,
   GradientButton,
+  AsyncView,
 } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 
 export default function FacultyAssignments() {
-  const { data: items, loading, refresh } = useFetch<Assignment[]>('/assignments');
+  const { data: items, loading, error, refresh } = useFetch<Assignment[]>('/assignments');
   const { data: courses } = useFetch<Course[]>('/courses');
   const { mutate: createAssign, loading: creating } = useMutate();
   const [open, setOpen] = useState(false);
@@ -70,7 +72,9 @@ export default function FacultyAssignments() {
         max_marks: '100',
       });
       refresh();
-    } catch {}
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not create assignment');
+    }
   };
 
   const isFormValid = form.course_id && form.title.trim().length > 0;
@@ -89,6 +93,7 @@ export default function FacultyAssignments() {
           <Pressable
             testID="add-asg"
             accessibilityLabel="Add assignment"
+            accessibilityRole="button"
             onPress={() => setOpen(true)}
             style={styles.addBtn}
           >
@@ -96,29 +101,25 @@ export default function FacultyAssignments() {
           </Pressable>
         </View>
 
-        {loading && !items ? (
-          <ActivityIndicator
-            style={{ marginTop: 40 }}
-            color={theme.colors.brandPrimary}
-          />
-        ) : (
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={theme.colors.brandPrimary}
-              />
-            }
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.colors.brandPrimary}
+            />
+          }
+        >
+          <AsyncView
+            loading={loading && !items}
+            error={error}
+            onRetry={refresh}
+            empty={!loading && (items || []).length === 0}
+            emptyTitle="No assignments yet"
+            emptySub="Tap + to create your first assignment."
+            emptyIcon="📝"
           >
-            {(!items || items.length === 0) && (
-              <EmptyState
-                title="No assignments yet"
-                sub="Tap + to create your first assignment."
-                icon="📝"
-              />
-            )}
             {(items || []).map((a) => (
               <Card key={a.id} style={styles.card}>
                 <View style={styles.cardHeader}>
@@ -171,8 +172,8 @@ export default function FacultyAssignments() {
                 </View>
               </Card>
             ))}
-          </ScrollView>
-        )}
+          </AsyncView>
+        </ScrollView>
 
         <Modal
           visible={open}

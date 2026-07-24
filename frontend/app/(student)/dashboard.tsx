@@ -13,7 +13,7 @@ import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch } from '@/src/hooks/useFetch';
 import type { StudentDashboardData, Notification, AiReminder, TimetableSlot } from '@/src/types';
 import { theme } from '@/src/theme';
-import { GlassCard, StatCard, ProgressBar, ProgressRing, DashboardSkeleton, SectionTitle, MetricRow } from '@/src/ui';
+import { GlassCard, StatCard, ProgressBar, ProgressRing, DashboardSkeleton, SectionTitle, MetricRow, AsyncView, Card } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { subscribeRealtime } from '@/src/realtime/socket';
 
@@ -21,7 +21,7 @@ const { width } = Dimensions.get('window');
 
 export default function StudentDashboard() {
   const { user } = useAuth();
-  const { data: d, loading: dLoading, refresh: dRefresh } = useFetch<StudentDashboardData>('/dashboard/student');
+  const { data: d, loading: dLoading, error: dError, refresh: dRefresh } = useFetch<StudentDashboardData>('/dashboard/student');
   const { data: notifs, refresh: refreshNotifs } = useFetch<Notification[]>('/notifications');
   const { data: rems, refresh: refreshRems } = useFetch<AiReminder[]>('/reminders');
   const { data: analytics, refresh: refreshAnalytics } = useFetch<any>('/analytics/dashboard/student');
@@ -63,6 +63,14 @@ export default function StudentDashboard() {
     );
   }
 
+  if (dError && !d) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
+        <AsyncView loading={false} error={dError} onRetry={dRefresh} empty={false} />
+      </View>
+    );
+  }
+
   const data = d || { attendance: 0, cgpa: 0, pending_assignments: 0, pending_fees: 0, upcoming_classes: [] };
   const notif = (notifs || []).slice(0, 3);
   const reminders = (rems || []).slice(0, 4);
@@ -72,13 +80,13 @@ export default function StudentDashboard() {
 
   const quickActions = [
     { icon: <QrCode size={20} color="#fff" />, label: 'Attendance', to: '/attendance', color: theme.colors.brandPrimary },
-    { icon: <BookOpen size={20} color="#fff" />, label: 'Notes', to: '/notes', color: '#059669' },
+    { icon: <BookOpen size={20} color="#fff" />, label: 'Notes', to: '/notes', color: theme.colors.brandPrimary },
     { icon: <Award size={20} color="#fff" />, label: 'Results', to: '/results', color: '#10B981' },
-    { icon: <Wallet size={20} color="#fff" />, label: 'Fees', to: '/fees', color: '#047857' },
+    { icon: <Wallet size={20} color="#fff" />, label: 'Fees', to: '/fees', color: theme.colors.brand },
     { icon: <Library size={20} color="#fff" />, label: 'Library', to: '/library', color: '#065F46' },
-    { icon: <Building size={20} color="#fff" />, label: 'Hostel', to: '/hostel', color: '#059669' },
+    { icon: <Building size={20} color="#fff" />, label: 'Hostel', to: '/hostel', color: theme.colors.brandPrimary },
     { icon: <Bus size={20} color="#fff" />, label: 'Transport', to: '/transport', color: '#10B981' },
-    { icon: <FileText size={20} color="#fff" />, label: 'Exams', to: '/exams', color: '#047857' },
+    { icon: <FileText size={20} color="#fff" />, label: 'Exams', to: '/exams', color: theme.colors.brand },
   ];
 
   return (
@@ -98,7 +106,7 @@ export default function StudentDashboard() {
               style={StyleSheet.absoluteFill}
               contentFit="cover"
             />
-            <LinearGradient colors={['rgba(6,95,70,0.3)', 'rgba(10,15,13,0.95)']} style={StyleSheet.absoluteFill} />
+            <LinearGradient colors={['rgba(79,70,229,0.3)', 'rgba(2,6,23,0.95)']} style={StyleSheet.absoluteFill} />
             <SafeAreaView edges={['top']} style={{ flex: 1 }}>
               <View style={styles.heroTop}>
                 <View style={{ flex: 1 }}>
@@ -111,6 +119,7 @@ export default function StudentDashboard() {
                 <Pressable
                   testID="notif-btn"
                   accessibilityLabel="Notifications"
+                  accessibilityRole="button"
                   onPress={() => router.push('/notifications' as any)}
                   style={styles.iconBtn}
                 >
@@ -146,6 +155,7 @@ export default function StudentDashboard() {
                   <Pressable
                     testID="qr-btn"
                     accessibilityLabel="Attendance QR"
+                    accessibilityRole="button"
                     onPress={() => router.push('/attendance' as any)}
                     style={styles.qrBtn}
                   >
@@ -169,6 +179,7 @@ export default function StudentDashboard() {
                     key={r.id || i}
                     testID={`reminder-${i}`}
                     accessibilityLabel={r.title}
+                    accessibilityRole="button"
                     onPress={() => router.push('/(student)/ai' as any)}
                     style={styles.remCard}
                   >
@@ -242,7 +253,7 @@ export default function StudentDashboard() {
                 <SectionTitle title="Attendance by Course" />
                 <View style={{ paddingHorizontal: theme.spacing.lg, gap: 12 }}>
                   {(analytics as any).attendance_by_course.slice(0, 4).map((c: any, i: number) => (
-                    <View key={i} style={styles.attRow}>
+                    <Card key={i} style={styles.attRow}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.attCourse}>{c.code}</Text>
                         <Text style={styles.attCourseName}>{c.course}</Text>
@@ -256,7 +267,7 @@ export default function StudentDashboard() {
                       >
                         {c.percentage}%
                       </Text>
-                    </View>
+                    </Card>
                   ))}
                 </View>
               </View>
@@ -269,6 +280,7 @@ export default function StudentDashboard() {
                 <Pressable
                   testID={`qa-${a.label.toLowerCase()}`}
                   accessibilityLabel={a.label}
+                  accessibilityRole="button"
                   key={a.label}
                   style={styles.qaCard}
                   onPress={() => router.push(a.to as any)}
@@ -291,13 +303,7 @@ export default function StudentDashboard() {
             />
             <View style={{ paddingHorizontal: theme.spacing.lg, gap: 8 }}>
               {(data?.upcoming_classes || []).slice(0, 4).map((c: TimetableSlot, i: number) => (
-                <Pressable
-                  key={i}
-                  testID={`class-${i}`}
-                  accessibilityLabel={`${c.course_name} at ${c.start}`}
-                  onPress={() => router.push('/(student)/timetable' as any)}
-                  style={styles.classRow}
-                >
+                <Card key={i} style={styles.classRow} onPress={() => router.push('/(student)/timetable' as any)}>
                   <View style={styles.classTime}>
                     <Text style={styles.classTimeStart}>{c.start}</Text>
                     <Text style={styles.classTimeEnd}>{c.end}</Text>
@@ -310,12 +316,12 @@ export default function StudentDashboard() {
                     </Text>
                   </View>
                   <ChevronRight color={theme.colors.muted} size={18} />
-                </Pressable>
+                </Card>
               ))}
               {(data?.upcoming_classes || []).length === 0 && (
-                <View style={styles.noClass}>
+                <Card style={styles.noClass}>
                   <Text style={styles.noClassTxt}>No classes scheduled for today</Text>
-                </View>
+                </Card>
               )}
             </View>
           </View>
@@ -329,7 +335,7 @@ export default function StudentDashboard() {
             />
             <View style={{ paddingHorizontal: theme.spacing.lg, gap: 8 }}>
               {notif.map(n => (
-                <View key={n.id} testID={`notif-${n.id}`} style={styles.notifRow}>
+                <Card key={n.id} testID={`notif-${n.id}`} style={styles.notifRow}>
                   <View
                     style={[
                       styles.notifDot,
@@ -340,19 +346,19 @@ export default function StudentDashboard() {
                     <Text style={styles.notifTitle}>{n.title}</Text>
                     <Text style={styles.notifBody}>{n.body}</Text>
                   </View>
-                </View>
+                </Card>
               ))}
               {notif.length === 0 && (
-                <View style={styles.noClass}>
+                <Card style={styles.noClass}>
                   <Text style={styles.noClassTxt}>No notifications</Text>
-                </View>
+                </Card>
               )}
             </View>
           </View>
 
           <View style={{ marginTop: theme.spacing.xl, marginHorizontal: theme.spacing.lg }}>
             <LinearGradient
-              colors={['#047857', '#10B981']}
+              colors={[theme.colors.brand, '#10B981']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.exploreBanner}
@@ -365,6 +371,7 @@ export default function StudentDashboard() {
                 <Pressable
                   testID="try-ai"
                   accessibilityLabel="Try CampusAI"
+                  accessibilityRole="button"
                   onPress={() => router.push('/(student)/ai' as any)}
                   style={styles.exploreBtn}
                 >
@@ -378,6 +385,26 @@ export default function StudentDashboard() {
                 style={{ position: 'absolute', right: -10, bottom: -10 }}
               />
             </LinearGradient>
+          </View>
+
+          <View style={{ marginTop: theme.spacing.lg, marginHorizontal: theme.spacing.lg }}>
+            <SectionTitle title="Campus Services" />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {[
+                { icon: '🚌', label: 'Bus Tracking', route: '/bus-tracking' },
+                { icon: '🏠', label: 'Hostel', route: '/hostel' },
+                { icon: '📚', label: 'Library', route: '/library' },
+                { icon: '👤', label: 'Visitors', route: '/visitor' },
+                { icon: '🔧', label: 'Complaints', route: '/complaints' },
+                { icon: '📦', label: 'Assets', route: '/assets' },
+              ].map((item, i) => (
+                <Pressable key={i} onPress={() => router.push(item.route as any)}
+                  style={{ width: '30%', alignItems: 'center', gap: 4, padding: 12, borderRadius: 12, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border }}>
+                  <Text style={{ fontSize: 24 }}>{item.icon}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.text }}>{item.label}</Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
         </Animated.ScrollView>
       </View>
@@ -400,7 +427,7 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: theme.radius.lg,
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -409,13 +436,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -2,
     right: -2,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    minWidth: 20,
+    height: 20,
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.warning,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 3,
+    paddingHorizontal: 6,
+    ...theme.shadow.sm,
   },
   badgeTxt: { color: '#fff', fontSize: 10, fontWeight: '800' },
   glassHero: { marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.md },
@@ -432,7 +460,7 @@ const styles = StyleSheet.create({
   qrBtn: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: theme.radius.xl,
     backgroundColor: theme.colors.brandPrimary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -449,9 +477,9 @@ const styles = StyleSheet.create({
     ...theme.shadow.sm,
   },
   remIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 30,
+    height: 30,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.brandTertiary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -460,12 +488,10 @@ const styles = StyleSheet.create({
   remTitle: { fontSize: 12, fontWeight: '800', color: theme.colors.onSurface },
   remBody: { fontSize: 11, color: theme.colors.muted, lineHeight: 15 },
   attRow: {
-    backgroundColor: theme.colors.surfaceSecondary,
-    padding: theme.spacing.md,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    gap: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
   attCourse: { fontSize: 11, fontWeight: '700', color: theme.colors.brand },
   attCourseName: { fontSize: 13, fontWeight: '600', color: theme.colors.onSurface },
@@ -480,7 +506,7 @@ const styles = StyleSheet.create({
   qaIconWrap: {
     width: 48,
     height: 48,
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
     ...theme.shadow.md,
@@ -489,12 +515,6 @@ const styles = StyleSheet.create({
   classRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surfaceSecondary,
-    padding: theme.spacing.md,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    ...theme.shadow.sm,
   },
   classTime: { width: 48, alignItems: 'center' },
   classTimeStart: { fontWeight: '800', color: theme.colors.brand, fontSize: 14 },
@@ -503,30 +523,19 @@ const styles = StyleSheet.create({
   className: { fontWeight: '700', color: theme.colors.onSurface, fontSize: 14 },
   classMeta: { fontSize: 11, color: theme.colors.muted, marginTop: 2 },
   noClass: {
-    backgroundColor: theme.colors.surfaceSecondary,
-    padding: theme.spacing.lg,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     alignItems: 'center',
   },
   noClassTxt: { color: theme.colors.muted, fontSize: 13 },
   notifRow: {
     flexDirection: 'row',
-    paddingVertical: 10,
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: theme.colors.surfaceSecondary,
-    padding: theme.spacing.md,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   notifDot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
   notifTitle: { fontWeight: '700', fontSize: 13, color: theme.colors.onSurface },
   notifBody: { fontSize: 12, color: theme.colors.muted, marginTop: 2 },
   exploreBanner: {
-    borderRadius: theme.radius.lg,
+    borderRadius: theme.radius.xl,
     padding: theme.spacing.xl,
     overflow: 'hidden',
     ...theme.shadow.lg,

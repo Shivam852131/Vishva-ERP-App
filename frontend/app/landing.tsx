@@ -12,6 +12,7 @@ import {
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ViLogo } from '@/src/components/ViLogo';
+import { theme } from '@/src/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ONBOARDING_KEY = 'vishva_onboarding_done';
@@ -174,14 +175,18 @@ export default function LandingScreen() {
   const handleGetStarted = async () => {
     try {
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-    } catch {}
+    } catch {
+      // Best-effort: worst case the onboarding screen just shows again next launch.
+    }
     router.replace('/login');
   };
 
   const handleSkip = async () => {
     try {
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-    } catch {}
+    } catch {
+      // Best-effort: worst case the onboarding screen just shows again next launch.
+    }
     router.replace('/login');
   };
 
@@ -189,9 +194,9 @@ export default function LandingScreen() {
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" />
       <LinearGradient
-        colors={['#020617', '#0A0F1E', '#0F172A', '#0A0F1E']}
-        style={StyleSheet.absoluteFill}
-      />
+                colors={['#020617', '#0F172A', '#1E293B', '#0F172A']}
+                style={StyleSheet.absoluteFill}
+              />
 
       {/* Background particles */}
       {particles.map((p) => (

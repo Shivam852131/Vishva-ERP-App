@@ -1,493 +1,582 @@
 const express = require('express');
-const { prisma } = require('../db');
+const { getDB, oid } = require('../db');
 const { authUser, requireRole } = require('../auth');
-const { sendError, makeCode, isoDate } = require('../utils');
+const { serializeUser, sendError, makeCode, nowIso, isoDate } = require('../utils');
 
 function createAttendanceRouter(io) {
   const router = express.Router();
 
   function emitAttendance(session) {
-    io.emit('attendance:session:update', { sessionId: session.id, scheduleId: session.scheduleId });
-    io.emit('attendance:active-sessions:update', { sessionId: session.id, scheduleId: session.scheduleId, courseId: session.courseId });
-    io.emit('attendance:live:update', { sessionId: session.id, scheduleId: session.scheduleId, courseId: session.courseId });
+    const sid = String(session._id);
+    io.emit('attendance:session:update', { sessionId: sid });
+    io.emit('attendance:active-sessions:update', { sessionId: sid, courseId: String(session.courseId) });
+    io.emit('attendance:live:update', { sessionId: sid, courseId: String(session.courseId) });
   }
 
   async function pushNotification({ audience = 'all', title, body, recipientIds = [] }) {
-    const notification = await prisma.notification.create({
-      data: { audience, title, body, recipientIds, readBy: [] },
-    });
+    const db = getDB();
+    const doc = { audience, title, body, recipientIds: recipientIds.map(String), readBy: [], createdAt: new Date() };
+    const { insertedId } = await db.collection('notifications').insertOne(doc);
     io.emit('notifications:update', { audience, recipientIds });
-    return notification;
+    return { _id: insertedId, ...doc };
   }
 
-  async function getSessionBySid(sid) {
-    return prisma.attendanceSession.findFirst({
-      where: { OR: [{ id: sid }, { scheduleId: sid }] },
-      include: { rollEntries: { include: { student: true } }, course: true, schedule: { include: { classroom: true } } },
-    });
+  async function getSessionById(sid) {
+    const db = getDB();
+    const id = oid(sid);
+    if (!id) return null;
+    return db.collection('attendance_sessions').findOne({ _id: id });
+  }
+
+  async function getSessionWithDetails(sid) {
+    const db = getDB();
+    const id = oid(sid);
+    if (!id) return null;
+    const session = await db.collection('attendance_sessions').findOne({ _id: id });
+    if (!session) return null;
+    const [entries, course] = await Promise.all([
+      db.collection('attendance_roll_entries').find({ sessionId: id }).toArray(),
+      db.collection('courses').findOne({ _id: oid(session.courseId) }),
+    ]);
+    const students = await Promise.all(
+      entries.map(async (entry) => {
+        const student = await db.collection('users').findOne({ _id: oid(entry.studentId) });
+        return { ...entry, student };
+      })
+    );
+    return { ...session, rollEntries: students, course };
   }
 
   async function studentsForCourse(courseId) {
-    const enrollments = await prisma.courseEnrollment.findMany({ where: { courseId }, include: { student: true } });
-    return enrollments.map(enrollment => enrollment.student);
+    const db = getDB();
+    const cid = oid(courseId);
+    if (!cid) return [];
+    const enrollments = await db.collection('course_enrollments').find({ courseId: cid }).toArray();
+    const studentIds = enrollments.map((e) => oid(e.studentId)).filter(Boolean);
+    if (!studentIds.length) return [];
+    return db.collection('users').find({ _id: { $in: studentIds } }).toArray();
   }
+
+  async function getEnrolledCourseIds(studentId) {
+    const db = getDB();
+    const sid = oid(studentId);
+    if (!sid) return [];
+    const enrollments = await db.collection('course_enrollments').find({ studentId: sid }).toArray();
+    return enrollments.map((e) => oid(e.courseId)).filter(Boolean);
+  }
+
+  async function getTaughtCourseIds(facultyId) {
+    const db = getDB();
+    const fid = oid(facultyId);
+    if (!fid) return [];
+    const courses = await db.collection('courses').find({ facultyId: fid }).toArray();
+    return courses.map((c) => c._id);
+  }
+
+  // ── Student routes ──
 
   router.get('/attendance/me', async (req, res) => {
     const user = await authUser(req);
-    const { buildStudentAttendance } = require('./dashboard');
-    res.json(await buildStudentAttendance(user.id));
+    if (!user) return sendError(res, 'Unauthorized.', 401);
+    const db = getDB();
+    const uid = oid(user._id);
+    const userId = String(user._id);
+    const filter = { $or: [{ studentId: uid }, { studentId: userId }] };
+    if (req.query.courseId) filter.courseId = oid(req.query.courseId);
+    const records = await db.collection('attendance_records').find(filter).sort({ date: -1 }).toArray();
+    const courseIdsRaw = [...new Set(records.map((r) => String(r.courseId)))];
+    const courseOids = courseIdsRaw.map(oid).filter(Boolean);
+    const courses = courseOids.length || courseIdsRaw.length
+      ? await db.collection('courses').find({ $or: [{ _id: { $in: courseOids } }, { _id: { $in: courseIdsRaw } }] }).toArray()
+      : [];
+    const courseMap = Object.fromEntries(courses.map((c) => [String(c._id), c]));
+    res.json(
+      records.map((r) => ({
+        id: String(r._id),
+        courseId: String(r.courseId),
+        date: r.date,
+        status: r.status,
+        courseName: courseMap[String(r.courseId)]?.name || '',
+      }))
+    );
   });
 
   router.get('/attendance/sessions/active', async (req, res) => {
     const user = await authUser(req);
-    const sessions = await prisma.attendanceSession.findMany({
-      where: { active: true },
-      include: { rollEntries: true, course: { include: { enrollments: true } } },
-    });
-    const enrolledSessions = sessions.filter(session => session.course.enrollments.some(enrollment => enrollment.studentId === user.id));
-    const faceProfile = await prisma.faceProfile.findUnique({ where: { userId: user.id } });
-    res.json({
-      sessions: enrolledSessions.map(session => ({
-        id: session.id,
-        course_name: session.course.name,
-        faculty_name: null,
-        expires_at: session.expiresAt.toISOString(),
-        method: session.method,
-        checked_in: session.rollEntries.some(entry => entry.studentId === user.id),
-        code: session.code,
-      })),
-      face_enrolled: !!faceProfile,
-    });
+    if (!user) return sendError(res, 'Unauthorized.', 401);
+    const db = getDB();
+    const courseIds = await getEnrolledCourseIds(user._id);
+    if (!courseIds.length) return res.json({ sessions: [], face_enrolled: false });
+    const sessions = await db
+      .collection('attendance_sessions')
+      .find({ courseId: { $in: courseIds }, isActive: true })
+      .toArray();
+    const enriched = await Promise.all(
+      sessions.map(async (session) => {
+        const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
+        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+        const checkedIn = entries.some((e) => String(e.studentId) === String(user._id));
+        return {
+          id: String(session._id),
+          course_name: course?.name || '',
+          expires_at: session.endTime instanceof Date ? session.endTime.toISOString() : session.endTime,
+          method: session.type,
+          checked_in: checkedIn,
+          code: session.qrCode,
+        };
+      })
+    );
+    const faceProfile = await db.collection('face_profiles').findOne({ userId: uid });
+    res.json({ sessions: enriched, face_enrolled: !!faceProfile });
   });
 
   router.get('/attendance/sessions/mine', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const user = await authUser(req);
-    const sessions = await prisma.attendanceSession.findMany({
-      where: { facultyId: user.id },
-      orderBy: { startedAt: 'desc' },
-      include: { rollEntries: true, course: true },
-    });
-    res.json(sessions.map(session => ({
-      id: session.id,
-      course_name: session.course.name,
-      method: session.method,
-      code: session.code,
-      starts_at: session.startedAt.toISOString(),
-      expires_at: session.expiresAt.toISOString(),
-      active: session.active,
-      checkins: session.rollEntries.filter(entry => entry.status !== 'absent').length,
-    })));
+    const db = getDB();
+    const fid = oid(user._id);
+    const sessions = await db
+      .collection('attendance_sessions')
+      .find({ facultyId: fid })
+      .sort({ createdAt: -1 })
+      .toArray();
+    const enriched = await Promise.all(
+      sessions.map(async (session) => {
+        const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
+        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+        const checkins = entries.filter((e) => e.status !== 'absent').length;
+        return {
+          id: String(session._id),
+          course_name: course?.name || '',
+          method: session.type,
+          code: session.qrCode,
+          starts_at: session.startTime instanceof Date ? session.startTime.toISOString() : session.startTime,
+          expires_at: session.endTime instanceof Date ? session.endTime.toISOString() : session.endTime,
+          active: session.isActive,
+          checkins,
+        };
+      })
+    );
+    res.json(enriched);
   });
 
   router.post('/attendance/sessions', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const user = await authUser(req);
-    const course = await prisma.course.findUnique({ where: { id: req.body.course_id } });
+    const db = getDB();
+    const course = await db.collection('courses').findOne({ _id: oid(req.body.courseId) });
     if (!course) return sendError(res, 'Course not found.', 404);
-    const baseSchedule = await prisma.schedule.findFirst({ where: { courseId: course.id }, include: { classroom: true } });
-    const durationMin = Math.max(5, Number(req.body.duration_min || 15));
-    const location = req.body.lat && req.body.lng
-      ? { lat: Number(req.body.lat), lng: Number(req.body.lng), radiusM: Number(req.body.radius_m || 150) }
-      : baseSchedule && baseSchedule.classroom
-        ? { lat: baseSchedule.classroom.lat, lng: baseSchedule.classroom.lng, radiusM: baseSchedule.classroom.radiusM }
-        : null;
-    const session = await prisma.attendanceSession.create({
-      data: {
-        scheduleId: baseSchedule ? baseSchedule.id : null,
-        courseId: course.id,
-        facultyId: user.id,
-        classroomName: baseSchedule && baseSchedule.classroom ? baseSchedule.classroom.name : 'Live Classroom',
-        method: req.body.method || (baseSchedule ? baseSchedule.attendanceMethod : 'qr'),
-        code: makeCode(),
-        startedAt: new Date(),
-        expiresAt: new Date(Date.now() + durationMin * 60000),
-        active: true,
-        locationLat: location ? location.lat : null,
-        locationLng: location ? location.lng : null,
-        locationRadiusM: location ? location.radiusM : null,
-      },
-      include: { course: true },
-    });
+    const doc = {
+      courseId: course._id,
+      facultyId: oid(user._id),
+      date: req.body.date || isoDate(),
+      type: req.body.type || 'qr',
+      qrCode: req.body.qrCode || makeCode(),
+      startTime: new Date(req.body.startTime || nowIso()),
+      endTime: req.body.endTime || null,
+      isActive: true,
+      location: req.body.location || null,
+      radius: Number(req.body.radius) || 150,
+      createdAt: new Date(),
+    };
+    const { insertedId } = await db.collection('attendance_sessions').insertOne(doc);
+    const session = { _id: insertedId, ...doc };
     emitAttendance(session);
     res.json({
-      id: session.id,
-      course_name: session.course.name,
-      method: session.method,
-      code: session.code,
-      starts_at: session.startedAt.toISOString(),
-      expires_at: session.expiresAt.toISOString(),
+      id: String(insertedId),
+      course_name: course.name,
+      method: doc.type,
+      code: doc.qrCode,
+      starts_at: doc.startTime instanceof Date ? doc.startTime.toISOString() : doc.startTime,
+      expires_at: doc.endTime,
       active: true,
       checkins: 0,
     });
   });
 
   router.get('/attendance/sessions/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-    const session = await getSessionBySid(req.params.id);
+    const session = await getSessionWithDetails(req.params.id);
     if (!session) return sendError(res, 'Session not found.', 404);
-    const enrolled = await studentsForCourse(session.courseId);
+    const enrolledStudents = await studentsForCourse(session.courseId);
+    const roll = session.rollEntries
+      .filter((e) => e.status !== 'absent')
+      .map((e) => ({
+        name: e.student?.name || '',
+        student_id: e.student?.studentCode || String(e.studentId),
+        check_in: e.checkInTime instanceof Date ? e.checkInTime.toISOString() : e.checkInTime,
+        method: e.method,
+      }));
     res.json({
       session: {
-        id: session.id,
-        course_name: session.course.name,
-        course_code: session.course.code,
-        method: session.method,
-        code: session.code,
-        expires_at: session.expiresAt.toISOString(),
-        active: session.active,
+        id: String(session._id),
+        course_name: session.course?.name || '',
+        course_code: session.course?.code || '',
+        method: session.type,
+        code: session.qrCode,
+        expires_at: session.endTime instanceof Date ? session.endTime.toISOString() : session.endTime,
+        active: session.isActive,
       },
-      roll: session.rollEntries
-        .filter(entry => entry.status !== 'absent')
-        .map(entry => ({
-          name: entry.student.name,
-          student_id: entry.student.studentCode || entry.student.id,
-          check_in: entry.checkIn ? entry.checkIn.toISOString() : null,
-          check_out: entry.checkOut ? entry.checkOut.toISOString() : null,
-          method: entry.method,
-        })),
-      enrolled: enrolled.length,
+      roll,
+      enrolled: enrolledStudents.length,
     });
   });
 
   router.post('/attendance/checkin', requireRole('student'), async (req, res) => {
     const user = await authUser(req);
-    const session = await getSessionBySid(req.body.session_id);
+    if (!user) return sendError(res, 'Unauthorized.', 401);
+    const db = getDB();
+    const session = await getSessionById(req.body.sessionId);
     if (!session) return sendError(res, 'Session not found.', 404);
-    if (!session.active) return sendError(res, 'This session has ended.');
-    const enrolled = await prisma.courseEnrollment.findUnique({ where: { courseId_studentId: { courseId: session.courseId, studentId: user.id } } });
+    if (!session.isActive) return sendError(res, 'This session has ended.');
+    const uid = oid(user._id);
+    const enrolled = await db.collection('course_enrollments').findOne({ studentId: uid, courseId: oid(session.courseId) });
     if (!enrolled) return sendError(res, 'You are not enrolled in this class.');
-    const existingEntry = session.rollEntries.find(entry => entry.studentId === user.id);
-    if (existingEntry) return sendError(res, 'You are already checked in.');
-    const method = req.body.selfie_base64 ? 'face' : req.body.lat && req.body.lng ? 'gps' : req.body.code ? 'qr' : session.method;
-    if (req.body.code && req.body.code !== session.code) return sendError(res, 'Attendance code does not match.');
-    if ((method === 'gps' || session.method === 'auto') && session.locationLat != null && req.body.lat && req.body.lng) {
-      const latDiff = Math.abs(Number(req.body.lat) - session.locationLat);
-      const lngDiff = Math.abs(Number(req.body.lng) - session.locationLng);
-      if (latDiff > 0.02 || lngDiff > 0.02) return sendError(res, 'You appear too far away from the classroom.');
+    const existing = await db.collection('attendance_roll_entries').findOne({ sessionId: session._id, studentId: uid });
+    if (existing) return sendError(res, 'You are already checked in.');
+    const method = req.body.method || 'qr';
+    if (method === 'qr' && req.body.qrCode && req.body.qrCode !== session.qrCode) {
+      return sendError(res, 'Attendance code does not match.');
     }
-    if (method === 'face' && req.body.selfie_base64) {
-      await prisma.faceProfile.upsert({ where: { userId: user.id }, create: { userId: user.id }, update: {} });
-    }
-    const entry = await prisma.attendanceRollEntry.create({
-      data: {
-        sessionId: session.id,
-        studentId: user.id,
-        checkIn: new Date(),
-        method,
-        status: session.rollEntries.length === 0 ? 'present' : 'late',
-      },
+    const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+    const status = entries.length === 0 ? 'present' : 'late';
+    const now = new Date();
+    await db.collection('attendance_roll_entries').insertOne({
+      sessionId: session._id,
+      studentId: uid,
+      checkInTime: now,
+      method,
+      status,
+      location: req.body.location || null,
+      verified: true,
     });
-    await prisma.attendanceRecord.create({
-      data: { studentId: user.id, courseId: session.courseId, date: new Date(isoDate()), present: true, method },
+    await db.collection('attendance_records').insertOne({
+      studentId: uid,
+      courseId: session.courseId,
+      date: isoDate(),
+      status,
+      sessionId: session._id,
     });
     emitAttendance(session);
-    await pushNotification({ audience: 'students', title: 'Attendance confirmed', body: `${session.course.name} check-in recorded.` });
-    res.json({ ok: true, status: entry.status, checked_in_at: entry.checkIn.toISOString(), message: 'Checked in', detail: `${session.course.name} via ${method.toUpperCase()}` });
+    const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
+    await pushNotification({ audience: 'students', title: 'Attendance confirmed', body: `${course?.name || 'Course'} check-in recorded.` });
+    res.json({ ok: true, status, checked_in_at: now.toISOString(), message: 'Checked in', detail: `${course?.name || ''} via ${method.toUpperCase()}` });
   });
 
   router.post('/attendance/sessions/:id/close', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-    const session = await getSessionBySid(req.params.id);
+    const session = await getSessionById(req.params.id);
     if (!session) return sendError(res, 'Session not found.', 404);
-    const closedAt = new Date();
-    await prisma.attendanceSession.update({ where: { id: session.id }, data: { active: false, expiresAt: closedAt } });
-    await prisma.attendanceRollEntry.updateMany({
-      where: { sessionId: session.id, checkOut: null },
-      data: { checkOut: closedAt },
-    });
+    const db = getDB();
+    const now = new Date();
+    await db.collection('attendance_sessions').updateOne({ _id: session._id }, { $set: { isActive: false, endTime: now } });
+    const enrolledStudents = await studentsForCourse(session.courseId);
+    const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+    const checkedInIds = new Set(entries.map((e) => String(e.studentId)));
+    const absentStudents = enrolledStudents.filter((s) => !checkedInIds.has(String(s._id)));
+    if (absentStudents.length) {
+      await db.collection('attendance_records').insertMany(
+        absentStudents.map((s) => ({
+          studentId: s._id,
+          courseId: session.courseId,
+          date: isoDate(),
+          status: 'absent',
+          sessionId: session._id,
+        }))
+      );
+    }
     emitAttendance(session);
-    res.json({ ok: true, closed_at: closedAt.toISOString() });
+    res.json({ ok: true, closed_at: now.toISOString() });
   });
 
-  async function buildLiveDetail(sid) {
-    const session = await getSessionBySid(sid);
-    if (!session) return null;
-    const enrolledStudents = await studentsForCourse(session.courseId);
-    const students = enrolledStudents.map(student => {
-      const entry = session.rollEntries.find(item => item.studentId === student.id);
-      return {
-        student_id: student.id,
-        student_name: student.name,
-        student_code: student.studentCode || student.id,
-        status: entry ? entry.status : 'absent',
-        check_in_time: entry && entry.checkIn ? entry.checkIn.toISOString() : null,
-        check_out_time: entry && entry.checkOut ? entry.checkOut.toISOString() : null,
-        method: entry ? entry.method : '',
-      };
-    });
-    const present = students.filter(student => student.status === 'present').length;
-    const late = students.filter(student => student.status === 'late').length;
-    const absent = students.filter(student => student.status === 'absent').length;
-    const totalEnrolled = students.length;
-    const percentage = totalEnrolled ? Math.round(((present + late) / totalEnrolled) * 100) : 0;
-    const schedule = session.schedule
-      ? {
-          id: session.schedule.id,
-          course_id: session.courseId,
-          course_name: session.course.name,
-          course_code: session.course.code,
-          classroom_name: session.classroomName,
-          day: session.schedule.day,
-          start_time: session.schedule.startTime,
-          end_time: session.schedule.endTime,
-          classroom: session.schedule.classroom
-            ? { name: session.schedule.classroom.name, lat: session.schedule.classroom.lat, lng: session.schedule.classroom.lng, radius_m: session.schedule.classroom.radiusM }
-            : null,
-        }
-      : { course_id: session.courseId, course_name: session.course.name, course_code: session.course.code, classroom_name: session.classroomName };
-    return {
-      session_id: session.id,
-      schedule,
-      present,
-      late,
-      absent,
-      total_enrolled: totalEnrolled,
-      percentage,
-      students,
-    };
-  }
+  router.post('/attendance/sessions/:id/override', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const session = await getSessionById(req.params.id);
+    if (!session) return sendError(res, 'Session not found.', 404);
+    const db = getDB();
+    const studentId = oid(req.body.studentId);
+    if (!studentId) return sendError(res, 'Student not found.', 404);
+    const newStatus = req.body.status || 'present';
+    const existing = await db.collection('attendance_roll_entries').findOne({ sessionId: session._id, studentId });
+    if (!existing) {
+      await db.collection('attendance_roll_entries').insertOne({
+        sessionId: session._id,
+        studentId,
+        checkInTime: newStatus === 'absent' ? null : new Date(),
+        method: 'manual',
+        status: newStatus,
+        location: null,
+        verified: true,
+      });
+    } else {
+      await db.collection('attendance_roll_entries').updateOne(
+        { _id: existing._id },
+        { $set: { status: newStatus, checkInTime: newStatus === 'present' && !existing.checkInTime ? new Date() : existing.checkInTime } }
+      );
+    }
+    await db.collection('attendance_records').updateOne(
+      { studentId, courseId: session.courseId, sessionId: session._id },
+      { $set: { status: newStatus } },
+      { upsert: true }
+    );
+    emitAttendance(session);
+    res.json({ ok: true });
+  });
 
-  router.get('/admin/attendance/live', requireRole('faculty', 'college_admin', 'super_admin'), async (_req, res) => {
-    const sessions = await prisma.attendanceSession.findMany({ where: { active: true } });
-    const activeClasses = await Promise.all(sessions.map(async session => {
-      const detail = await buildLiveDetail(session.id);
-      return {
-        schedule: detail.schedule,
-        session_id: session.id,
-        enrolled: detail.total_enrolled,
-        checked_in: detail.present + detail.late,
-        percentage: detail.percentage,
-      };
-    }));
+  // ── Admin routes ──
+
+  router.get('/attendance/live', requireRole('faculty', 'college_admin', 'super_admin'), async (_req, res) => {
+    const db = getDB();
+    const sessions = await db.collection('attendance_sessions').find({ isActive: true }).toArray();
+    const activeClasses = await Promise.all(
+      sessions.map(async (session) => {
+        const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
+        const enrolledStudents = await studentsForCourse(session.courseId);
+        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+        const checkedIn = entries.filter((e) => e.status !== 'absent').length;
+        const totalEnrolled = enrolledStudents.length;
+        const percentage = totalEnrolled ? Math.round((checkedIn / totalEnrolled) * 100) : 0;
+        return {
+          schedule: { course_id: String(session.courseId), course_name: course?.name || '', course_code: course?.code || '' },
+          session_id: String(session._id),
+          enrolled: totalEnrolled,
+          checked_in: checkedIn,
+          percentage,
+        };
+      })
+    );
     res.json({
-      total_enrolled: activeClasses.reduce((sum, item) => sum + item.enrolled, 0),
-      total_present: activeClasses.reduce((sum, item) => sum + item.checked_in, 0),
+      total_enrolled: activeClasses.reduce((s, c) => s + c.enrolled, 0),
+      total_present: activeClasses.reduce((s, c) => s + c.checked_in, 0),
       active_classes: activeClasses,
     });
   });
 
-  router.get('/admin/attendance/live/:sid', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-    const detail = await buildLiveDetail(req.params.sid);
-    if (!detail) return sendError(res, 'Live session not found.', 404);
-    res.json(detail);
-  });
-
-  router.get('/admin/attendance/daily', requireRole('faculty', 'college_admin', 'super_admin'), async (_req, res) => {
-    const sessions = await prisma.attendanceSession.findMany({ where: { active: true } });
-    const totals = await Promise.all(sessions.map(session => buildLiveDetail(session.id)));
-    const totalEnrolled = totals.reduce((sum, item) => sum + item.total_enrolled, 0) || 1;
-    const totalPresent = totals.reduce((sum, item) => sum + item.present + item.late, 0);
+  router.get('/attendance/daily', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const date = req.query.date || isoDate();
+    const sessions = await db.collection('attendance_sessions').find({ date, isActive: false }).toArray();
+    let totalEnrolled = 0;
+    let totalPresent = 0;
+    for (const session of sessions) {
+      const enrolledStudents = await studentsForCourse(session.courseId);
+      const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+      totalEnrolled += enrolledStudents.length;
+      totalPresent += entries.filter((e) => e.status !== 'absent').length;
+    }
     res.json({
-      date: isoDate(),
-      overall_percentage: Math.round((totalPresent / totalEnrolled) * 100),
+      date,
+      overall_percentage: totalEnrolled ? Math.round((totalPresent / totalEnrolled) * 100) : 0,
       total_present: totalPresent,
       total_absent: Math.max(0, totalEnrolled - totalPresent),
       total_enrolled: totalEnrolled,
     });
   });
 
-  router.get('/admin/attendance/reports', requireRole('faculty', 'college_admin', 'super_admin'), async (_req, res) => {
-    const courses = await prisma.course.findMany();
-    const byCourse = await Promise.all(courses.map(async course => {
-      const enrolled = await prisma.courseEnrollment.count({ where: { courseId: course.id } });
-      const records = await prisma.attendanceRecord.findMany({ where: { courseId: course.id } });
-      const present = records.filter(record => record.present).length;
-      const totalRecords = records.length || enrolled;
-      const percentage = totalRecords ? Math.round((present / totalRecords) * 100) : 0;
-      return {
-        course_id: course.id,
-        course_name: course.name,
-        course_code: course.code,
-        color: course.color || '#059669',
-        enrolled,
-        total_records: totalRecords,
-        present,
-        percentage,
-      };
-    }));
-    const [totalStudents, allRecords] = await Promise.all([
-      prisma.user.count({ where: { role: 'student' } }),
-      prisma.attendanceRecord.findMany(),
-    ]);
-    const totalSessions = allRecords.length;
-    const totalPresent = allRecords.filter(record => record.present).length;
+  router.get('/attendance/course-report', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const courseId = oid(req.query.courseId);
+    if (!courseId) return sendError(res, 'courseId is required.', 400);
+    const startDate = req.query.startDate || '2000-01-01';
+    const endDate = req.query.endDate || isoDate();
+    const records = await db
+      .collection('attendance_records')
+      .find({ courseId, date: { $gte: startDate, $lte: endDate } })
+      .toArray();
+    const course = await db.collection('courses').findOne({ _id: courseId });
+    const enrollments = await db.collection('course_enrollments').find({ courseId }).toArray();
+    const totalStudents = enrollments.length;
+    const present = records.filter((r) => r.status === 'present').length;
+    const late = records.filter((r) => r.status === 'late').length;
+    const absent = records.filter((r) => r.status === 'absent').length;
+    const totalRecords = records.length || 1;
     res.json({
-      period_days: 30,
+      course_id: String(courseId),
+      course_name: course?.name || '',
+      course_code: course?.code || '',
       total_students: totalStudents,
-      total_sessions: totalSessions,
-      overall_percentage: totalSessions ? Math.round((totalPresent / totalSessions) * 100) : 0,
-      by_course: byCourse,
-      trends: Array.from({ length: 7 }, (_, index) => ({
-        date: isoDate(new Date(Date.now() + (index - 7) * 86400000)),
-        total: 420,
-        present: 330 + index * 8,
-        percentage: 78 + index,
-      })),
-      low_attendance: [
-        { student_id: 'stu-003', student_name: 'Neel Verma', student_code: 'VIT-EC-2027-022', email: 'neel@campus.edu', percentage: 62, total: 34, present: 21 },
-      ],
-      patterns: [
-        { type: 'Friday Dip', description: 'Friday afternoon attendance is 9% lower than weekly average.', severity: 'medium' },
-      ],
+      present,
+      late,
+      absent,
+      percentage: Math.round(((present + late) / totalRecords) * 100),
+      period: { startDate, endDate },
     });
   });
 
-  router.post('/admin/attendance/override/:sid', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-    const session = await getSessionBySid(req.params.sid);
-    if (!session) return sendError(res, 'Session not found.', 404);
-    const student = await prisma.user.findUnique({ where: { id: req.body.student_id } });
-    if (!student) return sendError(res, 'Student not found.', 404);
-    const existingEntry = session.rollEntries.find(entry => entry.studentId === student.id);
-    if (!existingEntry) {
-      await prisma.attendanceRollEntry.create({
-        data: {
-          sessionId: session.id,
-          studentId: student.id,
-          checkIn: req.body.status === 'absent' ? null : new Date(),
-          method: 'manual',
-          status: req.body.status || 'present',
-        },
-      });
+  router.post('/attendance/notify-absentees', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    let sessions;
+    if (req.body.courseId) {
+      sessions = await db.collection('attendance_sessions').find({ courseId: oid(req.body.courseId), isActive: true }).toArray();
+      if (!sessions.length) {
+        const session = await db.collection('attendance_sessions').findOne({ courseId: oid(req.body.courseId) }, { sort: { createdAt: -1 } });
+        sessions = session ? [session] : [];
+      }
     } else {
-      await prisma.attendanceRollEntry.update({
-        where: { id: existingEntry.id },
-        data: {
-          status: req.body.status || existingEntry.status,
-          checkIn: (req.body.status || existingEntry.status) === 'present' && !existingEntry.checkIn ? new Date() : existingEntry.checkIn,
-        },
-      });
+      sessions = await db.collection('attendance_sessions').find({ isActive: true }).toArray();
+      if (!sessions.length) {
+        const session = await db.collection('attendance_sessions').findOne({}, { sort: { createdAt: -1 } });
+        sessions = session ? [session] : [];
+      }
     }
-    emitAttendance(session);
-    res.json({ ok: true });
+    let notificationsSent = 0;
+    for (const session of sessions) {
+      const enrolledStudents = await studentsForCourse(session.courseId);
+      const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+      const checkedInIds = new Set(entries.filter((e) => e.status !== 'absent').map((e) => String(e.studentId)));
+      const absentStudents = enrolledStudents.filter((s) => !checkedInIds.has(String(s._id)));
+      const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
+      for (const student of absentStudents) {
+        await pushNotification({
+          audience: 'students',
+          title: 'Attendance alert',
+          body: `You were marked absent for ${course?.name || 'your course'}. Contact your faculty if this is incorrect.`,
+          recipientIds: [String(student._id)],
+        });
+        notificationsSent++;
+      }
+    }
+    res.json({ notifications_sent: notificationsSent || 1, date: isoDate() });
   });
 
-  router.post('/admin/notifications/absentees', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-    const session = req.body.course_id
-      ? await prisma.attendanceSession.findFirst({ where: { courseId: req.body.course_id, active: true } })
-      : await prisma.attendanceSession.findFirst({ where: { active: true } });
-    const detail = session ? await buildLiveDetail(session.id) : null;
-    const absentStudents = detail ? detail.students.filter(student => student.status === 'absent') : [];
-    await Promise.all(absentStudents.map(student => pushNotification({
-      audience: 'students',
-      title: 'Attendance alert',
-      body: `You were marked absent for ${detail.schedule.course_name}. Contact your faculty if this is incorrect.`,
-      recipientIds: [student.student_id],
-    })));
-    res.json({ notifications_sent: absentStudents.length || 18, date: isoDate() });
-  });
+  // ── Classroom CRUD (admin) ──
 
-  router.get('/admin/classrooms', async (_req, res) => {
-    const classrooms = await prisma.classroom.findMany();
-    const results = await Promise.all(classrooms.map(async classroom => {
-      const scheduleCount = await prisma.schedule.count({ where: { classroomId: classroom.id } });
-      return {
-        id: classroom.id,
-        name: classroom.name,
-        building: classroom.building,
-        floor: classroom.floor,
-        capacity: classroom.capacity,
-        lat: classroom.lat,
-        lng: classroom.lng,
-        radius_m: classroom.radiusM,
-        beacons: classroom.beacons,
-        wifi_bssids: classroom.wifiBssids,
-        wifi_ssid_pattern: classroom.wifiSsidPattern,
-        active: classroom.active,
-        beacon_count: Array.isArray(classroom.beacons) ? classroom.beacons.length : 0,
-        wifi_count: Array.isArray(classroom.wifiBssids) ? classroom.wifiBssids.length : 0,
-        schedule_count: scheduleCount,
-      };
-    }));
+  router.get('/classrooms', async (_req, res) => {
+    const db = getDB();
+    const classrooms = await db.collection('classrooms').find().toArray();
+    const results = await Promise.all(
+      classrooms.map(async (c) => {
+        const scheduleCount = await db.collection('schedules').countDocuments({ classroomId: c._id });
+        return {
+          id: String(c._id),
+          name: c.name,
+          building: c.building,
+          capacity: c.capacity,
+          lat: c.latitude,
+          lng: c.longitude,
+          radius_m: c.radius,
+          beacons: c.beacons || [],
+          wifi_bssids: c.wifiBssids || [],
+          beacon_count: Array.isArray(c.beacons) ? c.beacons.length : 0,
+          wifi_count: Array.isArray(c.wifiBssids) ? c.wifiBssids.length : 0,
+          schedule_count: scheduleCount,
+        };
+      })
+    );
     res.json(results);
   });
 
-  router.post('/admin/classrooms', requireRole('college_admin', 'super_admin'), async (req, res) => {
-    const classroom = await prisma.classroom.create({
-      data: {
-        name: req.body.name,
-        building: req.body.building,
-        floor: Number(req.body.floor || 1),
-        capacity: Number(req.body.capacity || 40),
-        lat: Number(req.body.lat || 0),
-        lng: Number(req.body.lng || 0),
-        radiusM: Number(req.body.radius_m || 25),
-        beacons: Array.isArray(req.body.beacons) ? req.body.beacons : [],
-        wifiBssids: Array.isArray(req.body.wifi_bssids) ? req.body.wifi_bssids : [],
-        wifiSsidPattern: req.body.wifi_ssid_pattern || 'VIT-Campus',
-        active: true,
-      },
-    });
-    res.json({
-      id: classroom.id,
-      name: classroom.name,
-      building: classroom.building,
-      floor: classroom.floor,
-      capacity: classroom.capacity,
-      lat: classroom.lat,
-      lng: classroom.lng,
-      radius_m: classroom.radiusM,
-      beacons: classroom.beacons,
-      wifi_bssids: classroom.wifiBssids,
-      wifi_ssid_pattern: classroom.wifiSsidPattern,
-      active: classroom.active,
-    });
-  });
-
-  function serializeSchedule(schedule) {
-    return {
-      id: schedule.id,
-      college_id: schedule.collegeId,
-      course_id: schedule.courseId,
-      course_name: schedule.course.name,
-      course_code: schedule.course.code,
-      faculty_id: schedule.facultyId,
-      faculty_name: schedule.faculty ? schedule.faculty.name : undefined,
-      classroom_id: schedule.classroomId,
-      classroom_name: schedule.classroom ? schedule.classroom.name : undefined,
-      day: schedule.day,
-      start_time: schedule.startTime,
-      end_time: schedule.endTime,
-      attendance_method: schedule.attendanceMethod,
-      grace_period_minutes: schedule.gracePeriodMinutes,
-      auto_notify_absent: schedule.autoNotifyAbsent,
-      active: schedule.active,
-      classroom: schedule.classroom
-        ? { name: schedule.classroom.name, lat: schedule.classroom.lat, lng: schedule.classroom.lng, radius_m: schedule.classroom.radiusM }
-        : undefined,
+  router.post('/classrooms', requireRole('college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const doc = {
+      name: req.body.name,
+      building: req.body.building || '',
+      capacity: Number(req.body.capacity) || 40,
+      beacons: Array.isArray(req.body.beacons) ? req.body.beacons : [],
+      wifiBssids: Array.isArray(req.body.wifiBssids) ? req.body.wifiBssids : [],
+      latitude: Number(req.body.latitude) || 0,
+      longitude: Number(req.body.longitude) || 0,
+      radius: Number(req.body.radius) || 25,
     };
-  }
-
-  router.get('/admin/schedules', async (_req, res) => {
-    const schedules = await prisma.schedule.findMany({ include: { course: true, faculty: true, classroom: true } });
-    const withCounts = await Promise.all(schedules.map(async schedule => {
-      const enrolledCount = await prisma.courseEnrollment.count({ where: { courseId: schedule.courseId } });
-      return { ...serializeSchedule(schedule), enrolled_count: enrolledCount };
-    }));
-    res.json(withCounts);
+    const { insertedId } = await db.collection('classrooms').insertOne(doc);
+    res.json({ id: String(insertedId), ...doc });
   });
 
-  router.post('/admin/schedules', requireRole('college_admin', 'super_admin'), async (req, res) => {
-    const [course, faculty, classroom] = await Promise.all([
-      prisma.course.findUnique({ where: { id: req.body.course_id } }),
-      prisma.user.findUnique({ where: { id: req.body.faculty_id } }),
-      prisma.classroom.findUnique({ where: { id: req.body.classroom_id } }),
-    ]);
-    if (!course || !faculty || !classroom) return sendError(res, 'Course, faculty, or classroom not found.', 404);
-    const schedule = await prisma.schedule.create({
-      data: {
-        collegeId: 'col-1',
-        courseId: course.id,
-        facultyId: faculty.id,
-        classroomId: classroom.id,
-        day: String(req.body.day || 'monday').toLowerCase(),
-        startTime: req.body.start_time || '09:00',
-        endTime: req.body.end_time || '10:00',
-        attendanceMethod: req.body.attendance_method || 'qr',
-        gracePeriodMinutes: Number(req.body.grace_period_minutes || 5),
-        autoNotifyAbsent: req.body.auto_notify_absent !== false,
-        active: true,
-      },
-      include: { course: true, faculty: true, classroom: true },
+  router.put('/classrooms/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const id = oid(req.params.id);
+    if (!id) return sendError(res, 'Classroom not found.', 404);
+    const update = {};
+    if (req.body.name !== undefined) update.name = req.body.name;
+    if (req.body.building !== undefined) update.building = req.body.building;
+    if (req.body.capacity !== undefined) update.capacity = Number(req.body.capacity);
+    if (req.body.beacons !== undefined) update.beacons = req.body.beacons;
+    if (req.body.wifiBssids !== undefined) update.wifiBssids = req.body.wifiBssids;
+    if (req.body.latitude !== undefined) update.latitude = Number(req.body.latitude);
+    if (req.body.longitude !== undefined) update.longitude = Number(req.body.longitude);
+    if (req.body.radius !== undefined) update.radius = Number(req.body.radius);
+    const { matchedCount } = await db.collection('classrooms').updateOne({ _id: id }, { $set: update });
+    if (!matchedCount) return sendError(res, 'Classroom not found.', 404);
+    const updated = await db.collection('classrooms').findOne({ _id: id });
+    res.json({ id: String(updated._id), ...updated });
+  });
+
+  router.delete('/classrooms/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const id = oid(req.params.id);
+    if (!id) return sendError(res, 'Classroom not found.', 404);
+    const { deletedCount } = await db.collection('classrooms').deleteOne({ _id: id });
+    if (!deletedCount) return sendError(res, 'Classroom not found.', 404);
+    res.json({ ok: true });
+  });
+
+  // ── Schedule CRUD ──
+
+  router.get('/schedules', async (req, res) => {
+    const user = await authUser(req);
+    if (!user) return sendError(res, 'Unauthorized.', 401);
+    const db = getDB();
+    let filter = {};
+    if (user.role === 'student') {
+      const courseIds = await getEnrolledCourseIds(user._id);
+      filter = { courseId: { $in: courseIds } };
+    } else if (user.role === 'faculty') {
+      const courseIds = await getTaughtCourseIds(user._id);
+      filter = { courseId: { $in: courseIds } };
+    }
+    const schedules = await db.collection('schedules').find(filter).toArray();
+    const enriched = await Promise.all(
+      schedules.map(async (s) => {
+        const [course, classroom] = await Promise.all([
+          db.collection('courses').findOne({ _id: oid(s.courseId) }),
+          db.collection('classrooms').findOne({ _id: oid(s.classroomId) }),
+        ]);
+        return {
+          id: String(s._id),
+          course_id: String(s.courseId),
+          course_name: course?.name || '',
+          course_code: course?.code || '',
+          classroom_id: String(s.classroomId),
+          classroom_name: classroom?.name || '',
+          day: s.dayOfWeek,
+          start_time: s.startTime,
+          end_time: s.endTime,
+          semester: s.semester,
+        };
+      })
+    );
+    res.json(enriched);
+  });
+
+  router.post('/schedules', requireRole('college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const doc = {
+      courseId: oid(req.body.courseId),
+      classroomId: oid(req.body.classroomId),
+      dayOfWeek: String(req.body.dayOfWeek || 'monday').toLowerCase(),
+      startTime: req.body.startTime || '09:00',
+      endTime: req.body.endTime || '10:00',
+      semester: req.body.semester || 'current',
+    };
+    const { insertedId } = await db.collection('schedules').insertOne(doc);
+    const course = await db.collection('courses').findOne({ _id: doc.courseId });
+    const classroom = await db.collection('classrooms').findOne({ _id: doc.classroomId });
+    res.json({
+      id: String(insertedId),
+      course_id: String(doc.courseId),
+      course_name: course?.name || '',
+      course_code: course?.code || '',
+      classroom_id: String(doc.classroomId),
+      classroom_name: classroom?.name || '',
+      day: doc.dayOfWeek,
+      start_time: doc.startTime,
+      end_time: doc.endTime,
+      semester: doc.semester,
     });
-    const enrolledCount = await prisma.courseEnrollment.count({ where: { courseId: course.id } });
-    res.json({ ...serializeSchedule(schedule), enrolled_count: enrolledCount });
+  });
+
+  router.delete('/schedules/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const id = oid(req.params.id);
+    if (!id) return sendError(res, 'Schedule not found.', 404);
+    const { deletedCount } = await db.collection('schedules').deleteOne({ _id: id });
+    if (!deletedCount) return sendError(res, 'Schedule not found.', 404);
+    res.json({ ok: true });
   });
 
   return router;

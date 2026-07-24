@@ -12,7 +12,7 @@ import {
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
-import { Card, StatCard, SectionTitle, EmptyState, ProgressBar } from '@/src/ui';
+import { Card, StatCard, SectionTitle, ProgressBar, AsyncView } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -21,17 +21,19 @@ export default function AnalyticsScreen() {
   const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
-  const { data: studentData, loading: sLoad, refresh: sRefresh } = useFetch<any>(
+  const { data: studentData, loading: sLoad, error: sErr, refresh: sRefresh } = useFetch<any>(
     user?.role === 'student' ? '/analytics/dashboard/student' : null,
   );
-  const { data: facultyData, loading: fLoad, refresh: fRefresh } = useFetch<any>(
+  const { data: facultyData, loading: fLoad, error: fErr, refresh: fRefresh } = useFetch<any>(
     user?.role === 'faculty' ? '/analytics/faculty' : null,
   );
-  const { data: adminData, loading: aLoad, refresh: aRefresh } = useFetch<any>(
+  const { data: adminData, loading: aLoad, error: aErr, refresh: aRefresh } = useFetch<any>(
     user?.role === 'college_admin' || user?.role === 'super_admin' ? '/analytics/admin' : null,
   );
 
   const loading = sLoad || fLoad || aLoad;
+  const error = sErr || fErr || aErr;
+  const hasData = !!(studentData || facultyData || adminData);
   const onRefresh = async () => {
     setRefreshing(true);
     sRefresh();
@@ -40,6 +42,7 @@ export default function AnalyticsScreen() {
     await new Promise(r => setTimeout(r, 800));
     setRefreshing(false);
   };
+  const onRetry = () => { sRefresh(); fRefresh(); aRefresh(); };
 
   return (
     <ErrorBoundary>
@@ -54,6 +57,7 @@ export default function AnalyticsScreen() {
           <Pressable
             testID="analytics-back"
             accessibilityLabel="Go back"
+            accessibilityRole="button"
             style={styles.backBtn}
             onPress={() => router.back()}
           >
@@ -68,6 +72,15 @@ export default function AnalyticsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" />}
           showsVerticalScrollIndicator={false}
         >
+          <AsyncView
+            loading={loading && !hasData}
+            error={error}
+            onRetry={onRetry}
+            empty={!loading && !hasData}
+            emptyTitle="No Analytics Available"
+            emptySub="Analytics data will appear here once you have activity."
+            emptyIcon={<BarChart3 size={48} color={theme.colors.muted} />}
+          >
           {/* Student Analytics */}
           {user?.role === 'student' && studentData && (
             <>
@@ -89,8 +102,8 @@ export default function AnalyticsScreen() {
               </View>
 
               <View style={styles.statRow}>
-                <StatCard label="Overdue Books" value={studentData.overdue_books || 0} color="#EF4444" icon={<AlertTriangle size={18} color="#EF4444" />} />
-                <StatCard label="Grievances" value={studentData.open_grievances || 0} color="#F59E0B" icon={<Clock size={18} color="#F59E0B" />} />
+                <StatCard label="Overdue Books" value={studentData.overdue_books || 0} color={theme.colors.error} icon={<AlertTriangle size={18} color={theme.colors.error} />} />
+                <StatCard label="Grievances" value={studentData.open_grievances || 0} color={theme.colors.warning} icon={<Clock size={18} color={theme.colors.warning} />} />
               </View>
 
               {studentData.attendance_by_course?.length > 0 && (
@@ -104,7 +117,7 @@ export default function AnalyticsScreen() {
                           height={8}
                           label={`${c.code} — ${c.course}`}
                           showPct
-                          color={c.percentage >= 75 ? '#10B981' : c.percentage >= 60 ? '#F59E0B' : '#EF4444'}
+                          color={c.percentage >= 75 ? '#10B981' : c.percentage >= 60 ? theme.colors.warning : theme.colors.error}
                         />
                       </View>
                     ))}
@@ -124,7 +137,7 @@ export default function AnalyticsScreen() {
               </View>
               <View style={styles.statRow}>
                 <StatCard label="Assignments" value={facultyData.total_assignments || 0} color="#8B5CF6" icon={<GraduationCap size={18} color="#8B5CF6" />} />
-                <StatCard label="Submissions" value={facultyData.total_submissions || 0} color="#F59E0B" icon={<CheckCircle size={18} color="#F59E0B" />} />
+                <StatCard label="Submissions" value={facultyData.total_submissions || 0} color={theme.colors.warning} icon={<CheckCircle size={18} color={theme.colors.warning} />} />
               </View>
               <View style={styles.statRow}>
                 <StatCard label="Total Classes" value={facultyData.total_classes || 0} color="#06B6D4" icon={<Clock size={18} color="#06B6D4" />} />
@@ -164,12 +177,12 @@ export default function AnalyticsScreen() {
 
               <SectionTitle title="Operations" />
               <View style={styles.statRow}>
-                <StatCard label="Books" value={adminData.books || 0} color="#F59E0B" icon={<BookOpen size={18} color="#F59E0B" />} />
-                <StatCard label="Issued" value={adminData.books_issued || 0} color="#EF4444" icon={<TrendingDown size={18} color="#EF4444" />} />
+                <StatCard label="Books" value={adminData.books || 0} color={theme.colors.warning} icon={<BookOpen size={18} color={theme.colors.warning} />} />
+                <StatCard label="Issued" value={adminData.books_issued || 0} color={theme.colors.error} icon={<TrendingDown size={18} color={theme.colors.error} />} />
               </View>
               <View style={styles.statRow}>
                 <StatCard label="Hostel Occupants" value={adminData.hostel_occupants || 0} color="#8B5CF6" icon={<Building2 size={18} color="#8B5CF6" />} />
-                <StatCard label="Pending Fees" value={adminData.pending_fees || 0} color="#EF4444" icon={<DollarSign size={18} color="#EF4444" />} />
+                <StatCard label="Pending Fees" value={adminData.pending_fees || 0} color={theme.colors.error} icon={<DollarSign size={18} color={theme.colors.error} />} />
               </View>
 
               <Card style={{ marginHorizontal: 0, marginTop: 8 }}>
@@ -187,22 +200,14 @@ export default function AnalyticsScreen() {
               {adminData.open_grievances > 0 && (
                 <Card style={{ marginHorizontal: 0, marginTop: 8, borderColor: '#FEF3C7' }}>
                   <View style={styles.alertRow}>
-                    <AlertTriangle size={18} color="#F59E0B" />
+                    <AlertTriangle size={18} color={theme.colors.warning} />
                     <Text style={styles.alertText}>{adminData.open_grievances} open grievances need attention</Text>
                   </View>
                 </Card>
               )}
             </>
           )}
-
-          {/* Empty state */}
-          {!loading && !studentData && !facultyData && !adminData && (
-            <EmptyState
-              icon={<BarChart3 size={48} color={theme.colors.muted} />}
-              title="No Analytics Available"
-              sub="Analytics data will appear here once you have activity."
-            />
-          )}
+          </AsyncView>
         </ScrollView>
       </View>
     </ErrorBoundary>
@@ -210,7 +215,7 @@ export default function AnalyticsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0A0F0D' },
+  screen: { flex: 1, backgroundColor: theme.colors.surfaceInverse },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -248,12 +253,12 @@ const styles = StyleSheet.create({
   courseRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   courseDot: { width: 8, height: 8, borderRadius: 4 },
   courseName: { color: '#F8FAFC', fontSize: 14, fontWeight: '700' },
-  courseCode: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
+  courseCode: { color: theme.colors.borderStrong, fontSize: 11, marginTop: 2 },
 
   metricRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  metricLabel: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
+  metricLabel: { color: theme.colors.borderStrong, fontSize: 13, fontWeight: '600' },
   metricValue: { color: '#F8FAFC', fontSize: 16, fontWeight: '800' },
 
   alertRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  alertText: { color: '#F59E0B', fontSize: 13, fontWeight: '600', flex: 1 },
+  alertText: { color: theme.colors.warning, fontSize: 13, fontWeight: '600', flex: 1 },
 });

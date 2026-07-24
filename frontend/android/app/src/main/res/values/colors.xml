@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_background">#2563EB</color>
+    <color name="notification_accent">#0EA5E9</color>
+    <color name="brand_primary">#2563EB</color>
+    <color name="brand_secondary">#0EA5E9</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>

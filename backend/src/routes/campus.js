@@ -1,145 +1,186 @@
-const express = require('express');
-const { prisma } = require('../db');
-const { authUser } = require('../auth');
-const { sendError } = require('../utils');
+const { getDB, oid } = require('../db');
+const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated } = require('../utils');
 
 function createCampusRouter(io) {
-  const router = express.Router();
+  const { Router } = require('express');
+  const router = Router();
 
-  async function pushNotification({ audience = 'all', title, body, recipientIds = [] }) {
-    await prisma.notification.create({ data: { audience, title, body, recipientIds, readBy: [] } });
-    io.emit('notifications:update', { audience, recipientIds });
-  }
-
-  router.get('/hostels', async (_req, res) => {
-    const hostels = await prisma.hostel.findMany();
-    res.json(hostels.map(hostel => ({
-      id: hostel.id,
-      name: hostel.name,
-      type: hostel.type,
-      total_rooms: hostel.totalRooms,
-      warden_name: hostel.wardenName,
-      contact: hostel.contact,
-    })));
+  router.get('/hostels', async (req, res) => {
+    try {
+      const db = getDB();
+      const hostels = await db.collection('hostels').find({}).toArray();
+      res.json(hostels);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
-  router.get('/hostel/my-allocation', async (_req, res) => {
-    const allocation = await prisma.hostelAllocation.findFirst({ include: { hostel: true, student: true } });
-    if (!allocation) return res.json(null);
-    res.json({
-      id: allocation.id,
-      hostel_id: allocation.hostelId,
-      hostel_name: allocation.hostel.name,
-      room_number: allocation.roomNumber,
-      student_id: allocation.studentId,
-      student_name: allocation.student.name,
-      allocated_at: allocation.allocatedAt.toISOString(),
-      active: allocation.active,
-    });
+  router.post('/hostels/:id/allocate', async (req, res) => {
+    try {
+      const db = getDB();
+      const { room, bed } = req.body;
+      const hostel = await db.collection('hostels').findOne({ _id: oid(req.params.id) });
+      if (!hostel) return sendError(res, 'Hostel not found', 404);
+
+      const existing = await db.collection('hostel_allocations').findOne({
+        hostelId: oid(req.params.id),
+        studentId: oid(req.user._id),
+        status: 'active',
+      });
+      if (existing) return sendError(res, 'Already allocated', 400);
+
+      const allocation = {
+        hostelId: oid(req.params.id),
+        studentId: oid(req.user._id),
+        room,
+        bed,
+        startDate: isoDate(new Date()),
+        status: 'active',
+      };
+      const result = await db.collection('hostel_allocations').insertOne(allocation);
+      allocation._id = result.insertedId;
+
+      await db.collection('hostels').updateOne(
+        { _id: oid(req.params.id) },
+        { $inc: { occupied: 1 } }
+      );
+
+      res.json(allocation);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
-  router.get('/transport/routes', async (_req, res) => {
-    const routes = await prisma.transportRoute.findMany({ include: { stops: { orderBy: { order: 'asc' } } } });
-    res.json(routes.map(route => ({
-      id: route.id,
-      route_name: route.routeName,
-      vehicle_number: route.vehicleNumber,
-      driver_name: route.driverName,
-      driver_phone: route.driverPhone,
-      active: route.active,
-      stops: route.stops.map(stop => ({ name: stop.name, time: stop.time })),
-    })));
+  router.get('/transport/routes', async (req, res) => {
+    try {
+      const db = getDB();
+      const routes = await db.collection('transport_routes').find({}).toArray();
+      res.json(routes);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
-  router.get('/transport/my-route', async (req, res) => {
-    const user = await authUser(req);
-    const enrollment = await prisma.transportEnrollment.findFirst({
-      where: { studentId: user.id, active: true },
-      include: { route: true },
-    });
-    if (!enrollment) return res.json(null);
-    res.json({
-      id: enrollment.id,
-      route_id: enrollment.routeId,
-      route_name: enrollment.route.routeName,
-      student_id: enrollment.studentId,
-      student_name: user.name,
-      active: enrollment.active,
-    });
+  router.post('/transport/enroll', async (req, res) => {
+    try {
+      const db = getDB();
+      const { routeId } = req.body;
+
+      const route = await db.collection('transport_routes').findOne({ _id: oid(routeId) });
+      if (!route) return sendError(res, 'Route not found', 404);
+
+      const existing = await db.collection('transport_enrollments').findOne({
+        routeId: oid(routeId),
+        studentId: oid(req.user._id),
+        status: 'active',
+      });
+      if (existing) return sendError(res, 'Already enrolled', 400);
+
+      const enrollment = {
+        routeId: oid(routeId),
+        studentId: oid(req.user._id),
+        startDate: isoDate(new Date()),
+        status: 'active',
+      };
+      const result = await db.collection('transport_enrollments').insertOne(enrollment);
+      enrollment._id = result.insertedId;
+
+      res.json(enrollment);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
-  router.post('/transport/enroll/:routeId', async (req, res) => {
-    const user = await authUser(req);
-    const route = await prisma.transportRoute.findUnique({ where: { id: req.params.routeId } });
-    if (!route) return sendError(res, 'Route not found.', 404);
-    await prisma.transportEnrollment.deleteMany({ where: { studentId: user.id } });
-    const enrollment = await prisma.transportEnrollment.create({
-      data: { routeId: route.id, studentId: user.id, active: true },
-    });
-    res.json({
-      id: enrollment.id,
-      route_id: enrollment.routeId,
-      route_name: route.routeName,
-      student_id: enrollment.studentId,
-      student_name: user.name,
-      active: enrollment.active,
-    });
-  });
-
-  router.post('/transport/de-enroll', async (req, res) => {
-    const user = await authUser(req);
-    await prisma.transportEnrollment.deleteMany({ where: { studentId: user.id } });
-    res.json({ ok: true });
+  router.post('/transport/deenroll/:routeId', async (req, res) => {
+    try {
+      const db = getDB();
+      const result = await db.collection('transport_enrollments').updateOne(
+        {
+          routeId: oid(req.params.routeId),
+          studentId: oid(req.user._id),
+          status: 'active',
+        },
+        { $set: { status: 'inactive' } }
+      );
+      if (result.matchedCount === 0) return sendError(res, 'Enrollment not found', 404);
+      res.json({ success: true });
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
   router.get('/grievances', async (req, res) => {
-    const user = await authUser(req);
-    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
-    const grievances = await prisma.grievance.findMany({
-      where: isAdmin ? {} : { studentId: user.id },
-      include: { student: true },
-      orderBy: { createdAt: 'desc' },
-    });
-    res.json(grievances.map(grievance => ({
-      id: grievance.id,
-      student_id: grievance.studentId,
-      student_name: grievance.student.name,
-      student_email: grievance.student.email,
-      category: grievance.category,
-      subject: grievance.subject,
-      description: grievance.description,
-      is_anonymous: grievance.isAnonymous,
-      status: grievance.status,
-      created_at: grievance.createdAt.toISOString(),
-    })));
+    try {
+      const db = getDB();
+      let filter = {};
+      if (req.user.role === 'student') {
+        filter.userId = oid(req.user._id);
+      }
+      const grievances = await db.collection('grievances')
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(grievances);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
   router.post('/grievances', async (req, res) => {
-    const user = await authUser(req);
-    const grievance = await prisma.grievance.create({
-      data: {
-        studentId: user.id,
-        category: req.body.category || 'General',
-        subject: req.body.subject || 'Untitled',
-        description: req.body.description || '',
-        isAnonymous: !!req.body.is_anonymous,
+    try {
+      const db = getDB();
+      const { category, subject, description, priority, anonymous } = req.body;
+
+      const grievance = {
+        userId: oid(req.user._id),
+        category,
+        subject,
+        description,
         status: 'open',
-      },
-      include: { student: true },
-    });
-    await pushNotification({ audience: 'admins', title: 'New grievance submitted', body: grievance.subject });
-    res.json({
-      id: grievance.id,
-      student_id: grievance.studentId,
-      student_name: grievance.student.name,
-      student_email: grievance.student.email,
-      category: grievance.category,
-      subject: grievance.subject,
-      description: grievance.description,
-      is_anonymous: grievance.isAnonymous,
-      status: grievance.status,
-      created_at: grievance.createdAt.toISOString(),
-    });
+        priority: priority || 'medium',
+        responses: [],
+        createdAt: nowIso(),
+      };
+
+      if (anonymous) {
+        delete grievance.userId;
+      }
+
+      const result = await db.collection('grievances').insertOne(grievance);
+      grievance._id = result.insertedId;
+
+      res.json(grievance);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/grievances/:id/respond', async (req, res) => {
+    try {
+      const db = getDB();
+      const { text } = req.body;
+
+      const response = {
+        userId: oid(req.user._id),
+        text,
+        createdAt: nowIso(),
+      };
+
+      const result = await db.collection('grievances').updateOne(
+        { _id: oid(req.params.id) },
+        {
+          $push: { responses: response },
+          $set: { status: 'in_progress' },
+        }
+      );
+
+      if (result.matchedCount === 0) return sendError(res, 'Grievance not found', 404);
+
+      const updated = await db.collection('grievances').findOne({ _id: oid(req.params.id) });
+      res.json(updated);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
   return router;

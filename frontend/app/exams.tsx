@@ -9,7 +9,7 @@ import { useFetch } from '@/src/hooks/useFetch';
 import type { Exam } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
-import { Card, EmptyState, Badge } from '@/src/ui';
+import { Card, Badge, AsyncView } from '@/src/ui';
 
 interface HallTicket {
   id: string;
@@ -20,28 +20,18 @@ interface HallTicket {
 
 export default function Exams() {
   const { user } = useAuth();
-  const { data: exams, loading, refresh } = useFetch<Exam[]>('/exams');
+  const { data: exams, loading, error, refresh } = useFetch<Exam[]>('/exams');
   const { data: hallTicket } = useFetch<HallTicket>(
     user?.role === 'student' ? '/exams/my-hallticket' : null
   );
 
   const examsSafe = exams || [];
 
-  if (loading) {
-    return (
-      <ErrorBoundary>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface }}>
-          <ActivityIndicator color={theme.colors.brandPrimary} />
-        </View>
-      </ErrorBoundary>
-    );
-  }
-
   return (
     <ErrorBoundary>
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} testID="back-btn" accessibilityLabel="Go back">
+          <Pressable onPress={() => router.back()} testID="back-btn" accessibilityLabel="Go back" accessibilityRole="button">
             <ArrowLeft color={theme.colors.onSurface} size={22} />
           </Pressable>
           <Text style={styles.title}>Examinations</Text>
@@ -67,38 +57,46 @@ export default function Exams() {
           )}
 
           <Text style={styles.h2}>Exam Schedule</Text>
-          {examsSafe.length === 0 && <EmptyState title="No exams scheduled" sub="Your exam timetable will appear here" />}
-          {examsSafe.map(ex => (
-            <Card key={ex.id} style={{ marginBottom: 8 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.examTypeRow}>
-                    <Badge count={ex.exam_type} color={theme.colors.brandPrimary} />
-                    <Text style={styles.examCode}>{ex.course_code || ''}</Text>
+          <AsyncView
+            loading={loading && !exams}
+            error={error}
+            onRetry={refresh}
+            empty={!loading && examsSafe.length === 0}
+            emptyTitle="No exams scheduled"
+            emptySub="Your exam timetable will appear here"
+          >
+            {examsSafe.map(ex => (
+              <Card key={ex.id} style={{ marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.examTypeRow}>
+                      <Badge count={ex.exam_type} color={theme.colors.brandPrimary} />
+                      <Text style={styles.examCode}>{ex.course_code || ''}</Text>
+                    </View>
+                    <Text style={styles.examName}>{ex.course_name}</Text>
                   </View>
-                  <Text style={styles.examName}>{ex.course_name}</Text>
+                  <View style={styles.marksBadge}>
+                    <Text style={styles.marksTxt}>{ex.max_marks}</Text>
+                    <Text style={styles.marksLbl}>marks</Text>
+                  </View>
                 </View>
-                <View style={styles.marksBadge}>
-                  <Text style={styles.marksTxt}>{ex.max_marks}</Text>
-                  <Text style={styles.marksLbl}>marks</Text>
+                <View style={styles.examMeta}>
+                  <View style={styles.examMetaRow}>
+                    <Calendar size={14} color={theme.colors.muted} />
+                    <Text style={styles.examMetaTxt}>{new Date(ex.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+                  </View>
+                  <View style={styles.examMetaRow}>
+                    <Clock size={14} color={theme.colors.muted} />
+                    <Text style={styles.examMetaTxt}>{ex.start_time} – {ex.end_time}</Text>
+                  </View>
+                  <View style={styles.examMetaRow}>
+                    <MapPin size={14} color={theme.colors.muted} />
+                    <Text style={styles.examMetaTxt}>{ex.venue}</Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.examMeta}>
-                <View style={styles.examMetaRow}>
-                  <Calendar size={14} color={theme.colors.muted} />
-                  <Text style={styles.examMetaTxt}>{new Date(ex.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</Text>
-                </View>
-                <View style={styles.examMetaRow}>
-                  <Clock size={14} color={theme.colors.muted} />
-                  <Text style={styles.examMetaTxt}>{ex.start_time} – {ex.end_time}</Text>
-                </View>
-                <View style={styles.examMetaRow}>
-                  <MapPin size={14} color={theme.colors.muted} />
-                  <Text style={styles.examMetaTxt}>{ex.venue}</Text>
-                </View>
-              </View>
-            </Card>
-          ))}
+              </Card>
+            ))}
+          </AsyncView>
         </ScrollView>
       </SafeAreaView>
     </ErrorBoundary>

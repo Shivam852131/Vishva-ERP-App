@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
-  ActivityIndicator, Modal, Animated, RefreshControl,
+  Modal, Animated, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
@@ -9,11 +9,11 @@ import { CheckCircle2, Clock, X, Send, FileText, AlertTriangle, ChevronRight } f
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import type { Assignment } from '@/src/types';
 import { theme } from '@/src/theme';
-import { ChipBtn, GradientButton, EmptyState } from '@/src/ui';
+import { ChipBtn, GradientButton, AsyncView } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 
 export default function Assignments() {
-  const { data: items, loading, refresh } = useFetch<Assignment[]>('/assignments');
+  const { data: items, loading, error, refresh } = useFetch<Assignment[]>('/assignments');
   const { mutate: submitAssign, loading: submitting } = useMutate();
   const [sel, setSel] = useState<Assignment | null>(null);
   const [text, setText] = useState('');
@@ -65,12 +65,11 @@ export default function Assignments() {
 
   const pendingCount = (items || []).filter(a => !a.submitted).length;
   const submittedCount = (items || []).filter(a => a.submitted).length;
-  const loadingInitial = loading && !items;
 
   return (
     <ErrorBoundary>
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
-        <LinearGradient colors={['#047857', '#059669']} style={styles.header}>
+        <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.header}>
           <Text style={styles.title}>Assignments</Text>
           <Text style={styles.sub}>{pendingCount} pending · {submittedCount} done</Text>
         </LinearGradient>
@@ -87,23 +86,22 @@ export default function Assignments() {
           ))}
         </View>
 
-        {loadingInitial ? (
-          <ActivityIndicator style={{ marginTop: 40 }} color={theme.colors.brandPrimary} />
-        ) : (
-          <Animated.ScrollView
-            contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100, gap: 10 }}
-            style={{ opacity: fadeAnim }}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.brandPrimary} />
-            }
+        <Animated.ScrollView
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100, gap: 10 }}
+          style={{ opacity: fadeAnim }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.brandPrimary} />
+          }
+        >
+          <AsyncView
+            loading={loading && !items}
+            error={error}
+            onRetry={refresh}
+            empty={!loading && filtered.length === 0}
+            emptyTitle="No assignments"
+            emptySub={filter === 'pending' ? 'All caught up!' : 'No assignments match this filter'}
+            emptyIcon="✅"
           >
-            {filtered.length === 0 && (
-              <EmptyState
-                title="No assignments"
-                sub={filter === 'pending' ? 'All caught up!' : 'No assignments match this filter'}
-                icon="✅"
-              />
-            )}
             {filtered.map(a => {
               const daysLeft = daysUntilDue(a.due_date);
               const isUrgent = daysLeft <= 2 && !a.submitted;
@@ -113,6 +111,7 @@ export default function Assignments() {
                   key={a.id}
                   testID={`asg-${a.id}`}
                   accessibilityLabel={`${a.title} - ${a.submitted ? 'submitted' : `due in ${daysLeft} days`}`}
+                  accessibilityRole="button"
                   onPress={() => setSel(a)}
                   style={[styles.card, isUrgent && styles.cardUrgent]}
                 >
@@ -165,8 +164,8 @@ export default function Assignments() {
                 </Pressable>
               );
             })}
-          </Animated.ScrollView>
-        )}
+          </AsyncView>
+        </Animated.ScrollView>
 
         <Modal visible={!!sel} transparent animationType="slide" onRequestClose={() => setSel(null)}>
           <View style={styles.backdrop}>
@@ -179,6 +178,7 @@ export default function Assignments() {
                 <Pressable
                   testID="close-modal"
                   accessibilityLabel="Close"
+                  accessibilityRole="button"
                   onPress={() => setSel(null)}
                 >
                   <X color={theme.colors.muted} size={22} />

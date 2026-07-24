@@ -1,381 +1,737 @@
 const express = require('express');
-const { prisma } = require('../db');
+const { getDB, oid } = require('../db');
 const { authUser, requireRole } = require('../auth');
-const { sendError, paginationParams, sendPaginated } = require('../utils');
+const { sendError, paginationParams, sendPaginated, nowIso } = require('../utils');
 
 const router = express.Router();
 
 function serializeCourse(course) {
   return {
-    id: course.id,
+    id: String(course._id),
     code: course.code,
     name: course.name,
-    faculty_id: course.facultyId || undefined,
-    faculty_name: course.faculty ? course.faculty.name : undefined,
+    department: course.department || undefined,
     credits: course.credits,
-    color: course.color,
+    faculty_id: course.facultyId ? String(course.facultyId) : undefined,
+    semester: course.semester || undefined,
+    college: course.college || undefined,
   };
 }
 
-function serializeTimetableSlot(slot) {
+function serializeTimetableSlot(slot, courseMap) {
+  const course = courseMap ? courseMap.get(String(slot.courseId)) : null;
   return {
-    id: slot.id,
-    day: slot.day,
-    start: slot.start,
-    end: slot.end,
-    course_id: slot.courseId,
-    course_name: slot.course.name,
-    course_code: slot.course.code,
-    faculty_name: slot.course.faculty ? slot.course.faculty.name : undefined,
+    id: String(slot._id),
+    day: slot.dayOfWeek,
+    start: slot.startTime,
+    end: slot.endTime,
+    course_id: String(slot.courseId),
+    course_name: course ? course.name : undefined,
+    course_code: course ? course.code : undefined,
+    faculty_name: course && course.facultyId ? String(course.facultyId) : undefined,
     room: slot.room,
   };
 }
 
-function serializeAssignment(assignment) {
+function serializeAssignment(assignment, courseMap, submission) {
+  const course = courseMap ? courseMap.get(String(assignment.courseId)) : null;
   return {
-    id: assignment.id,
-    course_id: assignment.courseId,
-    course_name: assignment.course.name,
+    id: String(assignment._id),
+    course_id: String(assignment.courseId),
+    course_name: course ? course.name : undefined,
     title: assignment.title,
     description: assignment.description,
-    due_date: assignment.dueDate.toISOString(),
+    due_date: assignment.dueDate,
     max_marks: assignment.maxMarks,
-    created_at: assignment.createdAt.toISOString(),
-    submitted: assignment.submissions.length > 0,
-    submission: assignment.submissions[0]
+    created_at: assignment.createdAt,
+    submitted: !!submission,
+    submission: submission
       ? {
-          id: assignment.submissions[0].id,
-          assignment_id: assignment.submissions[0].assignmentId,
-          student_id: assignment.submissions[0].studentId,
-          content: assignment.submissions[0].content,
-          submitted_at: assignment.submissions[0].submittedAt.toISOString(),
-          status: assignment.submissions[0].status,
+          id: String(submission._id),
+          assignment_id: String(submission.assignmentId),
+          student_id: String(submission.studentId),
+          content: submission.content,
+          submitted_at: submission.submittedAt,
         }
       : null,
   };
 }
 
-function serializeNote(note) {
+function serializeNote(note, courseMap) {
+  const course = courseMap ? courseMap.get(String(note.courseId)) : null;
   return {
-    id: note.id,
-    course_id: note.courseId || undefined,
-    course_name: note.course ? note.course.name : note.subject,
-    subject: note.subject,
-    class_name: note.className,
+    id: String(note._id),
+    course_id: note.courseId ? String(note.courseId) : undefined,
+    course_name: course ? course.name : undefined,
     title: note.title,
-    type: note.type,
-    url: note.url,
-    uploaded_by: note.uploadedBy,
-    created_at: note.createdAt.toISOString(),
-    description: note.description,
-    downloads: note.downloads,
-    helpful_count: note.helpfulCount,
+    content: note.content,
+    created_by: note.createdById ? String(note.createdById) : undefined,
+    created_at: note.createdAt,
   };
 }
 
-router.get('/courses', async (_req, res) => {
-  const courses = await prisma.course.findMany({ include: { faculty: true } });
-  res.json(courses.map(serializeCourse));
+async function getCourseMap(db, courseIds) {
+  if (!courseIds.length) return new Map();
+  const oids = courseIds.filter(id => oid(id)).map(id => oid(id));
+  const query = oids.length ? { $or: [{ _id: { $in: oids } }, { _id: { $in: courseIds } }] } : { _id: { $in: courseIds } };
+  const courses = await db.collection('courses').find(query).toArray();
+  const map = new Map();
+  for (const c of courses) map.set(String(c._id), c);
+  return map;
+}
+
+async function getUserCourseIds(db, userId, role) {
+  const uid = oid(userId);
+  if (role === 'student') {
+    const filter = uid ? { $or: [{ studentId: uid }, { studentId: userId }] } : { studentId: userId };
+    const enrollments = await db.collection('course_enrollments').find(filter).toArray();
+    return enrollments.map(e => e.courseId);
+  }
+  if (role === 'faculty') {
+    const filter = uid ? { $or: [{ facultyId: uid }, { facultyId: userId }] } : { facultyId: userId };
+    const courses = await db.collection('courses').find(filter).toArray();
+    return courses.map(c => c._id);
+  }
+  return null;
+}
+
+router.get('/courses', async (req, res) => {
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    let filter = {};
+
+    const deptFilter = req.query.department;
+    if (deptFilter) filter.department = deptFilter;
+
+    if (user.role === 'student') {
+      const courseIds = await getUserCourseIds(db, String(user._id), 'student');
+      const oids = courseIds.map(id => oid(id)).filter(Boolean);
+      if (oids.length) filter._id = { $in: oids };
+      else filter._id = { $in: courseIds };
+    } else if (user.role === 'faculty') {
+      const courseIds = await getUserCourseIds(db, String(user._id), 'faculty');
+      const oids = courseIds.map(id => oid(id)).filter(Boolean);
+      if (oids.length) filter._id = { $in: oids };
+      else filter._id = { $in: courseIds };
+    }
+
+    const courses = await db.collection('courses').find(filter).toArray();
+    res.json(courses.map(serializeCourse));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.post('/admin/courses', requireRole('college_admin', 'super_admin'), async (req, res) => {
-  const faculty = req.body.faculty_id ? await prisma.user.findUnique({ where: { id: req.body.faculty_id } }) : null;
-  const course = await prisma.course.create({
-    data: {
-      code: req.body.code,
-      name: req.body.name,
-      credits: Number(req.body.credits || 3),
-      facultyId: faculty ? faculty.id : null,
-      color: '#059669',
-    },
-    include: { faculty: true },
-  });
-  res.json(serializeCourse(course));
+router.post('/courses', requireRole('college_admin', 'super_admin', 'faculty'), async (req, res) => {
+  try {
+    const db = getDB();
+    const { code, name, department, credits, semester, college } = req.body;
+    if (!code || !name) return sendError(res, 'code and name are required.');
+
+    const doc = {
+      code,
+      name,
+      department: department || '',
+      credits: Number(credits || 3),
+      semester: semester || null,
+      college: college || '',
+      facultyId: req.body.faculty_id ? oid(req.body.faculty_id) : null,
+      createdAt: nowIso(),
+    };
+
+    const result = await db.collection('courses').insertOne(doc);
+    doc._id = result.insertedId;
+    res.json(serializeCourse(doc));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.put('/admin/courses/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
-  const course = await prisma.course.findUnique({ where: { id: req.params.id } });
-  if (!course) return sendError(res, 'Course not found.', 404);
-  const faculty = req.body.faculty_id ? await prisma.user.findUnique({ where: { id: req.body.faculty_id } }) : null;
-  const updated = await prisma.course.update({
-    where: { id: course.id },
-    data: {
-      code: req.body.code || course.code,
-      name: req.body.name || course.name,
-      credits: Number(req.body.credits || course.credits || 3),
-      facultyId: faculty ? faculty.id : course.facultyId,
-    },
-    include: { faculty: true },
-  });
-  res.json(serializeCourse(updated));
+router.put('/courses/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid course id.', 404);
+
+    const existing = await db.collection('courses').findOne({ _id });
+    if (!existing) return sendError(res, 'Course not found.', 404);
+
+    const update = {};
+    if (req.body.code) update.code = req.body.code;
+    if (req.body.name) update.name = req.body.name;
+    if (req.body.department) update.department = req.body.department;
+    if (req.body.credits) update.credits = Number(req.body.credits);
+    if (req.body.semester) update.semester = req.body.semester;
+    if (req.body.college) update.college = req.body.college;
+    if (req.body.faculty_id) update.facultyId = oid(req.body.faculty_id);
+
+    await db.collection('courses').updateOne({ _id }, { $set: update });
+    const updated = await db.collection('courses').findOne({ _id });
+    res.json(serializeCourse(updated));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.delete('/admin/courses/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
-  const course = await prisma.course.findUnique({ where: { id: req.params.id } });
-  if (!course) return sendError(res, 'Course not found.', 404);
-  await prisma.course.delete({ where: { id: course.id } });
-  res.json({ ok: true });
+router.delete('/courses/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid course id.', 404);
+
+    const result = await db.collection('courses').deleteOne({ _id });
+    if (!result.deletedCount) return sendError(res, 'Course not found.', 404);
+    res.json({ ok: true });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.get('/timetable', async (_req, res) => {
-  const slots = await prisma.timetableSlot.findMany({ include: { course: { include: { faculty: true } } } });
-  res.json(slots.map(serializeTimetableSlot));
+router.get('/timetable', async (req, res) => {
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    let filter = {};
+
+    if (user.role === 'student' || user.role === 'faculty') {
+      const courseIds = await getUserCourseIds(db, String(user._id), user.role);
+      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+    }
+
+    const slots = await db.collection('timetable_slots').find(filter).toArray();
+    const courseIds = [...new Set(slots.map(s => s.courseId))];
+    const courseMap = await getCourseMap(db, courseIds);
+    res.json(slots.map(s => serializeTimetableSlot(s, courseMap)));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.post('/admin/timetable', requireRole('college_admin', 'super_admin'), async (req, res) => {
-  const course = await prisma.course.findUnique({ where: { id: req.body.course_id }, include: { faculty: true } });
-  if (!course) return sendError(res, 'Course not found.', 404);
-  const slot = await prisma.timetableSlot.create({
-    data: {
-      day: req.body.day || 'Mon',
-      start: req.body.start || '09:00',
-      end: req.body.end || '10:00',
-      courseId: course.id,
-      room: req.body.room || 'TBD',
-    },
-    include: { course: { include: { faculty: true } } },
-  });
-  res.json(serializeTimetableSlot(slot));
+router.post('/timetable', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const { courseId, dayOfWeek, startTime, endTime, room, facultyId } = req.body;
+    if (!courseId) return sendError(res, 'courseId is required.');
+
+    const course = await db.collection('courses').findOne({ _id: oid(courseId) });
+    if (!course) return sendError(res, 'Course not found.', 404);
+
+    const doc = {
+      courseId: oid(courseId),
+      dayOfWeek: dayOfWeek || 'Mon',
+      startTime: startTime || '09:00',
+      endTime: endTime || '10:00',
+      room: room || 'TBD',
+      facultyId: facultyId ? oid(facultyId) : course.facultyId || null,
+    };
+
+    const result = await db.collection('timetable_slots').insertOne(doc);
+    doc._id = result.insertedId;
+    const courseMap = await getCourseMap(db, [doc.courseId]);
+    res.json(serializeTimetableSlot(doc, courseMap));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.delete('/admin/timetable/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
-  const slot = await prisma.timetableSlot.findUnique({ where: { id: req.params.id } });
-  if (!slot) return sendError(res, 'Timetable slot not found.', 404);
-  await prisma.timetableSlot.delete({ where: { id: slot.id } });
-  res.json({ ok: true });
+router.delete('/timetable/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid slot id.', 404);
+
+    const result = await db.collection('timetable_slots').deleteOne({ _id });
+    if (!result.deletedCount) return sendError(res, 'Slot not found.', 404);
+    res.json({ ok: true });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.get('/assignments', async (_req, res) => {
-  const assignments = await prisma.assignment.findMany({ include: { course: true, submissions: true } });
-  res.json(assignments.map(serializeAssignment));
+router.get('/assignments', async (req, res) => {
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    let filter = {};
+
+    if (user.role === 'student') {
+      const courseIds = await getUserCourseIds(db, String(user._id), 'student');
+      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+    } else if (user.role === 'faculty') {
+      const courseIds = await getUserCourseIds(db, String(user._id), 'faculty');
+      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+    }
+
+    const assignments = await db.collection('assignments').find(filter).toArray();
+    const courseIds = [...new Set(assignments.map(a => a.courseId))];
+    const courseMap = await getCourseMap(db, courseIds);
+
+    let submissions = [];
+    if (user.role === 'student') {
+      submissions = await db.collection('submissions')
+        .find({ studentId: oid(String(user._id)) })
+        .toArray();
+    }
+
+    const submissionMap = new Map();
+    for (const s of submissions) {
+      const key = String(s.assignmentId);
+      if (!submissionMap.has(key)) submissionMap.set(key, s);
+    }
+
+    res.json(
+      assignments.map(a =>
+        serializeAssignment(a, courseMap, submissionMap.get(String(a._id)) || null)
+      )
+    );
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
 router.post('/assignments', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-  const course = await prisma.course.findUnique({ where: { id: req.body.course_id } });
-  if (!course) return sendError(res, 'Course not found.', 404);
-  const assignment = await prisma.assignment.create({
-    data: {
-      courseId: course.id,
-      title: req.body.title,
-      description: req.body.description || '',
-      dueDate: new Date(req.body.due_date || Date.now() + 7 * 86400000),
-      maxMarks: Number(req.body.max_marks || 20),
-    },
-    include: { course: true, submissions: true },
-  });
-  res.json(serializeAssignment(assignment));
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    const { courseId, title, description, dueDate, maxMarks } = req.body;
+    if (!courseId || !title) return sendError(res, 'courseId and title are required.');
+
+    const course = await db.collection('courses').findOne({ _id: oid(courseId) });
+    if (!course) return sendError(res, 'Course not found.', 404);
+
+    const doc = {
+      courseId: oid(courseId),
+      title,
+      description: description || '',
+      dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString(),
+      maxMarks: Number(maxMarks || 20),
+      createdById: oid(String(user._id)),
+      createdAt: nowIso(),
+    };
+
+    const result = await db.collection('assignments').insertOne(doc);
+    doc._id = result.insertedId;
+    const courseMap = await getCourseMap(db, [doc.courseId]);
+    res.json(serializeAssignment(doc, courseMap, null));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.post('/assignments/submit', requireRole('student'), async (req, res) => {
-  const user = await authUser(req);
-  const assignment = await prisma.assignment.findUnique({ where: { id: req.body.assignment_id } });
-  if (!assignment) return sendError(res, 'Assignment not found.', 404);
-  const submission = await prisma.submission.upsert({
-    where: { assignmentId_studentId: { assignmentId: assignment.id, studentId: user.id } },
-    create: { assignmentId: assignment.id, studentId: user.id, content: req.body.content || '', status: 'submitted' },
-    update: { content: req.body.content || '', status: 'submitted', submittedAt: new Date() },
-  });
-  res.json({
-    ok: true,
-    submission: {
-      id: submission.id,
-      assignment_id: submission.assignmentId,
-      student_id: submission.studentId,
-      content: submission.content,
-      submitted_at: submission.submittedAt.toISOString(),
-      status: submission.status,
-    },
-  });
+router.post('/assignments/:id/submit', requireRole('student'), async (req, res) => {
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    const aid = oid(req.params.id);
+    if (!aid) return sendError(res, 'Invalid assignment id.', 404);
+
+    const assignment = await db.collection('assignments').findOne({ _id: aid });
+    if (!assignment) return sendError(res, 'Assignment not found.', 404);
+
+    const sid = oid(String(user._id));
+    const existing = await db.collection('submissions').findOne({
+      assignmentId: aid,
+      studentId: sid,
+    });
+
+    const now = nowIso();
+    if (existing) {
+      await db.collection('submissions').updateOne(
+        { _id: existing._id },
+        { $set: { content: req.body.content || '', submittedAt: now } }
+      );
+      const updated = await db.collection('submissions').findOne({ _id: existing._id });
+      res.json({ ok: true, submission: updated });
+    } else {
+      const doc = {
+        assignmentId: aid,
+        studentId: sid,
+        content: req.body.content || '',
+        submittedAt: now,
+        marks: null,
+        feedback: null,
+      };
+      const result = await db.collection('submissions').insertOne(doc);
+      doc._id = result.insertedId;
+      res.json({ ok: true, submission: doc });
+    }
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.get('/notes', async (_req, res) => {
-  const notes = await prisma.note.findMany({ include: { course: true } });
-  res.json(notes.map(serializeNote));
+router.get('/assignments/:id/submissions', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const aid = oid(req.params.id);
+    if (!aid) return sendError(res, 'Invalid assignment id.', 404);
+
+    const assignment = await db.collection('assignments').findOne({ _id: aid });
+    if (!assignment) return sendError(res, 'Assignment not found.', 404);
+
+    const submissions = await db.collection('submissions')
+      .find({ assignmentId: aid })
+      .toArray();
+
+    const studentIds = [...new Set(submissions.map(s => s.studentId))];
+    const students = studentIds.length
+      ? await db.collection('users').find({ _id: { $in: studentIds } }).toArray()
+      : [];
+    const studentMap = new Map();
+    for (const s of students) studentMap.set(String(s._id), s);
+
+    res.json(
+      submissions.map(sub => ({
+        id: String(sub._id),
+        assignment_id: String(sub.assignmentId),
+        student_id: String(sub.studentId),
+        student_name: studentMap.get(String(sub.studentId))?.name || '',
+        content: sub.content,
+        submitted_at: sub.submittedAt,
+        marks: sub.marks,
+        feedback: sub.feedback,
+      }))
+    );
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.post('/notes', async (req, res) => {
-  const user = await authUser(req);
-  const subject = req.body.subject || req.body.course_name || 'General';
-  const note = await prisma.note.create({
-    data: {
-      subject,
-      className: req.body.class_name || 'All Classes',
-      title: req.body.title || 'Shared note',
-      type: req.body.type || 'notes',
-      url: req.body.url || '',
-      uploadedBy: user.name,
-      description: req.body.description || '',
-    },
-    include: { course: true },
-  });
-  res.json(serializeNote(note));
+router.get('/notes', async (req, res) => {
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    let filter = {};
+
+    if (user.role === 'student' || user.role === 'faculty') {
+      const courseIds = await getUserCourseIds(db, String(user._id), user.role);
+      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+    }
+
+    const notes = await db.collection('notes').find(filter).sort({ createdAt: -1 }).toArray();
+    const courseIds = [...new Set(notes.map(n => n.courseId).filter(Boolean))];
+    const courseMap = await getCourseMap(db, courseIds);
+    res.json(notes.map(n => serializeNote(n, courseMap)));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.get('/results/me', requireRole('student'), async (req, res) => {
-  const user = await authUser(req);
-  const results = await prisma.examResult.findMany({ where: { studentId: user.id }, include: { course: true } });
-  res.json(results.map(result => ({
-    id: result.id,
-    course_id: result.courseId,
-    course_name: result.course.name,
-    course_code: result.course.code,
-    marks: result.marks,
-    max_marks: result.maxMarks,
-    grade: result.grade,
-    semester: result.semester,
-  })));
+router.post('/notes', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    const { courseId, title, content } = req.body;
+
+    const doc = {
+      courseId: courseId ? oid(courseId) : null,
+      title: title || 'Untitled',
+      content: content || '',
+      createdById: oid(String(user._id)),
+      createdAt: nowIso(),
+    };
+
+    const result = await db.collection('notes').insertOne(doc);
+    doc._id = result.insertedId;
+    const courseMap = doc.courseId ? await getCourseMap(db, [doc.courseId]) : new Map();
+    res.json(serializeNote(doc, courseMap));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.get('/events', async (_req, res) => {
-  const events = await prisma.event.findMany();
-  res.json(events.map(event => ({
-    id: event.id,
-    title: event.title,
-    date: event.date.toISOString(),
-    venue: event.venue,
-    description: event.description,
-  })));
+router.get('/exams', async (req, res) => {
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    let filter = {};
+
+    if (user.role === 'student' || user.role === 'faculty') {
+      const courseIds = await getUserCourseIds(db, String(user._id), user.role);
+      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+    }
+
+    const exams = await db.collection('exams').find(filter).toArray();
+    const courseIds = [...new Set(exams.map(e => e.courseId))];
+    const courseMap = await getCourseMap(db, courseIds);
+
+    res.json(
+      exams.map(exam => {
+        const course = courseMap.get(String(exam.courseId));
+        return {
+          id: String(exam._id),
+          course_id: String(exam.courseId),
+          course_name: course ? course.name : undefined,
+          course_code: course ? course.code : undefined,
+          title: exam.title,
+          type: exam.type,
+          date: exam.date,
+          duration: exam.duration,
+          total_marks: exam.totalMarks,
+        };
+      })
+    );
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
-router.get('/exams', async (_req, res) => {
-  const exams = await prisma.exam.findMany({ include: { course: true } });
-  res.json(exams.map(exam => ({
-    id: exam.id,
-    course_id: exam.courseId,
-    course_name: exam.course.name,
-    course_code: exam.course.code,
-    exam_type: exam.examType,
-    date: exam.date.toISOString().slice(0, 10),
-    start_time: exam.startTime,
-    end_time: exam.endTime,
-    venue: exam.venue,
-    max_marks: exam.maxMarks,
-  })));
-});
+router.get('/exams/:id/hall-ticket', requireRole('student'), async (req, res) => {
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    const eid = oid(req.params.id);
+    if (!eid) return sendError(res, 'Invalid exam id.', 404);
 
-router.get('/exams/my-hallticket', requireRole('student'), async (req, res) => {
-  const user = await authUser(req);
-  const exams = await prisma.exam.findMany({ include: { course: true } });
-  res.json({
-    student_name: user.name,
-    exams: exams.map(exam => ({ exam_id: exam.id, course_name: exam.course.name, venue: exam.venue, date: exam.date.toISOString().slice(0, 10) })),
-  });
-});
+    const exam = await db.collection('exams').findOne({ _id: eid });
+    if (!exam) return sendError(res, 'Exam not found.', 404);
 
-router.get('/exams/generated', async (_req, res) => {
-  const generated = await prisma.generatedExam.findMany({ include: { createdBy: true } });
-  res.json(generated.map(exam => ({
-    id: exam.id,
-    title: exam.title,
-    subject: exam.subject,
-    total_questions: exam.totalQuestions,
-    total_marks: exam.totalMarks,
-    difficulty: exam.difficulty,
-    created_at: exam.createdAt.toISOString(),
-    created_by_name: exam.createdBy.name,
-    instructions: exam.instructions,
-  })));
+    const course = await db.collection('courses').findOne({ _id: exam.courseId });
+
+    res.json({
+      student_name: user.name,
+      student_code: user.studentCode,
+      exam_id: String(exam._id),
+      exam_title: exam.title,
+      course_name: course ? course.name : '',
+      course_code: course ? course.code : '',
+      date: exam.date,
+      duration: exam.duration,
+      total_marks: exam.totalMarks,
+    });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
 router.post('/exams/generate', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-  const user = await authUser(req);
-  const exam = await prisma.generatedExam.create({
-    data: {
-      title: req.body.title || `${req.body.subject || 'Subject'} Practice Paper`,
-      subject: req.body.subject || 'General',
-      totalQuestions: Number(req.body.total_questions || 20),
-      totalMarks: Number(req.body.total_marks || 50),
-      difficulty: req.body.difficulty || 'mixed',
-      createdById: user.id,
-      instructions: req.body.instructions || 'Answer all questions.',
-    },
-    include: { createdBy: true },
-  });
-  res.json({
-    id: exam.id,
-    title: exam.title,
-    subject: exam.subject,
-    total_questions: exam.totalQuestions,
-    total_marks: exam.totalMarks,
-    difficulty: exam.difficulty,
-    created_at: exam.createdAt.toISOString(),
-    created_by_name: exam.createdBy.name,
-    instructions: exam.instructions,
-  });
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    const { courseId, title, type, questionCount, totalMarks } = req.body;
+
+    const examDoc = {
+      courseId: courseId ? oid(courseId) : null,
+      title: title || 'Generated Exam',
+      type: type || 'practice',
+      date: nowIso(),
+      duration: req.body.duration || '60 minutes',
+      totalMarks: Number(totalMarks || 50),
+    };
+
+    const examResult = await db.collection('exams').insertOne(examDoc);
+    examDoc._id = examResult.insertedId;
+
+    const generatedDoc = {
+      examId: examDoc._id,
+      courseId: examDoc.courseId,
+      title: examDoc.title,
+      type: examDoc.type,
+      questionCount: Number(questionCount || 20),
+      totalMarks: examDoc.totalMarks,
+      createdById: oid(String(user._id)),
+      createdAt: nowIso(),
+    };
+
+    const genResult = await db.collection('generated_exams').insertOne(generatedDoc);
+    generatedDoc._id = genResult.insertedId;
+
+    res.json({
+      id: String(generatedDoc._id),
+      exam_id: String(examDoc._id),
+      title: generatedDoc.title,
+      type: generatedDoc.type,
+      question_count: generatedDoc.questionCount,
+      total_marks: generatedDoc.totalMarks,
+      created_at: generatedDoc.createdAt,
+    });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
+router.get('/generated-exams', async (req, res) => {
+  try {
+    const db = getDB();
+    const generated = await db.collection('generated_exams').find().sort({ createdAt: -1 }).toArray();
+
+    const creatorIds = [...new Set(generated.map(g => g.createdById).filter(Boolean))];
+    const creators = creatorIds.length
+      ? await db.collection('users').find({ _id: { $in: creatorIds } }).toArray()
+      : [];
+    const creatorMap = new Map();
+    for (const c of creators) creatorMap.set(String(c._id), c);
+
+    res.json(
+      generated.map(g => ({
+        id: String(g._id),
+        title: g.title,
+        type: g.type,
+        question_count: g.questionCount,
+        total_marks: g.totalMarks,
+        created_at: g.createdAt,
+        created_by_name: creatorMap.get(String(g.createdById))?.name || '',
+      }))
+    );
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
 router.get('/question-bank/subjects', async (_req, res) => {
-  const rows = await prisma.questionBankItem.findMany({ select: { subject: true }, distinct: ['subject'] });
-  res.json(rows.map(row => row.subject));
+  try {
+    const db = getDB();
+    const subjects = await db.collection('question_bank_items').distinct('subject');
+    res.json(subjects);
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
 router.get('/question-bank/stats', async (_req, res) => {
-  const [total, subjects, easy, medium, hard] = await Promise.all([
-    prisma.questionBankItem.count(),
-    prisma.questionBankItem.findMany({ select: { subject: true }, distinct: ['subject'] }),
-    prisma.questionBankItem.count({ where: { difficulty: 'easy' } }),
-    prisma.questionBankItem.count({ where: { difficulty: 'medium' } }),
-    prisma.questionBankItem.count({ where: { difficulty: 'hard' } }),
-  ]);
-  res.json({ total, subjects: subjects.map(row => row.subject), easy, medium, hard });
+  try {
+    const db = getDB();
+    const [total, subjects, easy, medium, hard] = await Promise.all([
+      db.collection('question_bank_items').countDocuments(),
+      db.collection('question_bank_items').distinct('subject'),
+      db.collection('question_bank_items').countDocuments({ difficulty: 'easy' }),
+      db.collection('question_bank_items').countDocuments({ difficulty: 'medium' }),
+      db.collection('question_bank_items').countDocuments({ difficulty: 'hard' }),
+    ]);
+    res.json({ total, subjects, easy, medium, hard });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
 router.get('/question-bank', async (req, res) => {
-  const { skip, take } = paginationParams(req.query);
-  const [questions, total] = await Promise.all([
-    prisma.questionBankItem.findMany({ skip, take }),
-    prisma.questionBankItem.count(),
-  ]);
-  sendPaginated(res, questions.map(question => ({
-    id: question.id,
-    subject: question.subject,
-    unit: question.unit,
-    chapter: question.chapter,
-    question_text: question.questionText,
-    question_type: question.questionType,
-    options: question.options,
-    correct_answer: question.correctAnswer,
-    difficulty: question.difficulty,
-    marks: question.marks,
-    image_url: question.imageUrl,
-  })), total);
+  try {
+    const db = getDB();
+    const { skip, limit } = paginationParams(req.query);
+    const filter = {};
+    if (req.query.subject) filter.subject = req.query.subject;
+
+    const [questions, total] = await Promise.all([
+      db.collection('question_bank_items').find(filter).skip(skip).limit(limit).toArray(),
+      db.collection('question_bank_items').countDocuments(filter),
+    ]);
+
+    sendPaginated(
+      res,
+      questions.map(q => ({
+        id: String(q._id),
+        subject: q.subject,
+        topic: q.topic,
+        question: q.question,
+        options: q.options,
+        correct_answer: q.correctAnswer,
+        difficulty: q.difficulty,
+        marks: q.marks,
+        type: q.type,
+      })),
+      total
+    );
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
 router.post('/question-bank', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-  const question = await prisma.questionBankItem.create({
-    data: {
-      subject: req.body.subject || 'General',
-      unit: req.body.unit || 'Unit 1',
-      chapter: req.body.chapter || 'Chapter 1',
-      questionText: req.body.question_text || '',
-      questionType: req.body.question_type || 'subjective',
-      options: Array.isArray(req.body.options) ? req.body.options : [],
-      correctAnswer: req.body.correct_answer || '',
-      difficulty: req.body.difficulty || 'medium',
-      marks: Number(req.body.marks || 1),
-      imageUrl: req.body.image_base64 ? 'data:image/jpeg;base64,attached' : '',
-    },
-  });
-  res.json({
-    id: question.id,
-    subject: question.subject,
-    unit: question.unit,
-    chapter: question.chapter,
-    question_text: question.questionText,
-    question_type: question.questionType,
-    options: question.options,
-    correct_answer: question.correctAnswer,
-    difficulty: question.difficulty,
-    marks: question.marks,
-    image_url: question.imageUrl,
-  });
+  try {
+    const db = getDB();
+    const { subject, topic, question, options, correctAnswer, difficulty, marks, type } = req.body;
+    if (!question) return sendError(res, 'question is required.');
+
+    const doc = {
+      subject: subject || 'General',
+      topic: topic || '',
+      question,
+      options: Array.isArray(options) ? options : [],
+      correctAnswer: correctAnswer || '',
+      difficulty: difficulty || 'medium',
+      marks: Number(marks || 1),
+      type: type || 'mcq',
+    };
+
+    const result = await db.collection('question_bank_items').insertOne(doc);
+    doc._id = result.insertedId;
+    res.json({
+      id: String(doc._id),
+      subject: doc.subject,
+      topic: doc.topic,
+      question: doc.question,
+      options: doc.options,
+      correct_answer: doc.correctAnswer,
+      difficulty: doc.difficulty,
+      marks: doc.marks,
+      type: doc.type,
+    });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
 router.delete('/question-bank/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-  const question = await prisma.questionBankItem.findUnique({ where: { id: req.params.id } });
-  if (!question) return sendError(res, 'Question not found.', 404);
-  await prisma.questionBankItem.delete({ where: { id: question.id } });
-  res.json({ ok: true });
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid question id.', 404);
+
+    const result = await db.collection('question_bank_items').deleteOne({ _id });
+    if (!result.deletedCount) return sendError(res, 'Question not found.', 404);
+    res.json({ ok: true });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
+router.get('/results/me', requireRole('student'), async (req, res) => {
+  try {
+    const db = getDB();
+    const user = await authUser(req);
+    const sid = oid(String(user._id));
+
+    const results = await db.collection('exam_results').find({ studentId: sid }).toArray();
+    const courseIds = [...new Set(results.map(r => r.courseId).filter(Boolean))];
+    const courseMap = await getCourseMap(db, courseIds);
+
+    res.json(
+      results.map(r => {
+        const course = courseMap.get(String(r.courseId));
+        return {
+          id: String(r._id),
+          course_id: r.courseId ? String(r.courseId) : undefined,
+          course_name: course ? course.name : undefined,
+          course_code: course ? course.code : undefined,
+          marks: r.marks,
+          grade: r.grade,
+          semester: r.semester,
+        };
+      })
+    );
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
+router.get('/events', async (_req, res) => {
+  try {
+    const db = getDB();
+    const events = await db.collection('events').find().sort({ date: -1 }).toArray();
+    res.json(
+      events.map(e => ({
+        id: String(e._id),
+        title: e.title,
+        description: e.description,
+        date: e.date,
+        type: e.type,
+        audience: e.audience,
+      }))
+    );
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
 });
 
 module.exports = router;

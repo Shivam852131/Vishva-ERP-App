@@ -19,6 +19,9 @@ import {
   User,
   GraduationCap,
   CalendarDays,
+  Sparkles,
+  Mail,
+  MessageCircle,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch } from '@/src/hooks/useFetch';
@@ -30,12 +33,13 @@ import {
   Card,
   EmptyState,
   DashboardSkeleton,
+  AsyncView,
 } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 
 export default function ParentDashboard() {
   const { user: parent } = useAuth();
-  const { data, loading, refresh } =
+  const { data, loading, error, refresh } =
     useFetch<ParentDashboardData>('/dashboard/parent');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -53,6 +57,19 @@ export default function ParentDashboard() {
       <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
         <DashboardSkeleton />
       </View>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <SafeAreaView
+        edges={['top']}
+        style={{ flex: 1, backgroundColor: theme.colors.surface }}
+      >
+        <AsyncView loading={false} error={error} onRetry={refresh} empty={false}>
+          {null}
+        </AsyncView>
+      </SafeAreaView>
     );
   }
 
@@ -87,6 +104,7 @@ export default function ParentDashboard() {
             <Pressable
               testID="notif-btn"
               accessibilityLabel="Notifications"
+              accessibilityRole="button"
               onPress={() => router.push('/notifications' as any)}
               style={styles.iconBtn}
             >
@@ -285,6 +303,7 @@ export default function ParentDashboard() {
             <Pressable
               testID="qa-attendance"
               accessibilityLabel="View Attendance"
+              accessibilityRole="button"
               onPress={() => router.push('/(parent)/attendance' as any)}
               style={styles.qa}
             >
@@ -302,6 +321,7 @@ export default function ParentDashboard() {
             <Pressable
               testID="qa-fees"
               accessibilityLabel="View Fees"
+              accessibilityRole="button"
               onPress={() => router.push('/(parent)/fees' as any)}
               style={styles.qa}
             >
@@ -319,6 +339,7 @@ export default function ParentDashboard() {
             <Pressable
               testID="qa-results"
               accessibilityLabel="View Results"
+              accessibilityRole="button"
               onPress={() => router.push('/results' as any)}
               style={styles.qa}
             >
@@ -332,6 +353,46 @@ export default function ParentDashboard() {
               </View>
               <Text style={styles.qaTxt}>Results</Text>
             </Pressable>
+
+            <Pressable
+              testID="qa-ai-assistant"
+              accessibilityLabel="AI Assistant"
+              accessibilityRole="button"
+              onPress={() => router.push('/(parent)/ai' as any)}
+              style={styles.qa}
+            >
+              <View
+                style={[
+                  styles.qaIcon,
+                  { backgroundColor: '#EDE9FE' },
+                ]}
+              >
+                <Sparkles size={20} color="#7C3AED" />
+              </View>
+              <Text style={styles.qaTxt}>AI Assist</Text>
+            </Pressable>
+          </View>
+
+          <SectionTitle title="Communication" />
+          <View style={{ paddingHorizontal: theme.spacing.lg, gap: 8 }}>
+            {[
+              { icon: Bell, label: 'Notifications', route: '/notifications', color: '#4F46E5', bg: '#EEF2FF' },
+              { icon: Bell, label: 'Push Alerts', route: '/push-notifications', color: '#059669', bg: '#ECFDF5' },
+              { icon: Mail, label: 'Email', route: '/email', color: '#7C3AED', bg: '#F5F3FF' },
+              { icon: MessageCircle, label: 'WhatsApp', route: '/whatsapp', color: '#25D366', bg: '#F0FDF4' },
+            ].map((item, i) => {
+              const Icon = item.icon;
+              return (
+                <Pressable key={i} onPress={() => router.push(item.route as any)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: theme.colors.border }}>
+                  <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: item.bg, alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon size={18} color={item.color} />
+                  </View>
+                  <Text style={{ flex: 1, fontWeight: '700', color: theme.colors.text, fontSize: 13 }}>{item.label}</Text>
+                  <Text style={{ color: theme.colors.muted, fontSize: 16 }}>›</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           {/* Empty state for no results/fees */}

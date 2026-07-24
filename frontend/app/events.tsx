@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { router } from '@/src/navigation/router';
@@ -8,10 +8,10 @@ import { useFetch } from '@/src/hooks/useFetch';
 import type { Event } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
-import { Card, EmptyState } from '@/src/ui';
+import { Card, AsyncView } from '@/src/ui';
 
 export default function Events() {
-  const { data: items, loading, refresh } = useFetch<Event[]>('/events');
+  const { data: items, loading, error, refresh } = useFetch<Event[]>('/events');
   const itemsSafe = items || [];
 
   return (
@@ -19,7 +19,7 @@ export default function Events() {
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
         <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.header}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Pressable onPress={() => router.back()} testID="back-btn" accessibilityLabel="Go back">
+            <Pressable onPress={() => router.back()} testID="back-btn" accessibilityLabel="Go back" accessibilityRole="button">
               <ArrowLeft color="#fff" size={22} />
             </Pressable>
             <Text style={styles.title}>Events</Text>
@@ -28,14 +28,18 @@ export default function Events() {
           <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 4 }}>{itemsSafe.length} upcoming events</Text>
         </LinearGradient>
 
-        {loading ? (
-          <ActivityIndicator style={{ marginTop: 40 }} color={theme.colors.brandPrimary} />
-        ) : (
-          <ScrollView
-            contentContainerStyle={{ padding: theme.spacing.lg, gap: 10, paddingBottom: 100 }}
-            refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={theme.colors.brandPrimary} />}
+        <ScrollView
+          contentContainerStyle={{ padding: theme.spacing.lg, gap: 10, paddingBottom: 100 }}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={theme.colors.brandPrimary} />}
+        >
+          <AsyncView
+            loading={loading && !items}
+            error={error}
+            onRetry={refresh}
+            empty={!loading && itemsSafe.length === 0}
+            emptyTitle="No events"
+            emptySub="Check back later for campus events"
           >
-            {itemsSafe.length === 0 && <EmptyState title="No events" sub="Check back later for campus events" />}
             {itemsSafe.map((e, i) => (
               <Card key={e.id || i} style={{ marginBottom: 4 }}>
                 <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -54,8 +58,8 @@ export default function Events() {
                 </View>
               </Card>
             ))}
-          </ScrollView>
-        )}
+          </AsyncView>
+        </ScrollView>
       </SafeAreaView>
     </ErrorBoundary>
   );

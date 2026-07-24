@@ -168,7 +168,7 @@ export default function Attendance() {
           <LinearGradient colors={['rgba(10,15,13,0.55)', 'rgba(10,15,13,0.95)']} style={StyleSheet.absoluteFill} />
           <SafeAreaView edges={['top']} style={{ paddingHorizontal: theme.spacing.lg, flex: 1 }}>
             <View style={styles.headRow}>
-              <Pressable testID="back-btn" onPress={() => router.back()} hitSlop={10} accessibilityLabel="Go back">
+              <Pressable testID="back-btn" onPress={() => router.back()} hitSlop={10} accessibilityLabel="Go back" accessibilityRole="button">
                 <ArrowLeft color="#fff" size={22} />
               </Pressable>
               <Text style={styles.headTitle}>Smart Attendance</Text>
@@ -208,7 +208,7 @@ export default function Attendance() {
             )}
 
             {locDenied && (
-              <Pressable testID="loc-settings" onPress={() => Linking.openSettings()} style={styles.settingsRow} accessibilityLabel="Open location settings">
+              <Pressable testID="loc-settings" onPress={() => Linking.openSettings()} style={styles.settingsRow} accessibilityLabel="Open location settings" accessibilityRole="button">
                 <Settings color={theme.colors.warning} size={16} />
                 <Text style={styles.settingsTxt}>Location blocked — tap to open Settings and enable it</Text>
               </Pressable>
@@ -250,7 +250,7 @@ export default function Attendance() {
                         ) : pendingGps?.id === s.id ? (
                           <View style={styles.explainBox}>
                             <Text style={styles.explainTxt}>We will use your location once to confirm you are inside the classroom zone.</Text>
-                            <Pressable testID={`gps-continue-${s.id}`} onPress={() => gpsCheckin(s)} style={styles.cta} accessibilityLabel="Continue with GPS">
+                            <Pressable testID={`gps-continue-${s.id}`} onPress={() => gpsCheckin(s)} style={styles.cta} accessibilityLabel="Continue with GPS" accessibilityRole="button">
                               <Text style={styles.ctaTxt}>Continue</Text>
                             </Pressable>
                           </View>
@@ -266,6 +266,7 @@ export default function Attendance() {
                             }}
                             style={styles.cta}
                             accessibilityLabel={M.cta}
+                            accessibilityRole="button"
                           >
                             {busyId === s.id ? (
                               <ActivityIndicator color="#fff" />
@@ -320,7 +321,7 @@ export default function Attendance() {
                     <Text style={styles.bgSub}>Geofencing checks you in the moment you enter campus zones — even with the app closed.</Text>
                   </View>
                 </View>
-                <Pressable testID="enable-bg" onPress={enableBackground} style={styles.bgBtn} accessibilityLabel="Enable background check-in">
+                <Pressable testID="enable-bg" onPress={enableBackground} style={styles.bgBtn} accessibilityLabel="Enable background check-in" accessibilityRole="button">
                   <Text style={styles.bgBtnTxt}>Enable</Text>
                 </Pressable>
                 {bgStatus ? <Text style={styles.bgStatus}>{bgStatus}</Text> : null}

@@ -1,65 +1,120 @@
 const express = require('express');
-const { prisma } = require('../db');
-const { authUser } = require('../auth');
-const { sendError, roomForUser } = require('../utils');
-
-function serializeMessage(message) {
-  return {
-    id: message.id,
-    from_id: message.fromId,
-    from_name: message.from.name,
-    to_id: message.toId,
-    message: message.message,
-    created_at: message.createdAt.toISOString(),
-  };
-}
+const { getDB, oid } = require('../db');
+const { serializeUser, sendError, makeCode, nowIso } = require('../utils');
 
 function createChatRouter(io) {
   const router = express.Router();
 
-  async function pushNotification({ audience = 'all', title, body, recipientIds = [] }) {
-    await prisma.notification.create({ data: { audience, title, body, recipientIds, readBy: [] } });
-    io.emit('notifications:update', { audience, recipientIds });
-  }
+  router.get('/users', async (req, res) => {
+    try {
+      const db = getDB();
+      const currentUserId = req.user._id;
 
-  router.get('/chat/users', async (req, res) => {
-    const user = await authUser(req);
-    const users = await prisma.user.findMany({
-      where: { role: { in: ['faculty', 'student', 'college_admin'] }, id: { not: user.id } },
-    });
-    res.json(users.map(item => ({ id: item.id, name: item.name, email: item.email, role: item.role })));
+      const users = await db.collection('users')
+        .find({ _id: { $ne: oid(currentUserId) } })
+        .project({ name: 1, role: 1 })
+        .toArray();
+
+      const result = await Promise.all(users.map(async (user) => {
+        const lastMessage = await db.collection('chat_messages')
+          .findOne(
+            {
+              $or: [
+                { senderId: oid(currentUserId), receiverId: user._id },
+                { senderId: user._id, receiverId: oid(currentUserId) },
+              ],
+            },
+            { sort: { createdAt: -1 } }
+          );
+
+        return {
+          id: user._id.toString(),
+          name: user.name,
+          role: user.role,
+          lastMessage: lastMessage
+            ? { content: lastMessage.content, createdAt: lastMessage.createdAt }
+            : null,
+        };
+      }));
+
+      res.json(result);
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
-  router.get('/chat/:userId', async (req, res) => {
-    const user = await authUser(req);
-    const otherId = req.params.userId;
-    const messages = await prisma.chatMessage.findMany({
-      where: {
-        OR: [
-          { fromId: user.id, toId: otherId },
-          { fromId: otherId, toId: user.id },
-        ],
-      },
-      orderBy: { createdAt: 'asc' },
-      include: { from: true },
-    });
-    res.json(messages.map(serializeMessage));
+  router.get('/messages/:userId', async (req, res) => {
+    try {
+      const db = getDB();
+      const currentUserId = req.user._id;
+      const otherUserId = req.params.userId;
+
+      const messages = await db.collection('chat_messages')
+        .find({
+          $or: [
+            { senderId: oid(currentUserId), receiverId: oid(otherUserId) },
+            { senderId: oid(otherUserId), receiverId: oid(currentUserId) },
+          ],
+        })
+        .sort({ createdAt: 1 })
+        .toArray();
+
+      await db.collection('chat_messages').updateMany(
+        { senderId: oid(otherUserId), receiverId: oid(currentUserId), read: false },
+        { $set: { read: true } }
+      );
+
+      res.json(messages);
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
-  router.post('/chat/send', async (req, res) => {
-    const user = await authUser(req);
-    const receiver = await prisma.user.findUnique({ where: { id: req.body.to_user_id } });
-    if (!receiver) return sendError(res, 'Recipient not found.', 404);
-    const message = await prisma.chatMessage.create({
-      data: { fromId: user.id, toId: receiver.id, message: req.body.message || '' },
-      include: { from: true },
-    });
-    const payload = serializeMessage(message);
-    io.to(roomForUser(user.id)).emit('chat:message', payload);
-    io.to(roomForUser(receiver.id)).emit('chat:message', payload);
-    io.emit('chat:message', payload);
-    await pushNotification({ audience: receiver.role, title: `New message from ${user.name}`, body: payload.message, recipientIds: [receiver.id] });
-    res.json(payload);
+  router.post('/messages', async (req, res) => {
+    try {
+      const db = getDB();
+      const currentUserId = req.user._id;
+      const { receiverId, content } = req.body;
+
+      const message = {
+        senderId: oid(currentUserId),
+        receiverId: oid(receiverId),
+        content,
+        read: false,
+        createdAt: nowIso(),
+      };
+
+      const { insertedId } = await db.collection('chat_messages').insertOne(message);
+
+      const savedMessage = { ...message, _id: insertedId };
+
+      io.to(receiverId.toString()).emit('chat:message', savedMessage);
+
+      const receiver = await db.collection('users').findOne(
+        { _id: oid(receiverId) },
+        { projection: { name: 1 } }
+      );
+
+      const sender = await db.collection('users').findOne(
+        { _id: oid(currentUserId) },
+        { projection: { name: 1 } }
+      );
+
+      if (receiver) {
+        await db.collection('notifications').insertOne({
+          audience: 'individual',
+          title: 'New Message',
+          body: `${sender?.name || 'Someone'} sent you a message`,
+          recipientIds: [oid(receiverId)],
+          readBy: [],
+          createdAt: nowIso(),
+        });
+      }
+
+      res.status(201).json(savedMessage);
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
   return router;

@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const { prisma } = require('./db');
+const { getDB, oid } = require('./db');
 const { sendError } = require('./utils');
 
 const SALT_ROUNDS = 10;
@@ -11,7 +11,7 @@ if (!JWT_SECRET) {
   throw new Error('JWT_SECRET environment variable is required.');
 }
 
-const PUBLIC_PATHS = new Set(['/auth/login', '/auth/register']);
+const PUBLIC_PATHS = new Set(['/auth/login', '/auth/register', '/auth/send-otp', '/auth/verify-otp']);
 
 function hashPassword(password) {
   return bcrypt.hash(password, SALT_ROUNDS);
@@ -22,7 +22,7 @@ function comparePassword(password, hash) {
 }
 
 function issueToken(user) {
-  return jwt.sign({ sub: user.id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign({ sub: String(user._id || user.id), role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
 async function userFromToken(token) {
@@ -33,7 +33,8 @@ async function userFromToken(token) {
   } catch {
     return null;
   }
-  return prisma.user.findUnique({ where: { id: payload.sub } });
+  const db = getDB();
+  return db.collection('users').findOne({ _id: oid(payload.sub) });
 }
 
 async function authMiddleware(req, res, next) {
@@ -43,7 +44,7 @@ async function authMiddleware(req, res, next) {
   if (!token) return sendError(res, 'Authentication required.', 401);
   const user = await userFromToken(token);
   if (!user) return sendError(res, 'Invalid or expired token.', 401);
-  if (user.status === 'suspended') return sendError(res, 'This account is suspended.', 403);
+  if (user.status === 'suspended' || user.isActive === false) return sendError(res, 'This account is suspended.', 403);
   req.token = token;
   req.user = user;
   next();
@@ -55,7 +56,10 @@ async function authUser(req) {
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user) return sendError(res, 'You do not have permission to perform this action.', 403);
+    const userRole = req.user.role;
+    const normalized = userRole === 'collegeAdmin' ? 'college_admin' : userRole === 'superadmin' ? 'super_admin' : userRole;
+    if (!roles.includes(normalized) && !roles.includes(userRole)) {
       return sendError(res, 'You do not have permission to perform this action.', 403);
     }
     next();

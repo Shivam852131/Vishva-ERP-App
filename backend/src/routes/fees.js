@@ -1,200 +1,255 @@
-const express = require('express');
-const { prisma } = require('../db');
-const { authUser, requireRole } = require('../auth');
-const { sendError, daysFromNow } = require('../utils');
-
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder';
-const planPrices = { basic: 99900, pro: 299900, enterprise: 499900 };
-
-function serializeFee(fee) {
-  return {
-    id: fee.id,
-    student_id: fee.studentId,
-    type: fee.type,
-    amount: fee.amount,
-    currency: fee.currency,
-    due_date: fee.dueDate.toISOString(),
-    status: fee.status,
-    paid_at: fee.paidAt ? fee.paidAt.toISOString() : undefined,
-    semester: fee.semester,
-  };
-}
+const { getDB, oid } = require('../db');
+const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated } = require('../utils');
 
 function createFeesRouter(io) {
-  const router = express.Router();
-
-  async function emitFeesUpdate(payload = {}) {
-    io.emit('fees:update', payload);
-  }
-
-  async function pushNotification({ audience = 'all', title, body, recipientIds = [] }) {
-    const notification = await prisma.notification.create({ data: { audience, title, body, recipientIds, readBy: [] } });
-    io.emit('notifications:update', { audience, recipientIds });
-    return notification;
-  }
+  const { Router } = require('express');
+  const router = Router();
 
   router.get('/fees/me', async (req, res) => {
-    const user = await authUser(req);
-    const fees = await prisma.fee.findMany({ where: { studentId: user.id } });
-    res.json(fees.map(serializeFee));
+    try {
+      const db = getDB();
+      const uid = oid(req.user._id);
+      const userId = String(req.user._id);
+      const fees = await db.collection('fees')
+        .find({ $or: [{ userId: uid }, { userId }] })
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(fees);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
   router.get('/fees/my', async (req, res) => {
-    const user = await authUser(req);
-    const fees = await prisma.fee.findMany({ where: { studentId: user.id } });
-    res.json(fees.map(serializeFee));
+    try {
+      const db = getDB();
+      const uid = oid(req.user._id);
+      const userId = String(req.user._id);
+      const fees = await db.collection('fees')
+        .find({ $or: [{ userId: uid }, { userId }] })
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(fees);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
-  router.get('/fees/all', requireRole('college_admin', 'super_admin'), async (_req, res) => {
-    const fees = await prisma.fee.findMany();
-    res.json(fees.map(serializeFee));
+  router.get('/fees', async (req, res) => {
+    try {
+      const db = getDB();
+      const filter = {};
+      if (req.query.status) filter.status = req.query.status;
+      const fees = await db.collection('fees')
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(fees);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/fees', async (req, res) => {
+    try {
+      const db = getDB();
+      const { userId, type, amount, dueDate, semester } = req.body;
+      const fee = {
+        userId: oid(userId),
+        type,
+        amount,
+        dueDate,
+        status: 'pending',
+        semester,
+        receiptId: null,
+        createdAt: nowIso(),
+      };
+      const result = await db.collection('fees').insertOne(fee);
+      fee._id = result.insertedId;
+      res.json(fee);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
   router.post('/fees/pay', async (req, res) => {
-    const user = await authUser(req);
-    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
-    const fee = req.body.fee_id
-      ? await prisma.fee.findUnique({ where: { id: req.body.fee_id } })
-      : await prisma.fee.findFirst({ where: { status: 'pending', ...(isAdmin ? {} : { studentId: user.id }) } });
-    if (!fee) return sendError(res, 'Fee not found.', 404);
-    if (!isAdmin && fee.studentId !== user.id) return sendError(res, 'This fee does not belong to you.', 403);
-    res.json({
-      demo: true,
-      key_id: RAZORPAY_KEY_ID,
-      order_id: `order_fee_${Date.now()}`,
-      amount: fee.amount,
-      currency: fee.currency,
-      receipt: `fee_${fee.id}_${Date.now()}`,
-      fee_id: fee.id,
-    });
-  });
-
-  router.post('/payments/verify', async (req, res) => {
-    const user = await authUser(req);
-    const isAdmin = ['college_admin', 'super_admin'].includes(user.role);
-    if (req.body.purpose === 'subscription') {
-      if (!isAdmin) return sendError(res, 'Only an admin can manage the college subscription.', 403);
-      const plan = req.body.plan_id || 'pro';
-      const renews = daysFromNow(plan === 'enterprise' ? 365 : plan === 'pro' ? 180 : 30);
-      let subscription = await prisma.subscription.findFirst();
-      subscription = subscription
-        ? await prisma.subscription.update({
-            where: { id: subscription.id },
-            data: { active: true, plan, status: 'active', renewsAt: new Date(renews), expiresAt: new Date(renews) },
-          })
-        : await prisma.subscription.create({
-            data: { active: true, plan, status: 'active', renewsAt: new Date(renews), expiresAt: new Date(renews), seatsUsed: 0, seatsLimit: 5000 },
-          });
-      const receipt = await prisma.paymentReceipt.create({
-        data: {
-          type: 'subscription',
-          amount: planPrices[plan] || planPrices.pro,
-          currency: 'INR',
-          paymentId: req.body.razorpay_payment_id || `pay_demo_${Date.now()}`,
-          orderId: req.body.razorpay_order_id || req.body.order_id,
-          planId: plan,
-          status: 'paid',
-        },
-      });
-      const subscriptionState = {
-        active: subscription.active,
-        plan: subscription.plan,
-        status: subscription.status,
-        renews_at: subscription.renewsAt.toISOString(),
-        expires_at: subscription.expiresAt.toISOString(),
-        seats_used: subscription.seatsUsed,
-        seats_limit: subscription.seatsLimit,
-      };
-      io.emit('subscription:update', subscriptionState);
-      return res.json({ verified: true, receipt_id: receipt.id, subscription: subscriptionState });
-    }
-    const fee = await prisma.fee.findUnique({ where: { id: req.body.fee_id } });
-    if (!fee) return sendError(res, 'Fee not found.', 404);
-    if (!isAdmin && fee.studentId !== user.id) return sendError(res, 'This fee does not belong to you.', 403);
-    const updatedFee = await prisma.fee.update({ where: { id: fee.id }, data: { status: 'paid', paidAt: new Date() } });
-    const receipt = await prisma.paymentReceipt.create({
-      data: {
-        type: 'fee',
-        feeId: fee.id,
+    try {
+      const db = getDB();
+      const { feeId } = req.body;
+      const fee = await db.collection('fees').findOne({ _id: oid(feeId) });
+      if (!fee) return sendError(res, 'Fee not found', 404);
+      const orderId = makeCode('order');
+      res.json({
+        orderId,
         amount: fee.amount,
-        currency: fee.currency,
-        paymentId: req.body.razorpay_payment_id || `pay_demo_${Date.now()}`,
-        orderId: req.body.razorpay_order_id || req.body.order_id,
-        status: 'paid',
-      },
-    });
-    await pushNotification({ audience: 'students', title: 'Payment received', body: `${fee.type} has been marked as paid.` });
-    io.emit('payments:update', { feeId: fee.id, receiptId: receipt.id });
-    await emitFeesUpdate({ feeId: fee.id, studentId: updatedFee.studentId, status: updatedFee.status });
-    res.json({ verified: true, receipt_id: receipt.id });
-  });
-
-  router.get('/payments/receipts', requireRole('college_admin', 'super_admin'), async (_req, res) => {
-    const receipts = await prisma.paymentReceipt.findMany({ orderBy: { createdAt: 'desc' } });
-    res.json(receipts.map(receipt => ({
-      id: receipt.id,
-      type: receipt.type,
-      fee_id: receipt.feeId || undefined,
-      amount: receipt.amount,
-      currency: receipt.currency,
-      payment_id: receipt.paymentId,
-      order_id: receipt.orderId,
-      paid_at: receipt.paidAt ? receipt.paidAt.toISOString() : receipt.createdAt.toISOString(),
-      created_at: receipt.createdAt.toISOString(),
-      status: receipt.status,
-      method: 'Razorpay',
-    })));
-  });
-
-  router.post('/fees/create', requireRole('college_admin', 'super_admin'), async (req, res) => {
-    const fee = await prisma.fee.create({
-      data: {
-        studentId: req.body.student_id,
-        type: req.body.type || 'Fee',
-        amount: Number(req.body.amount || 0),
         currency: 'INR',
-        dueDate: new Date(req.body.due_date || daysFromNow(15)),
-        status: 'pending',
-        semester: req.body.semester || 'Semester',
-      },
-    });
-    await pushNotification({ audience: 'students', title: 'New fee posted', body: `${fee.type} is due on ${fee.dueDate.toISOString().slice(0, 10)}.`, recipientIds: [fee.studentId] });
-    await emitFeesUpdate({ feeId: fee.id, studentId: fee.studentId, status: fee.status });
-    res.json(serializeFee(fee));
+        key: process.env.RAZORPAY_KEY_ID,
+      });
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
-  router.post('/fees/:feeId/remind', requireRole('college_admin', 'super_admin'), async (req, res) => {
-    const fee = await prisma.fee.findUnique({ where: { id: req.params.feeId } });
-    if (!fee) return sendError(res, 'Fee not found.', 404);
-    await pushNotification({ audience: 'students', title: 'Fee reminder', body: `${fee.type} is still pending.`, recipientIds: [fee.studentId] });
-    res.json({ ok: true });
+  router.post('/fees/verify', async (req, res) => {
+    try {
+      const db = getDB();
+      const { feeId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
+      const fee = await db.collection('fees').findOne({ _id: oid(feeId) });
+      if (!fee) return sendError(res, 'Fee not found', 404);
+
+      await db.collection('fees').updateOne(
+        { _id: oid(feeId) },
+        { $set: { status: 'paid' } }
+      );
+
+      const receipt = {
+        feeId: oid(feeId),
+        userId: fee.userId,
+        amount: fee.amount,
+        razorpayPaymentId,
+        date: nowIso(),
+        createdAt: nowIso(),
+      };
+      const receiptResult = await db.collection('payment_receipts').insertOne(receipt);
+      receipt._id = receiptResult.insertedId;
+
+      await db.collection('fees').updateOne(
+        { _id: oid(feeId) },
+        { $set: { receiptId: receipt._id } }
+      );
+
+      const notification = {
+        audience: 'individual',
+        title: 'Payment Received',
+        body: `Payment of ₹${fee.amount} received for ${fee.type}.`,
+        recipientIds: [fee.userId],
+        readBy: [],
+        createdAt: nowIso(),
+      };
+      const notifResult = await db.collection('notifications').insertOne(notification);
+      notification._id = notifResult.insertedId;
+
+      if (io) io.to(fee.userId.toString()).emit('notifications:update', notification);
+
+      res.json(receipt);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
-  router.get('/subscription/current', async (_req, res) => {
-    const subscription = await prisma.subscription.findFirst();
-    if (!subscription) return res.json(null);
-    res.json({
-      active: subscription.active,
-      plan: subscription.plan,
-      status: subscription.status,
-      renews_at: subscription.renewsAt.toISOString(),
-      expires_at: subscription.expiresAt.toISOString(),
-      seats_used: subscription.seatsUsed,
-      seats_limit: subscription.seatsLimit,
-    });
+  router.get('/fees/receipts', async (req, res) => {
+    try {
+      const db = getDB();
+      const receipts = await db.collection('payment_receipts')
+        .find({ userId: oid(req.user._id) })
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(receipts);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
-  router.post('/subscription/create-order', requireRole('college_admin', 'super_admin'), async (req, res) => {
-    const planId = req.body.plan_id || 'pro';
-    res.json({
-      demo: true,
-      key_id: RAZORPAY_KEY_ID,
-      order_id: `order_sub_${Date.now()}`,
-      amount: planPrices[planId] || planPrices.pro,
-      currency: 'INR',
-      receipt: `subscription_${planId}_${Date.now()}`,
-      plan_id: planId,
-    });
+  router.get('/fees/reminders', async (req, res) => {
+    try {
+      const db = getDB();
+      const now = new Date();
+      const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const fees = await db.collection('fees')
+        .find({
+          userId: oid(req.user._id),
+          status: 'pending',
+          dueDate: { $gte: now.toISOString(), $lte: in7.toISOString() },
+        })
+        .sort({ dueDate: 1 })
+        .toArray();
+      res.json(fees);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.get('/subscription/current', async (req, res) => {
+    try {
+      const db = getDB();
+      const sub = await db.collection('subscriptions')
+        .findOne(
+          { userId: oid(req.user._id), status: 'active' },
+          { sort: { endDate: -1 } }
+        );
+      res.json(sub || null);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/subscription/create-order', async (req, res) => {
+    try {
+      const db = getDB();
+      const { plan } = req.body;
+      const amounts = { basic: 999, pro: 2999, enterprise: 9999 };
+      const amount = amounts[plan];
+      if (!amount) return sendError(res, 'Invalid plan', 400);
+      const orderId = makeCode('sub_order');
+      res.json({
+        orderId,
+        amount,
+        currency: 'INR',
+        key: process.env.RAZORPAY_KEY_ID,
+      });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/subscription/verify', async (req, res) => {
+    try {
+      const db = getDB();
+      const { plan, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
+      const amounts = { basic: 999, pro: 2999, enterprise: 9999 };
+      const amount = amounts[plan];
+      if (!amount) return sendError(res, 'Invalid plan', 400);
+
+      const now = new Date();
+      const end = new Date(now);
+      end.setMonth(end.getMonth() + 1);
+
+      const subscription = {
+        userId: oid(req.user._id),
+        plan,
+        status: 'active',
+        startDate: now.toISOString(),
+        endDate: end.toISOString(),
+        amount,
+        razorpayOrderId,
+        createdAt: nowIso(),
+      };
+
+      await db.collection('subscriptions').updateMany(
+        { userId: oid(req.user._id), status: 'active' },
+        { $set: { status: 'expired' } }
+      );
+
+      const result = await db.collection('subscriptions').insertOne(subscription);
+      subscription._id = result.insertedId;
+
+      const notification = {
+        audience: 'individual',
+        title: 'Subscription Activated',
+        body: `Your ${plan} plan is now active.`,
+        recipientIds: [oid(req.user._id)],
+        readBy: [],
+        createdAt: nowIso(),
+      };
+      const notifResult = await db.collection('notifications').insertOne(notification);
+      notification._id = notifResult.insertedId;
+
+      if (io) io.to(req.user._id.toString()).emit('notifications:update', notification);
+
+      res.json(subscription);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
   return router;

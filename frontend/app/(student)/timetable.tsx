@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
-  ActivityIndicator, Dimensions, RefreshControl,
+  Dimensions, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
@@ -9,15 +9,15 @@ import { Calendar, Clock, MapPin, User } from 'lucide-react-native';
 import { useFetch } from '@/src/hooks/useFetch';
 import type { TimetableSlot } from '@/src/types';
 import { theme } from '@/src/theme';
-import { ChipBtn, EmptyState } from '@/src/ui';
+import { ChipBtn, AsyncView } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const { width } = Dimensions.get('window');
-const COLORS = ['#047857', '#059669', '#10B981', '#065F46', '#0F766E'];
+const COLORS = [theme.colors.brand, theme.colors.brandPrimary, '#10B981', '#065F46', '#0F766E'];
 
 export default function Timetable() {
-  const { data: slots, loading, refresh } = useFetch<TimetableSlot[]>('/timetable');
+  const { data: slots, loading, error, refresh } = useFetch<TimetableSlot[]>('/timetable');
   const [refreshing, setRefreshing] = useState(false);
   const [day, setDay] = useState(() => {
     const d = new Date().toLocaleDateString('en-US', { weekday: 'short' });
@@ -41,7 +41,7 @@ export default function Timetable() {
   return (
     <ErrorBoundary>
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
-        <LinearGradient colors={['#047857', '#059669']} style={styles.header}>
+        <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.header}>
           <Text style={styles.title}>Weekly Timetable</Text>
           <Text style={styles.sub}>
             {filtered.length} {filtered.length === 1 ? 'class' : 'classes'} on {day}
@@ -65,18 +65,21 @@ export default function Timetable() {
           ))}
         </ScrollView>
 
-        {loading && !slots ? (
-          <ActivityIndicator style={{ marginTop: 40 }} color={theme.colors.brandPrimary} />
-        ) : (
-          <ScrollView
-            contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100, gap: 10 }}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.brandPrimary} />
-            }
+        <ScrollView
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100, gap: 10 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.brandPrimary} />
+          }
+        >
+          <AsyncView
+            loading={loading && !slots}
+            error={error}
+            onRetry={refresh}
+            empty={!loading && filtered.length === 0}
+            emptyTitle="No classes"
+            emptySub={`No classes scheduled for ${day}`}
+            emptyIcon="📅"
           >
-            {filtered.length === 0 && (
-              <EmptyState title="No classes" sub={`No classes scheduled for ${day}`} icon="📅" />
-            )}
             {filtered.map((c, i) => (
               <View
                 key={c.id || i}
@@ -103,8 +106,8 @@ export default function Timetable() {
                 </View>
               </View>
             ))}
-          </ScrollView>
-        )}
+          </AsyncView>
+        </ScrollView>
       </SafeAreaView>
     </ErrorBoundary>
   );

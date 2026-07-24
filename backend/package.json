@@ -3,20 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "main": "src/server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node src/server.js",
-    "postinstall": "prisma generate",
-    "db:up": "docker compose up -d",
-    "db:migrate": "prisma migrate dev",
-    "db:seed": "prisma db seed",
-    "db:test:up": "docker compose up -d postgres-test",
-    "test": "npm run db:test:up && jest --runInBand"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
+    "dev": "node src/server.js",
+    "db:seed": "node prisma/seed.js",
+    "db:seed:atlas": "node prisma/seed-atlas.js",
+    "test": "node test-api.js"
   },
   "dependencies": {
-    "@prisma/client": "^6.9.0",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -25,14 +22,15 @@
     "express-rate-limit": "^7.4.1",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.21.0",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
     "socket.io": "^4.8.1",
+    "twilio": "^6.0.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "prisma": "^6.9.0",
     "supertest": "^7.0.0"
   }
 }

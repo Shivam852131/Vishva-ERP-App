@@ -71,6 +71,22 @@ import SelfieScreen from './app/selfie';
 import SessionScreen from './app/session';
 import StartSessionScreen from './app/start-session';
 import TransportScreen from './app/transport';
+import PhoneOTPLoginScreen from './app/phone-login';
+import VisitorManagementScreen from './app/visitor';
+import ComplaintManagementScreen from './app/complaints';
+import AssetManagementScreen from './app/assets';
+import PushNotificationsScreen from './app/push-notifications';
+import EmailIntegrationScreen from './app/email';
+import WhatsAppIntegrationScreen from './app/whatsapp';
+import ParentAiScreen from './app/(parent)/ai';
+import FacultyQuestionPaperScreen from './app/(faculty)/question-paper';
+import AssignmentCheckerScreen from './app/assignment-checker';
+import ReportCardScreen from './app/report-card';
+import CareerAdvisorScreen from './app/career-advisor';
+import ResumeBuilderScreen from './app/resume-builder';
+import InterviewPracticeScreen from './app/interview-practice';
+import StudyPlannerScreen from './app/study-planner';
+import BusTrackingScreen from './app/bus-tracking';
 import { ErrorBoundary } from './src/ErrorBoundary';
 import { navigationRef } from './src/navigation/navigation-ref';
 import { AuthProvider } from './src/providers/AuthContext';
@@ -319,6 +335,22 @@ export default function App() {
                   <RootStack.Screen name="/session" component={SessionScreen} />
                   <RootStack.Screen name="/start-session" component={StartSessionScreen} />
                   <RootStack.Screen name="/transport" component={TransportScreen} />
+                  <RootStack.Screen name="/phone-login" component={PhoneOTPLoginScreen} options={{ headerShown: false }} />
+                  <RootStack.Screen name="/visitor" component={VisitorManagementScreen} />
+                  <RootStack.Screen name="/complaints" component={ComplaintManagementScreen} />
+                  <RootStack.Screen name="/assets" component={AssetManagementScreen} />
+                  <RootStack.Screen name="/push-notifications" component={PushNotificationsScreen} />
+                  <RootStack.Screen name="/email" component={EmailIntegrationScreen} />
+                  <RootStack.Screen name="/whatsapp" component={WhatsAppIntegrationScreen} />
+                  <RootStack.Screen name="/(parent)/ai" component={ParentAiScreen} />
+                  <RootStack.Screen name="/(faculty)/question-paper" component={FacultyQuestionPaperScreen} />
+                  <RootStack.Screen name="/assignment-checker" component={AssignmentCheckerScreen} />
+                  <RootStack.Screen name="/report-card" component={ReportCardScreen} />
+                  <RootStack.Screen name="/career-advisor" component={CareerAdvisorScreen} />
+                  <RootStack.Screen name="/resume-builder" component={ResumeBuilderScreen} />
+                  <RootStack.Screen name="/interview-practice" component={InterviewPracticeScreen} />
+                  <RootStack.Screen name="/study-planner" component={StudyPlannerScreen} />
+                  <RootStack.Screen name="/bus-tracking" component={BusTrackingScreen} />
                 </RootStack.Navigator>
               </NavigationContainer>
             </BottomSheetModalProvider>

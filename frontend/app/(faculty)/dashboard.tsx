@@ -262,6 +262,12 @@ export default function FacultyDashboard() {
                 to: '/(faculty)/exam-generator',
                 color: '#6366f1',
               },
+              {
+                icon: <FileText size={20} color="#fff" />,
+                label: 'Question Paper',
+                to: '/(faculty)/question-paper',
+                color: '#8B5CF6',
+              },
             ].map((a) => (
               <Pressable
                 testID={`qa-${a.label.toLowerCase().replace(/\s/g, '-')}`}

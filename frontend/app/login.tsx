@@ -11,7 +11,7 @@ import { router } from '@/src/navigation/router';
 import {
   LogIn, UserPlus, Sparkles,
   Mail, Lock, User, ChevronRight, Shield, Eye, EyeOff,
-  BookOpen, Users, Building2, Crown,
+  BookOpen, Users, Building2, Crown, Smartphone,
 } from 'lucide-react-native';
 import { theme } from '@/src/theme';
 import { useAuth } from '@/src/providers/AuthContext';
@@ -112,11 +112,11 @@ export default function Login() {
               contentFit="cover"
             />
             <LinearGradient
-              colors={['rgba(5,150,105,0.35)', 'rgba(10,22,18,0.95)']}
-              style={StyleSheet.absoluteFill}
-            />
+                colors={['rgba(79,70,229,0.35)', 'rgba(2,6,23,0.95)']}
+                style={StyleSheet.absoluteFill}
+              />
             <LinearGradient
-              colors={['transparent', 'rgba(10,22,18,1)']}
+              colors={['transparent', 'rgba(2,6,23,1)']}
               locations={[0.4, 1]}
               style={StyleSheet.absoluteFill}
             />
@@ -313,6 +313,18 @@ export default function Login() {
                     )}
                   </LinearGradient>
                 </Pressable>
+
+                {/* Phone OTP Sign-in */}
+                {mode === 'login' && (
+                  <Pressable
+                    onPress={() => router.push('/phone-login')}
+                    style={({ pressed }) => [styles.phoneBtn, pressed && styles.phoneBtnPressed]}
+                    accessibilityLabel="Sign in with Phone Number"
+                  >
+                    <Smartphone size={18} color="#4F46E5" />
+                    <Text style={styles.phoneBtnText}>Sign in with Phone & OTP</Text>
+                  </Pressable>
+                )}
               </View>
 
               {/* Demo Accounts */}
@@ -391,7 +403,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   brandSub: {
-    color: '#10B981',
+    color: theme.colors.brandSecondary,
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: 6,
@@ -416,13 +428,13 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(14,165,233,0.1)',
+    borderRadius: theme.radius.pill,
+    backgroundColor: 'rgba(129,140,248,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(14,165,233,0.2)',
+    borderColor: 'rgba(129,140,248,0.2)',
   },
   featurePillText: {
-    color: '#0EA5E9',
+    color: theme.colors.brandSecondary,
     fontSize: 11,
     fontWeight: '700',
   },
@@ -431,8 +443,8 @@ const styles = StyleSheet.create({
     marginTop: -30,
   },
   card: {
-    backgroundColor: '#131B17',
-    borderRadius: 24,
+    backgroundColor: theme.colors.dark.surfaceSecondary,
+    borderRadius: theme.radius.xl,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
     overflow: 'hidden',
@@ -569,6 +581,20 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 16,
   },
+  phoneBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#4F46E530',
+    backgroundColor: '#4F46E508',
+  },
+  phoneBtnPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
+  phoneBtnText: { color: '#4F46E5', fontSize: 14, fontWeight: '700' },
   demoSection: {
     paddingHorizontal: theme.spacing.xl,
     paddingBottom: theme.spacing.xl,

@@ -44,7 +44,9 @@ export default function ScanScreen() {
     try {
       const p = JSON.parse(data);
       if (p.sid && p.code) { handleCheckin(p.sid, p.code); return; }
-    } catch {}
+    } catch {
+      // Not JSON — fall through to the plain 6-digit code check below.
+    }
     if (sid && /^\d{6}$/.test(data)) { handleCheckin(sid, data); return; }
     setResult({ ok: false, msg: 'Not a valid attendance QR code' });
     setTimeout(() => setScanned(false), 1500);

@@ -5,6 +5,7 @@ import type { UserRole, College } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
+import { Button, Input } from '@/src/ui';
 
 const ROLES_CA = ['student', 'faculty', 'parent'] as const;
 const ROLES_SA = ['student', 'faculty', 'parent', 'college_admin'] as const;

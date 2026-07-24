@@ -1,9 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { demoApi } from './demoApi';
-import { BACKEND_URL, DEMO_FALLBACK, USE_DEMO_API } from '@/src/config/env';
+import { BASE_URL } from '@/src/config/env';
 
-export const BASE_URL = BACKEND_URL;
+export { BASE_URL };
 const PAYMENT_PATHS = ['/fees/pay', '/payments/verify', '/subscription/create-order'];
+
+type ApiError = Error & { status?: number };
+
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler;
+}
 
 const TOKEN_KEY = 'campus_erp_token';
 const USER_KEY = 'campus_erp_user';
@@ -45,26 +51,20 @@ async function parseResponse(res: Response) {
   }
 }
 
-async function demo<T>(path: string, opts: RequestInit) {
-  const normalized = normalizePath(path);
-  if (normalized === '/auth/me') {
-    const stored = await getUser();
-    if (stored) return stored as T;
-  }
-  return demoApi<T>(normalized, opts);
-}
-
 export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
   const normalized = normalizePath(path);
-  if (USE_DEMO_API) return demo<T>(normalized, opts);
 
   const token = await getToken();
   const headers: any = { ...(opts.headers as any) };
   if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
   try {
-    const res = await fetch(`${BASE_URL}/api${normalized}`, { ...opts, headers });
+    const res = await fetch(`${BASE_URL}/api${normalized}`, { ...opts, headers, signal: controller.signal });
+    clearTimeout(timeoutId);
     const payload = await parseResponse(res);
     if (!res.ok) {
       const detail = payload && typeof payload === 'object' && 'detail' in payload
@@ -73,12 +73,17 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
       const msg = detail
         ? (typeof detail === 'string' ? detail : JSON.stringify(detail))
         : (typeof payload === 'string' ? payload : `HTTP ${res.status}`);
-      throw new Error(msg);
+      const httpError: ApiError = new Error(msg);
+      httpError.status = res.status;
+      throw httpError;
     }
     return payload as T;
   } catch (error) {
-    if (PAYMENT_PATHS.some(paymentPath => normalized.startsWith(paymentPath))) throw error;
-    if (DEMO_FALLBACK) return demo<T>(normalized, opts);
+    clearTimeout(timeoutId);
+    const status = (error as ApiError)?.status;
+    if (status === 401) {
+      onUnauthorized?.();
+    }
     throw error;
   }
 }

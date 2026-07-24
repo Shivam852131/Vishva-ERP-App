@@ -36,7 +36,7 @@ export default function Profile() {
     <ErrorBoundary>
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
         <ScrollView>
-          <LinearGradient colors={[theme.colors.brand, '#059669']} style={styles.hero}>
+          <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.hero}>
             <View style={styles.avatar}>
               <Text style={styles.avatarTxt}>{u?.name?.[0] || 'U'}</Text>
             </View>
@@ -86,6 +86,7 @@ export default function Profile() {
               <Pressable
                 testID={`link-${l.label.toLowerCase()}`}
                 accessibilityLabel={`Navigate to ${l.label}`}
+                accessibilityRole="button"
                 key={l.label}
                 style={styles.link}
                 onPress={() => router.push(l.to as any)}
@@ -99,6 +100,7 @@ export default function Profile() {
             <Pressable
               testID="logout-btn"
               accessibilityLabel="Log out of your account"
+              accessibilityRole="button"
               onPress={logout}
               style={styles.logout}
             >

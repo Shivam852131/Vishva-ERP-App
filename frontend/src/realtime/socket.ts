@@ -7,13 +7,20 @@ let currentSocket: Socket | null = null;
 
 async function createSocket(): Promise<Socket | null> {
   if (!SOCKET_URL) return null;
-  const token = await getToken();
-  const socket = io(SOCKET_URL, {
-    transports: ['websocket', 'polling'],
-    auth: { token: token || '' },
-  });
-  currentSocket = socket;
-  return socket;
+  try {
+    const token = await getToken();
+    const socket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      auth: { token: token || '' },
+      reconnection: false,
+      timeout: 5000,
+    });
+    socket.on('connect_error', () => {});
+    currentSocket = socket;
+    return socket;
+  } catch {
+    return null;
+  }
 }
 
 export async function connectRealtime(): Promise<Socket | null> {

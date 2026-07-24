@@ -7,5 +7,7 @@ module.exports = {
       safe: false,
       allowUndefined: true,
     }],
+    // Must be listed last: it needs to run after all other transforms.
+    'react-native-reanimated/plugin',
   ],
 };

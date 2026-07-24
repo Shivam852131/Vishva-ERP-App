@@ -82,7 +82,9 @@ export default function ExamGeneratorScreen() {
         try {
           await mutate(`/question-bank/${id}`, { method: 'DELETE' });
           refreshQ();
-        } catch {}
+        } catch (e: any) {
+          Alert.alert('Error', e?.message || 'Could not delete question');
+        }
       }},
     ]);
   };

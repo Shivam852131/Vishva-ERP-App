@@ -8,36 +8,78 @@ interface ViLogoProps {
 }
 
 export function ViLogo({ size = 120, animate = true }: ViLogoProps) {
-  const scaleAnim = useRef(new Animated.Value(0.5)).current;
+  const scaleAnim = useRef(new Animated.Value(0.3)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!animate) {
       scaleAnim.setValue(1);
+      glowAnim.setValue(0.5);
       return;
     }
     Animated.sequence([
-      Animated.spring(scaleAnim, { toValue: 1, tension: 40, friction: 6, useNativeDriver: true }),
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(glowAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
-          Animated.timing(glowAnim, { toValue: 0, duration: 2000, useNativeDriver: true }),
-        ]),
-      ),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 35,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.parallel([
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(glowAnim, {
+              toValue: 1,
+              duration: 2500,
+              useNativeDriver: true,
+            }),
+            Animated.timing(glowAnim, {
+              toValue: 0,
+              duration: 2500,
+              useNativeDriver: true,
+            }),
+          ]),
+        ),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(shimmerAnim, {
+              toValue: 1,
+              duration: 3000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(shimmerAnim, {
+              toValue: 0,
+              duration: 3000,
+              useNativeDriver: true,
+            }),
+          ]),
+        ),
+      ]),
     ]).start();
   }, []);
 
   const glowOpacity = glowAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.3, 0.6, 0.3],
+    outputRange: [0.15, 0.45, 0.15],
   });
 
-  const cornerRadius = size * 0.22;
+  const glowScale = glowAnim.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [1, 1.06, 1],
+  });
+
+  const shimmerX = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-size * 0.8, size * 0.8],
+  });
+
+  const cornerRadius = size * 0.24;
+  const borderWidth = size * 0.025;
 
   return (
     <Animated.View
       style={[
-        logoStyles.container,
+        styles.container,
         {
           width: size,
           height: size,
@@ -46,26 +88,56 @@ export function ViLogo({ size = 120, animate = true }: ViLogoProps) {
         },
       ]}
     >
-      {/* Glow */}
+      {/* Outer glow */}
       <Animated.View
         style={[
-          logoStyles.glow,
+          styles.glow,
           {
-            width: size + 30,
-            height: size + 30,
-            borderRadius: cornerRadius + 15,
+            width: size + 40,
+            height: size + 40,
+            borderRadius: cornerRadius + 20,
             opacity: glowOpacity,
+            transform: [{ scale: glowScale }],
           },
         ]}
       />
 
-      {/* Main logo background */}
+      {/* Shadow layer */}
+      <View
+        style={[
+          styles.shadow,
+          {
+            width: size,
+            height: size,
+            borderRadius: cornerRadius,
+            shadowColor: '#2563EB',
+            shadowOffset: { width: 0, height: size * 0.08 },
+            shadowOpacity: 0.5,
+            shadowRadius: size * 0.15,
+            elevation: 12,
+          },
+        ]}
+      />
+
+      {/* Border ring */}
+      <View
+        style={[
+          styles.borderRing,
+          {
+            width: size + borderWidth * 2,
+            height: size + borderWidth * 2,
+            borderRadius: cornerRadius + borderWidth,
+          },
+        ]}
+      />
+
+      {/* Main gradient background */}
       <LinearGradient
-        colors={['#2563EB', '#0EA5E9', '#06B6D4', '#10B981']}
+        colors={['#2563EB', '#0EA5E9']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[
-          logoStyles.background,
+          styles.background,
           {
             width: size,
             height: size,
@@ -73,15 +145,86 @@ export function ViLogo({ size = 120, animate = true }: ViLogoProps) {
           },
         ]}
       >
-        {/* Inner highlight */}
-        <View style={[logoStyles.highlight, { borderRadius: cornerRadius }]} />
+        {/* Top-left highlight (glass reflection) */}
+        <View
+          style={[
+            styles.glassHighlight,
+            {
+              width: size * 0.7,
+              height: size * 0.5,
+              borderRadius: cornerRadius * 1.2,
+              top: -size * 0.15,
+              left: -size * 0.1,
+            },
+          ]}
+        />
 
-        {/* Vishva mark */}
-        <View style={logoStyles.textContainer}>
-          <Text style={[logoStyles.vText, { fontSize: size * 0.48 }]}>V</Text>
-          <View style={logoStyles.iContainer}>
-            <View style={[logoStyles.iDot, { width: size * 0.1, height: size * 0.1, borderRadius: size * 0.05 }]} />
-            <View style={[logoStyles.iBar, { width: size * 0.1, height: size * 0.18, borderRadius: size * 0.02 }]} />
+        {/* Shimmer sweep */}
+        <Animated.View
+          style={[
+            styles.shimmer,
+            {
+              width: size * 0.3,
+              height: size * 2,
+              borderRadius: size * 0.15,
+              transform: [{ translateX: shimmerX }, { rotate: '25deg' }],
+            },
+          ]}
+        />
+
+        {/* Inner border glow */}
+        <View
+          style={[
+            styles.innerBorder,
+            {
+              width: size - 2,
+              height: size - 2,
+              borderRadius: cornerRadius - 1,
+            },
+          ]}
+        />
+
+        {/* Vi mark */}
+        <View style={styles.textContainer}>
+          <Text
+            style={[
+              styles.vText,
+              {
+                fontSize: size * 0.44,
+                textShadowColor: 'rgba(0,0,0,0.3)',
+                textShadowOffset: { width: 0, height: size * 0.015 },
+                textShadowRadius: size * 0.03,
+              },
+            ]}
+          >
+            V
+          </Text>
+          <View style={styles.iContainer}>
+            <View
+              style={[
+                styles.iDot,
+                {
+                  width: size * 0.09,
+                  height: size * 0.09,
+                  borderRadius: size * 0.045,
+                  shadowColor: '#fff',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: 2,
+                  elevation: 3,
+                },
+              ]}
+            />
+            <View
+              style={[
+                styles.iBar,
+                {
+                  width: size * 0.085,
+                  height: size * 0.17,
+                  borderRadius: size * 0.02,
+                },
+              ]}
+            />
           </View>
         </View>
       </LinearGradient>
@@ -89,23 +232,40 @@ export function ViLogo({ size = 120, animate = true }: ViLogoProps) {
   );
 }
 
-const logoStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   glow: {
     position: 'absolute',
-    backgroundColor: 'rgba(14,165,233,0.25)',
+    backgroundColor: 'rgba(37,99,235,0.2)',
+  },
+  shadow: {
+    position: 'absolute',
+  },
+  borderRing: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   background: {
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  highlight: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+  glassHighlight: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    transform: [{ rotate: '-15deg' }],
+  },
+  shimmer: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  innerBorder: {
+    position: 'absolute',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
   },
   textContainer: {
     flexDirection: 'row',
@@ -118,12 +278,12 @@ const logoStyles = StyleSheet.create({
   },
   iContainer: {
     alignItems: 'center',
-    marginLeft: -4,
-    marginBottom: 4,
+    marginLeft: -2,
+    marginBottom: 5,
   },
   iDot: {
     backgroundColor: '#fff',
-    marginBottom: 3,
+    marginBottom: 4,
   },
   iBar: {
     backgroundColor: '#fff',

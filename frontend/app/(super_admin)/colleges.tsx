@@ -1,15 +1,16 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, Modal, RefreshControl, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, RefreshControl, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, X, Building2, Trash2, GraduationCap, UserCheck, Shield } from 'lucide-react-native';
 import type { College } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
-import { EmptyState, Card } from '@/src/ui';
+import { AsyncView, Button, Card } from '@/src/ui';
 
 export default function Colleges() {
-  const { data: colleges = [], loading, refresh: load } = useFetch<College[]>('/colleges');
+  const { data, loading, error, refresh: load } = useFetch<College[]>('/colleges');
+  const colleges = data || [];
   const { mutate: saveMutation, loading: saving } = useMutate();
   const { mutate: deleteMutation } = useMutate();
   const [refreshing, setRefreshing] = useState(false);
@@ -67,19 +68,24 @@ export default function Colleges() {
           <Text style={styles.sub}>{colleges.length} institution{colleges.length !== 1 ? 's' : ''} on the platform</Text>
         </View>
 
-        {loading ? (
-          <ActivityIndicator style={{ marginTop: 40 }} color={theme.colors.brandPrimary} />
-        ) : (
-          <ScrollView
-            contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, gap: 10, paddingBottom: 120 }}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.brandPrimary} />}
+        <ScrollView
+          contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, gap: 10, paddingBottom: 120 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.brandPrimary} />}
+        >
+          <AsyncView
+            loading={loading && !data}
+            error={error}
+            onRetry={load}
+            empty={!loading && colleges.length === 0}
+            emptyTitle="No colleges yet"
+            emptySub="Tap + to add the first college"
           >
-            {colleges.length === 0 && <EmptyState title="No colleges yet" sub="Tap + to add the first college" />}
             {colleges.map(c => (
               <Pressable
                 key={c.id}
                 testID={`college-${c.code}`}
                 accessibilityLabel={`Edit ${c.name}`}
+                accessibilityRole="button"
                 onPress={() => open(c)}
               >
                 <Card style={styles.card}>
@@ -109,12 +115,13 @@ export default function Colleges() {
                 </Card>
               </Pressable>
             ))}
-          </ScrollView>
-        )}
+          </AsyncView>
+        </ScrollView>
 
         <Pressable
           testID="add-college-fab"
           accessibilityLabel="Add college"
+          accessibilityRole="button"
           onPress={() => open(null)}
           style={styles.fab}
         >
@@ -126,7 +133,7 @@ export default function Colleges() {
             <View style={styles.sheet}>
               <View style={styles.sheetHeader}>
                 <Text style={styles.sheetTitle}>{edit ? 'Edit College' : 'Add College'}</Text>
-                <Pressable testID="college-close" accessibilityLabel="Close" onPress={() => setModal(false)} hitSlop={10}>
+                <Pressable testID="college-close" accessibilityLabel="Close" accessibilityRole="button" onPress={() => setModal(false)} hitSlop={10}>
                   <X color={theme.colors.muted} size={22} />
                 </Pressable>
               </View>
@@ -174,19 +181,20 @@ export default function Colleges() {
                 accessibilityLabel="Contact email"
               />
               {err ? <Text style={styles.err}>{err}</Text> : null}
-              <Pressable
+              <Button
                 testID="college-save"
                 accessibilityLabel="Save college"
                 onPress={save}
                 disabled={saving}
-                style={styles.cta}
-              >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaTxt}>{edit ? 'Save Changes' : 'Create College'}</Text>}
-              </Pressable>
+                loading={saving}
+                label={edit ? 'Save Changes' : 'Create College'}
+                style={{ marginTop: theme.spacing.lg }}
+              />
               {edit && (
                 <Pressable
                   testID="college-delete"
                   accessibilityLabel="Delete college"
+                  accessibilityRole="button"
                   onPress={doDelete}
                   disabled={saving}
                   style={[styles.delBtn, confirmDel && { backgroundColor: theme.colors.error }]}
@@ -223,8 +231,6 @@ const styles = StyleSheet.create({
   label: { color: theme.colors.onSurfaceTertiary, fontSize: 13, fontWeight: '600', marginTop: 12, marginBottom: 6 },
   input: { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: 13, fontSize: 15, color: theme.colors.onSurface },
   err: { color: theme.colors.error, marginTop: 12, fontSize: 13 },
-  cta: { backgroundColor: theme.colors.brandPrimary, paddingVertical: 15, borderRadius: theme.radius.md, marginTop: theme.spacing.lg, alignItems: 'center' },
-  ctaTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
   delBtn: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', paddingVertical: 13, borderRadius: theme.radius.md, borderWidth: 1.5, borderColor: theme.colors.error, marginTop: theme.spacing.md },
   delTxt: { color: theme.colors.error, fontWeight: '700', fontSize: 13 },
 });

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Blue gradient background matching the Vi logo -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:startColor="#2563EB"
+                android:centerColor="#0284C7"
+                android:endColor="#0EA5E9"
+                android:angle="135" />
+        </shape>
+    </item>
+
+    <!-- Subtle radial glow behind icon -->
+    <item
+        android:gravity="center"
+        android:width="256dp"
+        android:height="256dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="128dp"
+                android:startColor="#38BDF8"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <!-- Center icon -->
+    <item
+        android:gravity="center"
+        android:width="128dp"
+        android:height="128dp">
+        <bitmap
+            android:gravity="center"
+            android:src="@mipmap/ic_launcher_round" />
+    </item>
+</layer-list>

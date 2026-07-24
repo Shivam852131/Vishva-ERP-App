@@ -1,6 +1,6 @@
 const express = require('express');
 const { z } = require('zod');
-const { prisma } = require('../db');
+const { getDB, oid } = require('../db');
 const { hashPassword, comparePassword, issueToken, authUser } = require('../auth');
 const { serializeUser, sendError } = require('../utils');
 
@@ -19,45 +19,67 @@ const registerSchema = z.object({
   role: z.enum(['student', 'parent']).optional(),
 });
 
+// Normalize Atlas role names to our standard names
+function normalizeRole(role) {
+  const map = {
+    collegeAdmin: 'college_admin',
+    superadmin: 'super_admin',
+    super_admin: 'super_admin',
+    college_admin: 'college_admin',
+  };
+  return map[role] || role || 'student';
+}
+
 router.post('/auth/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return sendError(res, 'A valid email and password are required.');
   const { email, password } = parsed.data;
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  const db = getDB();
+  const user = await db.collection('users').findOne({ email: email.toLowerCase() });
   if (!user) return sendError(res, 'Invalid email or password.', 401);
-  if (user.status === 'suspended') return sendError(res, 'This account is suspended.', 403);
-  const valid = await comparePassword(password, user.passwordHash);
+  // Atlas uses isActive, we use status
+  if (user.isActive === false || user.status === 'suspended') return sendError(res, 'This account is suspended.', 403);
+  // Atlas stores as 'password', we store as 'passwordHash'
+  const storedHash = user.passwordHash || user.password;
+  if (!storedHash) return sendError(res, 'Invalid email or password.', 401);
+  const valid = await comparePassword(password, storedHash);
   if (!valid) return sendError(res, 'Invalid email or password.', 401);
+  // Update lastLogin
+  await db.collection('users').updateOne({ _id: user._id }, { $set: { lastLogin: new Date().toISOString(), updatedAt: new Date().toISOString() } });
   const token = issueToken(user);
   res.json({ token, user: serializeUser(user) });
 });
 
-// Public self-registration is limited to student/parent accounts. Staff accounts
-// (faculty/college_admin/super_admin) can only be created by an authenticated
-// admin via POST /admin/users.
 router.post('/auth/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) return sendError(res, 'Name, a valid email, and a password (min 8 characters) are required.');
   const { name, email, password, phone, role } = parsed.data;
-  const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  const db = getDB();
+  const existing = await db.collection('users').findOne({ email: email.toLowerCase() });
   if (existing) return sendError(res, 'Email already exists.');
   const resolvedRole = role || 'student';
-  const user = await prisma.user.create({
-    data: {
-      name,
-      email: email.toLowerCase(),
-      passwordHash: await hashPassword(password),
-      role: resolvedRole,
-      phone: phone || null,
-      college: 'Vishva Institute of Technology',
-      department: resolvedRole === 'student' ? 'Computer Science' : undefined,
-      studentCode: resolvedRole === 'student' ? `VIT-${Math.floor(Math.random() * 9999)}` : undefined,
-      year: resolvedRole === 'student' ? 1 : undefined,
-      cgpa: resolvedRole === 'student' ? 8.1 : undefined,
-    },
-  });
-  const token = issueToken(user);
-  res.json({ token, user: serializeUser(user) });
+  const now = new Date().toISOString();
+  const doc = {
+    name,
+    email: email.toLowerCase(),
+    passwordHash: await hashPassword(password),
+    role: resolvedRole,
+    phone: phone || null,
+    college: 'Vishva Institute of Technology',
+    department: resolvedRole === 'student' ? 'Computer Science' : null,
+    studentCode: resolvedRole === 'student' ? `VIT-${String(Math.floor(1000 + Math.random() * 9000))}` : null,
+    year: resolvedRole === 'student' ? 1 : null,
+    cgpa: resolvedRole === 'student' ? 8.1 : null,
+    status: 'active',
+    isActive: true,
+    parentId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const result = await db.collection('users').insertOne(doc);
+  doc._id = result.insertedId;
+  const token = issueToken(doc);
+  res.json({ token, user: serializeUser(doc) });
 });
 
 router.get('/auth/me', async (req, res) => {

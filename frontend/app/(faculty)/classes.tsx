@@ -8,6 +8,7 @@ import {
   Pressable,
   RefreshControl,
   Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from '@/src/navigation/router';
@@ -97,7 +98,9 @@ export default function FacultyClasses() {
       setModalVisible(false);
       setSelectedCourse('');
       refreshSessions();
-    } catch {}
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not start session');
+    }
   };
 
   const handleCloseSession = async (sid: string) => {
@@ -107,7 +110,9 @@ export default function FacultyClasses() {
         method: 'POST',
       });
       refreshSessions();
-    } catch {}
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not close session');
+    }
     setClosingId(null);
   };
 

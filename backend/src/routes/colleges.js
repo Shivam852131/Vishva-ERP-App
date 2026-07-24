@@ -1,5 +1,5 @@
 const express = require('express');
-const { prisma } = require('../db');
+const { getDB, oid } = require('../db');
 const { requireRole } = require('../auth');
 const { sendError } = require('../utils');
 
@@ -7,56 +7,61 @@ const router = express.Router();
 
 function serializeCollege(college) {
   return {
-    id: college.id,
+    id: String(college._id),
     name: college.name,
     code: college.code,
-    students: college.students,
-    faculty: college.faculty,
-    admins: college.admins,
-    address: college.address,
-    contact_email: college.contactEmail,
+    address: college.address || '',
+    phone: college.phone || '',
+    email: college.email || '',
+    logo: college.logo || '',
+    created_at: college.createdAt,
   };
 }
 
 router.get('/colleges', async (_req, res) => {
-  const colleges = await prisma.college.findMany();
+  const db = getDB();
+  const colleges = await db.collection('colleges').find().toArray();
   res.json(colleges.map(serializeCollege));
 });
 
 router.post('/colleges', requireRole('super_admin'), async (req, res) => {
-  const college = await prisma.college.create({
-    data: {
-      name: req.body.name,
-      code: req.body.code,
-      students: 0,
-      faculty: 0,
-      admins: 0,
-      address: req.body.address || '',
-      contactEmail: req.body.contact_email || '',
-    },
-  });
-  res.json(serializeCollege(college));
+  const db = getDB();
+  const now = new Date().toISOString();
+  const doc = {
+    name: req.body.name,
+    code: req.body.code,
+    address: req.body.address || '',
+    phone: req.body.phone || '',
+    email: req.body.email || '',
+    logo: req.body.logo || '',
+    createdAt: now,
+  };
+  const result = await db.collection('colleges').insertOne(doc);
+  doc._id = result.insertedId;
+  res.json(serializeCollege(doc));
 });
 
 router.put('/colleges/:id', requireRole('super_admin'), async (req, res) => {
-  const college = await prisma.college.findUnique({ where: { id: req.params.id } });
+  const db = getDB();
+  const college = await db.collection('colleges').findOne({ _id: oid(req.params.id) });
   if (!college) return sendError(res, 'College not found.', 404);
-  const updated = await prisma.college.update({
-    where: { id: college.id },
-    data: {
-      name: req.body.name || college.name,
-      code: req.body.code || college.code,
-      address: req.body.address || college.address,
-      contactEmail: req.body.contact_email || college.contactEmail,
-    },
-  });
+  const update = {};
+  if (req.body.name) update.name = req.body.name;
+  if (req.body.code) update.code = req.body.code;
+  if (req.body.address !== undefined) update.address = req.body.address;
+  if (req.body.phone !== undefined) update.phone = req.body.phone;
+  if (req.body.email !== undefined) update.email = req.body.email;
+  if (req.body.logo !== undefined) update.logo = req.body.logo;
+  await db.collection('colleges').updateOne({ _id: college._id }, { $set: update });
+  const updated = await db.collection('colleges').findOne({ _id: college._id });
   res.json(serializeCollege(updated));
 });
 
 router.delete('/colleges/:id', requireRole('super_admin'), async (req, res) => {
-  const college = await prisma.college.findUnique({ where: { id: req.params.id } });
+  const db = getDB();
+  const college = await db.collection('colleges').findOne({ _id: oid(req.params.id) });
   if (!college) return sendError(res, 'College not found.', 404);
-  await prisma.college.delete({ where: { id: college.id } });
+  await db.collection('colleges').deleteOne({ _id: college._id });
   res.json({ ok: true });
 });
 

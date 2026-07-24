@@ -1,5 +1,5 @@
 const express = require('express');
-const { prisma } = require('../db');
+const { getDB, oid } = require('../db');
 const { hashPassword, requireRole } = require('../auth');
 const { sendError, serializeUser, parseCsv } = require('../utils');
 
@@ -7,101 +7,129 @@ const router = express.Router();
 
 const PRIVILEGED_ROLES = new Set(['college_admin', 'super_admin']);
 
-// Mounted at /api/admin/users in server.js (not the shared /api prefix), so this
-// router.use() gate cannot intercept requests meant for other routers.
 router.use(requireRole('college_admin', 'super_admin'));
 
 router.get('/', async (req, res) => {
-  const role = req.query.role;
-  const users = await prisma.user.findMany({ where: role ? { role } : {} });
+  const db = getDB();
+  const filter = {};
+  if (req.query.role) filter.role = req.query.role;
+  const users = await db.collection('users').find(filter).toArray();
   res.json(users.map(serializeUser));
 });
 
 router.post('/', async (req, res) => {
   if (!req.body.name || !req.body.email) return sendError(res, 'Name and email are required.');
+  const db = getDB();
   const role = req.body.role || 'student';
   if (PRIVILEGED_ROLES.has(role) && req.user.role !== 'super_admin') {
     return sendError(res, 'Only a super admin can create admin accounts.', 403);
   }
-  const existing = await prisma.user.findUnique({ where: { email: String(req.body.email).toLowerCase() } });
+  const existing = await db.collection('users').findOne({ email: String(req.body.email).toLowerCase() });
   if (existing) return sendError(res, 'Email already exists.');
-  const user = await prisma.user.create({
-    data: {
-      name: req.body.name,
-      email: String(req.body.email).toLowerCase(),
-      passwordHash: await hashPassword(req.body.password || 'password123'),
-      role,
-      phone: req.body.phone || null,
-      department: req.body.department || null,
-      college: req.body.college || 'Vishva Institute of Technology',
-      studentCode: req.body.student_id || null,
-      year: req.body.year || null,
-    },
-  });
-  if (user.role === 'student' && req.body.parent_email) {
-    await prisma.user.create({
-      data: {
-        name: req.body.parent_name || `${user.name} Parent`,
-        email: String(req.body.parent_email).toLowerCase(),
-        passwordHash: await hashPassword(req.body.parent_password || 'parent123'),
-        role: 'parent',
-        phone: req.body.parent_phone || null,
-        college: user.college,
-        parentUserId: user.id,
-      },
-    });
+  const now = new Date().toISOString();
+  const doc = {
+    name: req.body.name,
+    email: String(req.body.email).toLowerCase(),
+    passwordHash: await hashPassword(req.body.password || 'password123'),
+    role,
+    phone: req.body.phone || null,
+    department: req.body.department || null,
+    college: req.body.college || 'Vishva Institute of Technology',
+    studentCode: req.body.student_id || null,
+    year: req.body.year || null,
+    cgpa: null,
+    status: 'active',
+    parentId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const result = await db.collection('users').insertOne(doc);
+  doc._id = result.insertedId;
+
+  if (doc.role === 'student' && req.body.parent_email) {
+    const parentDoc = {
+      name: req.body.parent_name || `${doc.name} Parent`,
+      email: String(req.body.parent_email).toLowerCase(),
+      passwordHash: await hashPassword(req.body.parent_password || 'parent123'),
+      role: 'parent',
+      phone: req.body.parent_phone || null,
+      college: doc.college,
+      department: null,
+      studentCode: null,
+      year: null,
+      cgpa: null,
+      status: 'active',
+      parentId: doc._id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const parentResult = await db.collection('users').insertOne(parentDoc);
+    parentDoc._id = parentResult.insertedId;
   }
-  res.json(serializeUser(user));
+
+  res.json(serializeUser(doc));
 });
 
 router.put('/:id', async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+  const db = getDB();
+  const user = await db.collection('users').findOne({ _id: oid(req.params.id) });
   if (!user) return sendError(res, 'User not found.', 404);
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      name: req.body.name || user.name,
-      phone: req.body.phone || user.phone,
-      department: req.body.department || user.department,
-      studentCode: req.body.student_id || user.studentCode,
-      year: req.body.year !== null && req.body.year !== undefined ? req.body.year : user.year,
-      college: req.body.college || user.college,
-    },
-  });
+  const update = {};
+  if (req.body.name) update.name = req.body.name;
+  if (req.body.email) update.email = String(req.body.email).toLowerCase();
+  if (req.body.role) update.role = req.body.role;
+  if (req.body.phone !== undefined) update.phone = req.body.phone || null;
+  if (req.body.status) update.status = req.body.status;
+  if (req.body.college) update.college = req.body.college;
+  if (req.body.department !== undefined) update.department = req.body.department || null;
+  if (req.body.student_id !== undefined) update.studentCode = req.body.student_id || null;
+  if (req.body.year !== undefined) update.year = req.body.year;
+  if (req.body.cgpa !== undefined) update.cgpa = req.body.cgpa;
+  update.updatedAt = new Date().toISOString();
+
+  if (update.role && PRIVILEGED_ROLES.has(update.role) && req.user.role !== 'super_admin') {
+    return sendError(res, 'Only a super admin can modify admin accounts.', 403);
+  }
+
+  await db.collection('users').updateOne({ _id: user._id }, { $set: update });
+  const updated = await db.collection('users').findOne({ _id: user._id });
   res.json(serializeUser(updated));
 });
 
-router.post('/:id/status', async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+router.post('/:id/toggle-status', async (req, res) => {
+  const db = getDB();
+  const user = await db.collection('users').findOne({ _id: oid(req.params.id) });
   if (!user) return sendError(res, 'User not found.', 404);
   if (PRIVILEGED_ROLES.has(user.role) && req.user.role !== 'super_admin') {
     return sendError(res, 'Only a super admin can modify admin accounts.', 403);
   }
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: { status: req.body.status === 'suspended' ? 'suspended' : 'active' },
-  });
-  res.json({ ok: true, status: updated.status });
+  const newStatus = user.status === 'suspended' ? 'active' : 'suspended';
+  await db.collection('users').updateOne({ _id: user._id }, { $set: { status: newStatus, updatedAt: new Date().toISOString() } });
+  res.json({ ok: true, status: newStatus });
 });
 
 router.delete('/:id', async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+  const db = getDB();
+  const user = await db.collection('users').findOne({ _id: oid(req.params.id) });
   if (!user) return sendError(res, 'User not found.', 404);
   if (PRIVILEGED_ROLES.has(user.role) && req.user.role !== 'super_admin') {
     return sendError(res, 'Only a super admin can delete admin accounts.', 403);
   }
-  await prisma.user.delete({ where: { id: user.id } });
+  await db.collection('users').deleteOne({ _id: user._id });
   res.json({ ok: true });
 });
 
 router.post('/bulk-import', async (req, res) => {
+  const db = getDB();
   const rows = parseCsv(req.body.csv_text);
   if (rows.length < 2) return sendError(res, 'CSV must contain a header and at least one row.');
   const headers = rows[0].split(',').map(item => item.trim());
   let created = 0;
   let parentsCreated = 0;
   const skipped = [];
-  const existingEmails = new Set((await prisma.user.findMany({ select: { email: true } })).map(u => u.email.toLowerCase()));
+  const existingEmails = new Set(
+    (await db.collection('users').find({}, { projection: { email: 1 } }).toArray()).map(u => u.email.toLowerCase())
+  );
 
   for (let index = 0; index < rows.length - 1; index += 1) {
     const line = rows[index + 1];
@@ -119,34 +147,48 @@ router.post('/bulk-import', async (req, res) => {
       skipped.push({ line: index + 2, email: row.email, reason: 'Only a super admin can bulk-create admin accounts' });
       continue;
     }
-    const user = await prisma.user.create({
-      data: {
-        name: row.name,
-        email: row.email,
-        passwordHash: await hashPassword(row.password || 'password123'),
-        role: row.role,
-        phone: row.phone || null,
-        department: row.department || null,
-        studentCode: row.student_id || null,
-        year: row.year ? Number(row.year) : null,
-        college: 'Vishva Institute of Technology',
-      },
-    });
-    existingEmails.add(user.email.toLowerCase());
+    const now = new Date().toISOString();
+    const doc = {
+      name: row.name,
+      email: row.email.toLowerCase(),
+      passwordHash: await hashPassword(row.password || 'password123'),
+      role: row.role,
+      phone: row.phone || null,
+      department: row.department || null,
+      studentCode: row.student_id || null,
+      year: row.year ? Number(row.year) : null,
+      cgpa: null,
+      college: 'Vishva Institute of Technology',
+      status: 'active',
+      parentId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const result = await db.collection('users').insertOne(doc);
+    doc._id = result.insertedId;
+    existingEmails.add(doc.email);
     created += 1;
+
     if (row.parent_email) {
-      const parent = await prisma.user.create({
-        data: {
-          name: row.parent_name || `${row.name} Parent`,
-          email: row.parent_email,
-          passwordHash: await hashPassword('parent123'),
-          role: 'parent',
-          phone: row.parent_phone || null,
-          college: 'Vishva Institute of Technology',
-          parentUserId: user.id,
-        },
-      });
-      existingEmails.add(parent.email.toLowerCase());
+      const parentDoc = {
+        name: row.parent_name || `${row.name} Parent`,
+        email: row.parent_email.toLowerCase(),
+        passwordHash: await hashPassword('parent123'),
+        role: 'parent',
+        phone: row.parent_phone || null,
+        college: 'Vishva Institute of Technology',
+        department: null,
+        studentCode: null,
+        year: null,
+        cgpa: null,
+        status: 'active',
+        parentId: doc._id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const parentResult = await db.collection('users').insertOne(parentDoc);
+      parentDoc._id = parentResult.insertedId;
+      existingEmails.add(parentDoc.email);
       parentsCreated += 1;
     }
   }

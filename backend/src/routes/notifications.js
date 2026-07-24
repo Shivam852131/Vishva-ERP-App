@@ -1,95 +1,107 @@
-const express = require('express');
-const { prisma } = require('../db');
-const { authUser, requireRole } = require('../auth');
-const { sendError } = require('../utils');
+const { getDB, oid } = require('../db');
+const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated } = require('../utils');
 
 function notificationVisibleToUser(notification, user) {
-  if (!user) return false;
-  const recipientIds = Array.isArray(notification.recipientIds) ? notification.recipientIds : [];
-  if (recipientIds.length > 0) return recipientIds.includes(user.id);
   if (notification.audience === 'all') return true;
-  if (notification.audience === 'students') return user.role === 'student';
-  if (notification.audience === 'faculty') return user.role === 'faculty';
-  if (notification.audience === 'parents') return user.role === 'parent';
-  if (notification.audience === 'admins') return ['college_admin', 'super_admin'].includes(user.role);
-  return notification.audience === user.role;
-}
-
-function formatNotification(notification, user) {
-  const readBy = Array.isArray(notification.readBy) ? notification.readBy : [];
-  return {
-    id: notification.id,
-    audience: notification.audience,
-    title: notification.title,
-    body: notification.body,
-    created_at: notification.createdAt.toISOString(),
-    read: readBy.includes(user.id),
-  };
+  if (notification.recipientIds && notification.recipientIds.length > 0) {
+    const uid = typeof user._id === 'string' ? user._id : user._id.toString();
+    return notification.recipientIds.some(id => id.toString() === uid);
+  }
+  return true;
 }
 
 function createNotificationsRouter(io) {
-  const router = express.Router();
+  const { Router } = require('express');
+  const router = Router();
 
   router.get('/notifications', async (req, res) => {
-    const user = await authUser(req);
-    const notifications = await prisma.notification.findMany({ orderBy: { createdAt: 'desc' } });
-    res.json(notifications.filter(n => notificationVisibleToUser(n, user)).map(n => formatNotification(n, user)));
+    try {
+      const db = getDB();
+      const all = await db.collection('notifications')
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray();
+      const visible = all.filter(n => notificationVisibleToUser(n, req.user));
+      res.json(visible);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
   router.post('/notifications/read/:id', async (req, res) => {
-    const user = await authUser(req);
-    const notification = await prisma.notification.findUnique({ where: { id: req.params.id } });
-    if (!notification) return sendError(res, 'Notification not found.', 404);
-    const readBy = Array.isArray(notification.readBy) ? notification.readBy : [];
-    if (!readBy.includes(user.id)) {
-      await prisma.notification.update({ where: { id: notification.id }, data: { readBy: [...readBy, user.id] } });
+    try {
+      const db = getDB();
+      const userId = oid(req.user._id);
+      await db.collection('notifications').updateOne(
+        { _id: oid(req.params.id) },
+        { $addToSet: { readBy: userId } }
+      );
+      const updated = await db.collection('notifications').findOne({ _id: oid(req.params.id) });
+      if (io) io.to(req.user._id.toString()).emit('notifications:update', updated);
+      res.json(updated);
+    } catch (e) {
+      sendError(res, e);
     }
-    io.emit('notifications:update', { notificationId: notification.id, userId: user.id });
-    res.json({ ok: true });
   });
 
-  router.get('/announcements', async (_req, res) => {
-    const announcements = await prisma.announcement.findMany({ orderBy: { createdAt: 'desc' } });
-    res.json(announcements.map(a => ({
-      id: a.id,
-      title: a.title,
-      body: a.body,
-      audience: a.audience,
-      created_by: a.createdById,
-      created_at: a.createdAt.toISOString(),
-    })));
+  router.get('/announcements', async (req, res) => {
+    try {
+      const db = getDB();
+      const announcements = await db.collection('announcements')
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(announcements);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
-  router.post('/announcements', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-    const user = await authUser(req);
-    const announcement = await prisma.announcement.create({
-      data: {
-        title: req.body.title || 'Announcement',
-        body: req.body.body || '',
-        audience: req.body.audience || 'all',
-        createdById: user.id,
-      },
-    });
-    const payload = {
-      id: announcement.id,
-      title: announcement.title,
-      body: announcement.body,
-      audience: announcement.audience,
-      created_by: announcement.createdById,
-      created_at: announcement.createdAt.toISOString(),
-    };
-    io.emit('announcements:update', payload);
-    await prisma.notification.create({
-      data: {
-        audience: announcement.audience === 'all' ? 'all' : announcement.audience,
-        title: announcement.title,
-        body: announcement.body,
-        recipientIds: [],
+  router.post('/announcements', async (req, res) => {
+    try {
+      const db = getDB();
+      const { title, body, audience } = req.body;
+
+      const announcement = {
+        title,
+        body,
+        audience,
+        createdById: oid(req.user._id),
+        createdAt: nowIso(),
+      };
+      const annResult = await db.collection('announcements').insertOne(announcement);
+      announcement._id = annResult.insertedId;
+
+      let recipientIds = [];
+      if (audience === 'all') {
+        const users = await db.collection('users').find({}).project({ _id: 1 }).toArray();
+        recipientIds = users.map(u => u._id);
+      } else {
+        const roleMap = { students: 'student', faculty: 'faculty', admins: 'admin' };
+        const role = roleMap[audience];
+        if (role) {
+          const users = await db.collection('users').find({ role }).project({ _id: 1 }).toArray();
+          recipientIds = users.map(u => u._id);
+        }
+      }
+
+      const notification = {
+        audience: audience === 'all' ? 'all' : 'individual',
+        title,
+        body,
+        recipientIds,
         readBy: [],
-      },
-    });
-    io.emit('notifications:update', { audience: announcement.audience, recipientIds: [] });
-    res.json(payload);
+        createdAt: nowIso(),
+      };
+      const notifResult = await db.collection('notifications').insertOne(notification);
+      notification._id = notifResult.insertedId;
+
+      if (io) io.emit('announcements:update', announcement);
+
+      res.json(announcement);
+    } catch (e) {
+      sendError(res, e);
+    }
   });
 
   return router;
