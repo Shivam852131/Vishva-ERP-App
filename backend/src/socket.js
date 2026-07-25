@@ -16,8 +16,9 @@ function createSocketServer() {
   io.on('connection', async socket => {
     const token = socket.handshake.auth && socket.handshake.auth.token;
     const user = await userFromToken(token);
-    if (user) socket.join(roomForUser(user.id));
-    socket.emit('socket:ready', { ok: true, userId: user ? user.id : null });
+    const userId = user ? String(user._id) : null;
+    if (userId) socket.join(roomForUser(userId));
+    socket.emit('socket:ready', { ok: true, userId });
   });
 
   return io;

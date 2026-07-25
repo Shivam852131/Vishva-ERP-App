@@ -1,5 +1,5 @@
 const { getDB, oid } = require('../db');
-const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated } = require('../utils');
+const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated, roomForUser } = require('../utils');
 
 function createFeesRouter(io) {
   const { Router } = require('express');
@@ -129,7 +129,7 @@ function createFeesRouter(io) {
       const notifResult = await db.collection('notifications').insertOne(notification);
       notification._id = notifResult.insertedId;
 
-      if (io) io.to(fee.userId.toString()).emit('notifications:update', notification);
+      if (io) io.to(roomForUser(fee.userId)).emit('notifications:update', notification);
 
       res.json(receipt);
     } catch (e) {
@@ -244,7 +244,7 @@ function createFeesRouter(io) {
       const notifResult = await db.collection('notifications').insertOne(notification);
       notification._id = notifResult.insertedId;
 
-      if (io) io.to(req.user._id.toString()).emit('notifications:update', notification);
+      if (io) io.to(roomForUser(req.user._id)).emit('notifications:update', notification);
 
       res.json(subscription);
     } catch (e) {

@@ -4,6 +4,7 @@ import {
 } from '@env';
 
 export const BACKEND_URL = (APP_BACKEND_URL || '').replace(/\/$/, '');
+export const BASE_URL = BACKEND_URL;
 
 export const USE_DEMO_API = false;
 export const DEMO_FALLBACK = false;

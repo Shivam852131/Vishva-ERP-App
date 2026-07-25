@@ -25,7 +25,7 @@ type Step = 'phone' | 'otp' | 'role' | 'success';
 const COUNTRY_CODE = '+91';
 
 export default function PhoneOTPLogin() {
-  const { login, register, user } = useAuth();
+  const { login, register, user, refresh } = useAuth();
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -121,9 +121,11 @@ export default function PhoneOTPLogin() {
       setLoading(false);
       setStep('success');
       Animated.spring(successAnim, { toValue: 1, tension: 40, friction: 7, useNativeDriver: true }).start();
-      setTimeout(() => {
+      setTimeout(async () => {
         if (result?.token && result?.user) {
-          import('@/src/api').then(({ setAuth }) => setAuth(result.token, result.user));
+          const { setAuth } = await import('@/src/api');
+          await setAuth(result.token, result.user);
+          await refresh();
         }
       }, 1500);
     } catch (err: any) {

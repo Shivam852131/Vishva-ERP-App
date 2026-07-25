@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
-const { serializeUser, sendError, makeCode, nowIso } = require('../utils');
+const { serializeUser, sendError, makeCode, nowIso, roomForUser } = require('../utils');
 
 function generateMockResponse(type, message) {
   const topic = message.substring(0, 80).replace(/[?!.]+$/, '').trim();
@@ -122,7 +122,7 @@ function createAiRouter(io) {
       };
       await db.collection('ai_messages').insertOne(assistantMessage);
 
-      io.to(currentUserId.toString()).emit('ai:message', {
+      io.to(roomForUser(currentUserId)).emit('ai:message', {
         sessionId: sid,
         userMessage,
         assistantMessage,

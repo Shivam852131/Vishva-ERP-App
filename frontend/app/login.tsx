@@ -22,16 +22,16 @@ import { ViLogo } from '@/src/components/ViLogo';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const DEMO: { role: UserRole; email: string; label: string; icon: React.ReactNode; color: string }[] = [
-  { role: 'student', email: 'student@campus.edu', label: 'Student', icon: <BookOpen size={14} />, color: '#059669' },
-  { role: 'faculty', email: 'faculty@campus.edu', label: 'Faculty', icon: <Users size={14} />, color: '#3B82F6' },
-  { role: 'parent', email: 'parent@campus.edu', label: 'Parent', icon: <Users size={14} />, color: '#8B5CF6' },
-  { role: 'college_admin', email: 'admin@campus.edu', label: 'Admin', icon: <Building2 size={14} />, color: '#F59E0B' },
-  { role: 'super_admin', email: 'super@campus.edu', label: 'Super', icon: <Crown size={14} />, color: '#EF4444' },
+  { role: 'student', email: 'aarav@campus.edu', label: 'Student', icon: <BookOpen size={14} />, color: '#059669' },
+  { role: 'faculty', email: 'meera@campus.edu', label: 'Faculty', icon: <Users size={14} />, color: '#3B82F6' },
+  { role: 'parent', email: 'rohit@campus.edu', label: 'Parent', icon: <Users size={14} />, color: '#8B5CF6' },
+  { role: 'college_admin', email: 'ananya@campus.edu', label: 'Admin', icon: <Building2 size={14} />, color: '#F59E0B' },
+  { role: 'super_admin', email: 'vikram@campus.edu', label: 'Super', icon: <Crown size={14} />, color: '#EF4444' },
 ];
 
 export default function Login() {
   const { user, login, register, loading: authLoading } = useAuth();
-  const [email, setEmail] = useState('student@campus.edu');
+  const [email, setEmail] = useState('aarav@campus.edu');
   const [password, setPassword] = useState('password123');
   const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');

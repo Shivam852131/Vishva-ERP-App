@@ -54,6 +54,33 @@ async function testServer() {
   const badLogin = await req('POST', '/api/auth/login', { email: 'x@x.com', password: 'wrong' });
   check('POST /auth/login bad creds (401)', badLogin.status === 401);
 
+  // Registration
+  console.log('\n=== REGISTRATION ===');
+  const ts = Date.now();
+  const regRes = await req('POST', '/api/auth/register', {
+    name: 'Test Faculty',
+    email: `faculty_${ts}@campus.edu`,
+    password: 'password123',
+    role: 'faculty'
+  });
+  check('POST /auth/register faculty (200)', regRes.status === 200 && regRes.body.token);
+
+  const regStudent = await req('POST', '/api/auth/register', {
+    name: 'Test Student',
+    email: `student_${ts}@campus.edu`,
+    password: 'password123',
+    role: 'student'
+  });
+  check('POST /auth/register student (200)', regStudent.status === 200 && regStudent.body.token);
+
+  const regBad = await req('POST', '/api/auth/register', {
+    name: 'Test Bad',
+    email: 'bad@campus.edu',
+    password: 'short',
+    role: 'student'
+  });
+  check('POST /auth/register bad password (400)', regBad.status === 400);
+
   // Health
   console.log('\n=== HEALTH ===');
   const health = await req('GET', '/health');

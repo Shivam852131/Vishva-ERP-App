@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
-const { serializeUser, sendError, makeCode, nowIso } = require('../utils');
+const { serializeUser, sendError, makeCode, nowIso, roomForUser } = require('../utils');
 
 function createChatRouter(io) {
   const router = express.Router();
@@ -88,7 +88,7 @@ function createChatRouter(io) {
 
       const savedMessage = { ...message, _id: insertedId };
 
-      io.to(receiverId.toString()).emit('chat:message', savedMessage);
+      io.to(roomForUser(receiverId)).emit('chat:message', savedMessage);
 
       const receiver = await db.collection('users').findOne(
         { _id: oid(receiverId) },

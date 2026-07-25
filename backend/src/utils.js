@@ -19,7 +19,7 @@ function makeCode() {
 }
 
 function roomForUser(userId) {
-  return `user:${userId}`;
+  return `user:${String(userId)}`;
 }
 
 function paginationParams(query, { defaultSize, maxSize = 200 } = {}) {

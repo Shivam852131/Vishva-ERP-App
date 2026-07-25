@@ -16,7 +16,7 @@ const registerSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8),
   phone: z.string().trim().optional(),
-  role: z.enum(['student', 'parent']).optional(),
+  role: z.enum(['student', 'parent', 'faculty']).optional(),
 });
 
 // Normalize Atlas role names to our standard names

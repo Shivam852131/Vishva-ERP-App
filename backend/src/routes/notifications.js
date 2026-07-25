@@ -1,5 +1,5 @@
 const { getDB, oid } = require('../db');
-const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated } = require('../utils');
+const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated, roomForUser } = require('../utils');
 
 function notificationVisibleToUser(notification, user) {
   if (notification.audience === 'all') return true;
@@ -37,7 +37,7 @@ function createNotificationsRouter(io) {
         { $addToSet: { readBy: userId } }
       );
       const updated = await db.collection('notifications').findOne({ _id: oid(req.params.id) });
-      if (io) io.to(req.user._id.toString()).emit('notifications:update', updated);
+      if (io) io.to(roomForUser(req.user._id)).emit('notifications:update', updated);
       res.json(updated);
     } catch (e) {
       sendError(res, e);
