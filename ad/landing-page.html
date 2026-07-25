@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vishva ERP — Smart Campus Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --indigo:#4F46E5;--indigo-dark:#3730A3;--indigo-light:#818CF8;
+  --purple:#7C3AED;--pink:#EC4899;
+  --bg:#0F0D1A;--surface:#1A1730;--text:#F8FAFC;--muted:#94A3B8;
+  --glow:rgba(79,70,229,.35);
+}
+html{scroll-behavior:smooth;overflow-x:hidden}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+
+/* ── NAVBAR ── */
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;backdrop-filter:blur(20px);background:rgba(15,13,26,.7);border-bottom:1px solid rgba(255,255,255,.06)}
+.nav-logo{display:flex;align-items:center;gap:.6rem;font-weight:800;font-size:1.25rem}
+.nav-logo svg{width:32px;height:32px}
+.nav-links{display:flex;gap:2rem;list-style:none}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:.875rem;font-weight:500;transition:color .2s}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{background:var(--indigo);color:#fff;border:none;padding:.6rem 1.5rem;border-radius:8px;font-weight:600;font-size:.875rem;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.nav-cta:hover{transform:translateY(-1px);box-shadow:0 4px 20px var(--glow)}
+
+/* ── HERO ── */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8rem 2rem 4rem;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,var(--glow),transparent 70%);top:10%;left:50%;transform:translateX(-50%);animation:pulse-glow 4s ease-in-out infinite;pointer-events:none}
+@keyframes pulse-glow{0%,100%{opacity:.4;transform:translateX(-50%) scale(1)}50%{opacity:.7;transform:translateX(-50%) scale(1.15)}}
+
+.hero-badge{display:inline-flex;align-items:center;gap:.5rem;padding:.4rem 1rem;border-radius:99px;background:rgba(79,70,229,.15);border:1px solid rgba(79,70,229,.3);font-size:.8rem;font-weight:500;color:var(--indigo-light);margin-bottom:2rem;animation:fadeUp .8s ease-out}
+.hero-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--indigo-light);animation:blink 1.5s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+.hero h1{font-size:clamp(2.5rem,6vw,4.5rem);font-weight:900;line-height:1.1;max-width:800px;animation:fadeUp .8s ease-out .1s both}
+.hero h1 .gradient{background:linear-gradient(135deg,var(--indigo-light),var(--purple),var(--pink));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{font-size:clamp(1rem,2vw,1.25rem);color:var(--muted);max-width:600px;margin-top:1.5rem;line-height:1.6;animation:fadeUp .8s ease-out .2s both}
+.hero-actions{display:flex;gap:1rem;margin-top:2.5rem;animation:fadeUp .8s ease-out .3s both}
+.btn-primary{background:linear-gradient(135deg,var(--indigo),var(--purple));color:#fff;padding:.85rem 2rem;border-radius:12px;font-weight:700;font-size:1rem;border:none;cursor:pointer;transition:transform .15s,box-shadow .2s;box-shadow:0 4px 24px var(--glow)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 32px var(--glow)}
+.btn-secondary{background:rgba(255,255,255,.06);color:var(--text);padding:.85rem 2rem;border-radius:12px;font-weight:600;font-size:1rem;border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:background .2s}
+.btn-secondary:hover{background:rgba(255,255,255,.1)}
+
+/* phone mockup */
+.phone-float{margin-top:4rem;position:relative;animation:float 3s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+.phone-frame{width:280px;height:560px;border-radius:36px;background:linear-gradient(145deg,#1e1b3a,#2d2a4a);padding:8px;box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 80px var(--glow)}
+.phone-screen{width:100%;height:100%;border-radius:28px;background:linear-gradient(180deg,#1a1730 0%,#0f0d1a 100%);overflow:hidden;position:relative;display:flex;flex-direction:column}
+.phone-statusbar{display:flex;justify-content:space-between;padding:.6rem 1.2rem;font-size:.65rem;color:var(--muted)}
+.phone-content{flex:1;padding:1rem;display:flex;flex-direction:column;gap:.7rem}
+.phone-greeting{font-size:.75rem;color:var(--muted)}
+.phone-name{font-size:1.1rem;font-weight:700}
+.phone-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-top:.5rem}
+.phone-stat{background:rgba(79,70,229,.12);border-radius:10px;padding:.6rem;text-align:center}
+.phone-stat .num{font-size:1rem;font-weight:800;color:var(--indigo-light)}
+.phone-stat .lbl{font-size:.55rem;color:var(--muted);margin-top:.15rem}
+.phone-ai{background:linear-gradient(135deg,rgba(124,58,237,.15),rgba(79,70,229,.15));border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:.7rem;margin-top:.5rem}
+.phone-ai-title{font-size:.65rem;font-weight:600;color:var(--purple);display:flex;align-items:center;gap:.3rem}
+.phone-ai-text{font-size:.6rem;color:var(--muted);margin-top:.25rem;line-height:1.4}
+.phone-ai-dots{display:flex;gap:3px;margin-top:.4rem}
+.phone-ai-dots span{width:5px;height:5px;border-radius:50%;background:var(--purple);animation:dot-bounce .6s infinite}
+.phone-ai-dots span:nth-child(2){animation-delay:.1s}
+.phone-ai-dots span:nth-child(3){animation-delay:.2s}
+@keyframes dot-bounce{0%,100%{transform:translateY(0);opacity:.4}50%{transform:translateY(-4px);opacity:1}}
+
+.phone-quick{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-top:.5rem}
+.phone-quick-item{background:rgba(255,255,255,.04);border-radius:8px;padding:.5rem;display:flex;align-items:center;gap:.4rem;font-size:.55rem;color:var(--muted)}
+.phone-quick-icon{width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.6rem}
+.pi-1{background:rgba(79,70,229,.2);color:var(--indigo-light)}
+.pi-2{background:rgba(236,72,153,.2);color:var(--pink)}
+.pi-3{background:rgba(16,185,129,.2);color:#10B981}
+.pi-4{background:rgba(245,158,11,.2);color:#F59E0B}
+
+/* ── STATS BAR ── */
+.stats-bar{display:flex;justify-content:center;gap:3rem;padding:3rem 2rem;border-top:1px solid rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.05);background:rgba(26,23,48,.5);flex-wrap:wrap}
+.stat-item{text-align:center}
+.stat-num{font-size:2.5rem;font-weight:900;background:linear-gradient(135deg,var(--indigo-light),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-lbl{font-size:.85rem;color:var(--muted);margin-top:.25rem}
+
+/* ── SECTIONS ── */
+section{padding:5rem 2rem;max-width:1200px;margin:0 auto}
+.section-label{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.15em;color:var(--indigo-light);text-align:center;margin-bottom:.75rem}
+.section-title{font-size:clamp(1.75rem,4vw,2.75rem);font-weight:800;text-align:center;max-width:700px;margin:0 auto .5rem;line-height:1.2}
+.section-sub{font-size:1rem;color:var(--muted);text-align:center;max-width:600px;margin:0 auto 3rem;line-height:1.6}
+
+/* ── FEATURE CARDS ── */
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem}
+.feature-card{background:linear-gradient(145deg,rgba(26,23,48,.8),rgba(15,13,26,.9));border:1px solid rgba(255,255,255,.06);border-radius:20px;padding:2rem;transition:transform .25s,border-color .25s,box-shadow .25s;position:relative;overflow:hidden}
+.feature-card:hover{transform:translateY(-4px);border-color:rgba(79,70,229,.3);box-shadow:0 12px 40px rgba(79,70,229,.15)}
+.feature-card::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(79,70,229,.08),transparent 50%);pointer-events:none;transition:opacity .3s;opacity:0}
+.feature-card:hover::before{opacity:1}
+.feature-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin-bottom:1rem}
+.fi-indigo{background:rgba(79,70,229,.15);color:var(--indigo-light)}
+.fi-purple{background:rgba(124,58,237,.15);color:var(--purple)}
+.fi-pink{background:rgba(236,72,153,.15);color:var(--pink)}
+.fi-green{background:rgba(16,185,129,.15);color:#10B981}
+.fi-amber{background:rgba(245,158,11,.15);color:#F59E0B}
+.fi-cyan{background:rgba(6,182,212,.15);color:#06B6D4}
+.feature-card h3{font-size:1.15rem;font-weight:700;margin-bottom:.5rem}
+.feature-card p{font-size:.9rem;color:var(--muted);line-height:1.5}
+.feature-tag{display:inline-block;margin-top:.75rem;padding:.25rem .75rem;border-radius:99px;font-size:.7rem;font-weight:600}
+.ft-ai{background:rgba(124,58,237,.12);color:var(--purple)}
+.ft-live{background:rgba(16,185,129,.12);color:#10B981}
+.ft-smart{background:rgba(79,70,229,.12);color:var(--indigo-light)}
+.ft-new{background:rgba(236,72,153,.12);color:var(--pink)}
+
+/* ── ATTENDANCE SECTION ── */
+.attendance-showcase{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-top:2rem}
+.att-method{background:var(--surface);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:1.5rem;text-align:center;transition:transform .2s,border-color .2s;cursor:default}
+.att-method:hover{transform:translateY(-3px);border-color:var(--indigo)}
+.att-icon{font-size:2rem;margin-bottom:.5rem}
+.att-method h4{font-size:.95rem;font-weight:700;margin-bottom:.25rem}
+.att-method p{font-size:.75rem;color:var(--muted);line-height:1.4}
+
+/* ── ROLES SECTION ── */
+.roles-tabs{display:flex;justify-content:center;gap:.5rem;margin-bottom:2rem;flex-wrap:wrap}
+.role-tab{padding:.6rem 1.5rem;border-radius:99px;font-size:.85rem;font-weight:600;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--muted);cursor:pointer;transition:all .2s}
+.role-tab.active,.role-tab:hover{background:var(--indigo);color:#fff;border-color:var(--indigo)}
+.role-content{display:none;animation:fadeUp .4s ease-out}
+.role-content.active{display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:center}
+.role-text h3{font-size:1.75rem;font-weight:800;margin-bottom:1rem;line-height:1.2}
+.role-text ul{list-style:none;display:flex;flex-direction:column;gap:.6rem}
+.role-text li{display:flex;align-items:flex-start;gap:.6rem;font-size:.9rem;color:var(--muted);line-height:1.4}
+.role-text li::before{content:'✓';color:var(--indigo-light);font-weight:700;flex-shrink:0;margin-top:.1rem}
+.role-phone{display:flex;justify-content:center}
+.mini-phone{width:200px;height:400px;border-radius:24px;background:linear-gradient(145deg,#1e1b3a,#2d2a4a);padding:5px;box-shadow:0 10px 40px rgba(0,0,0,.4)}
+.mini-screen{width:100%;height:100%;border-radius:20px;background:var(--bg);overflow:hidden;padding:.8rem;display:flex;flex-direction:column;gap:.4rem}
+.mini-header{font-size:.65rem;font-weight:600;padding:.3rem 0}
+.mini-card{background:rgba(79,70,229,.08);border-radius:8px;padding:.5rem;font-size:.55rem;color:var(--muted)}
+.mini-card strong{color:var(--text);display:block;font-size:.75rem;margin-bottom:.15rem}
+
+/* ── AI SECTION ── */
+.ai-showcase{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-top:2rem}
+.ai-card{background:linear-gradient(145deg,rgba(124,58,237,.08),rgba(79,70,229,.08));border:1px solid rgba(124,58,237,.15);border-radius:16px;padding:1.5rem;transition:transform .2s,box-shadow .2s}
+.ai-card:hover{transform:translateY(-3px);box-shadow:0 8px 30px rgba(124,58,237,.15)}
+.ai-card-icon{font-size:1.75rem;margin-bottom:.75rem}
+.ai-card h4{font-size:1rem;font-weight:700;margin-bottom:.35rem}
+.ai-card p{font-size:.8rem;color:var(--muted);line-height:1.5}
+
+/* ── TESTIMONIALS ── */
+.testimonials{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.5rem;margin-top:2rem}
+.testimonial{background:var(--surface);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:1.5rem}
+.testimonial-stars{color:#F59E0B;font-size:.85rem;margin-bottom:.5rem}
+.testimonial p{font-size:.9rem;color:var(--muted);line-height:1.6;font-style:italic}
+.testimonial-author{display:flex;align-items:center;gap:.75rem;margin-top:1rem}
+.testimonial-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem}
+.ta-1{background:rgba(79,70,229,.2);color:var(--indigo-light)}
+.ta-2{background:rgba(236,72,153,.2);color:var(--pink)}
+.ta-3{background:rgba(16,185,129,.2);color:#10B981}
+.testimonial-name{font-size:.85rem;font-weight:600}
+.testimonial-role{font-size:.7rem;color:var(--muted)}
+
+/* ── CTA SECTION ── */
+.cta-section{text-align:center;padding:6rem 2rem;position:relative}
+.cta-section::before{content:'';position:absolute;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,rgba(124,58,237,.2),transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none}
+.cta-section h2{font-size:clamp(2rem,4vw,3rem);font-weight:900;margin-bottom:1rem;position:relative}
+.cta-section p{font-size:1.1rem;color:var(--muted);margin-bottom:2rem;position:relative}
+.cta-actions{display:flex;justify-content:center;gap:1rem;position:relative;flex-wrap:wrap}
+
+/* ── FOOTER ── */
+.footer{text-align:center;padding:3rem 2rem;border-top:1px solid rgba(255,255,255,.05);color:var(--muted);font-size:.8rem}
+.footer a{color:var(--indigo-light);text-decoration:none}
+
+/* ── ANIMATIONS ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.reveal{opacity:0;transform:translateY(30px);transition:opacity .6s ease-out,transform .6s ease-out}
+.reveal.visible{opacity:1;transform:translateY(0)}
+
+/* ── PARTICLES ── */
+#particles{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+.hero,.stats-bar,section,.cta-section,.footer{position:relative;z-index:1}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  .nav-links{display:none}
+  .attendance-showcase{grid-template-columns:1fr 1fr}
+  .ai-showcase{grid-template-columns:1fr}
+  .role-content.active{grid-template-columns:1fr}
+  .role-phone{order:-1}
+  .hero-actions{flex-direction:column;align-items:center}
+  .stats-bar{gap:1.5rem}
+  .stat-num{font-size:1.75rem}
+}
+@media(max-width:480px){
+  .attendance-showcase{grid-template-columns:1fr}
+  .features-grid{grid-template-columns:1fr}
+  .phone-frame{width:240px;height:480px}
+}
+</style>
+</head>
+<body>
+
+<canvas id="particles"></canvas>
+
+<!-- NAVBAR -->
+<nav class="nav">
+  <div class="nav-logo">
+    <svg viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#4F46E5"/><path d="M8 16L14 22L24 10" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Vishva ERP
+  </div>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#attendance">Attendance</a></li>
+    <li><a href="#roles">Roles</a></li>
+    <li><a href="#ai">AI Tools</a></li>
+  </ul>
+  <button class="nav-cta" onclick="window.open('https://github.com/Shivam852131/Vishva-ERP-App','_blank')">Get Started</button>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge"><span class="dot"></span> AI-Powered Smart Campus Platform</div>
+  <h1>Your Entire Campus<br><span class="gradient">In Your Pocket</span></h1>
+  <p>One app for students, faculty, parents, and admins. Attendance, fees, AI assistant, real-time chat, and 50+ features — all unified.</p>
+  <div class="hero-actions">
+    <button class="btn-primary" onclick="window.open('https://github.com/Shivam852131/Vishva-ERP-App/releases','_blank')">Download APK</button>
+    <button class="btn-secondary" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">Explore Features</button>
+  </div>
+  <div class="phone-float">
+    <div class="phone-frame">
+      <div class="phone-screen">
+        <div class="phone-statusbar"><span>9:41</span><span>●●●●</span></div>
+        <div class="phone-content">
+          <div class="phone-greeting">Good morning 👋</div>
+          <div class="phone-name">Priya Sharma</div>
+          <div class="phone-stats">
+            <div class="phone-stat"><div class="num">92%</div><div class="lbl">Attendance</div></div>
+            <div class="phone-stat"><div class="num">8.7</div><div class="lbl">CGPA</div></div>
+            <div class="phone-stat"><div class="num">₹2.4L</div><div class="lbl">Fees Paid</div></div>
+          </div>
+          <div class="phone-ai">
+            <div class="phone-ai-title">✨ AI Assistant</div>
+            <div class="phone-ai-text">"You have 3 classes today. Your assignment for Data Structures is due tomorrow."</div>
+            <div class="phone-ai-dots"><span></span><span></span><span></span></div>
+          </div>
+          <div class="phone-quick">
+            <div class="phone-quick-item"><div class="phone-quick-icon pi-1">📋</div>Timetable</div>
+            <div class="phone-quick-item"><div class="phone-quick-icon pi-2">💳</div>Pay Fees</div>
+            <div class="phone-quick-item"><div class="phone-quick-icon pi-3">✅</div>Attendance</div>
+            <div class="phone-quick-item"><div class="phone-quick-icon pi-4">📚</div>Library</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<div class="stats-bar">
+  <div class="stat-item reveal"><div class="stat-num" data-count="50">0</div><div class="stat-lbl">Features</div></div>
+  <div class="stat-item reveal"><div class="stat-num" data-count="5">0</div><div class="stat-lbl">User Roles</div></div>
+  <div class="stat-item reveal"><div class="stat-num" data-count="4">0</div><div class="stat-lbl">Attendance Methods</div></div>
+  <div class="stat-item reveal"><div class="stat-num" data-count="6">0</div><div class="stat-lbl">AI Tools</div></div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-label">Features</div>
+  <div class="section-title">Everything Your Campus Needs</div>
+  <div class="section-sub">From attendance to payments, AI to real-time chat — one platform replaces them all.</div>
+  <div class="features-grid">
+    <div class="feature-card reveal">
+      <div class="feature-icon fi-indigo">📱</div>
+      <h3>Real-Time Everything</h3>
+      <p>WebSocket-powered live updates for attendance, fees, chat, and notifications. No refresh needed.</p>
+      <span class="feature-tag ft-live">Live Sync</span>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon fi-purple">🤖</div>
+      <h3>AI-Powered Assistant</h3>
+      <p>Chat AI, study planner, grade analyzer, attendance predictor, career advisor, and resume builder.</p>
+      <span class="feature-tag ft-ai">AI Powered</span>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon fi-pink">💳</div>
+      <h3>Razorpay Payments</h3>
+      <p>Pay fees instantly with Razorpay integration. Instant receipts, payment history, and reminders.</p>
+      <span class="feature-tag ft-smart">Secure</span>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon fi-green">📊</div>
+      <h3>Analytics Dashboard</h3>
+      <p>GPA trends, subject-wise performance, attendance patterns, fee collection — all visualized.</p>
+      <span class="feature-tag ft-smart">Insights</span>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon fi-amber">💬</div>
+      <h3>WhatsApp & Email</h3>
+      <p>Multi-channel notifications. Get alerts via app, WhatsApp, email — never miss an update.</p>
+      <span class="feature-tag ft-new">Integrated</span>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon fi-cyan">🚌</div>
+      <h3>Live Bus Tracking</h3>
+      <p>Real-time bus location, ETA, route status, and passenger count. Parents can track too.</p>
+      <span class="feature-tag ft-live">Live</span>
+    </div>
+  </div>
+</section>
+
+<!-- ATTENDANCE -->
+<section id="attendance">
+  <div class="section-label">Attendance</div>
+  <div class="section-title">4 Ways to Check In</div>
+  <div class="section-sub">Students choose their preferred method. Faculty choose what works for their class.</div>
+  <div class="attendance-showcase">
+    <div class="att-method reveal">
+      <div class="att-icon">📷</div>
+      <h4>QR Code</h4>
+      <p>Faculty displays QR. Students scan. Done in 2 seconds.</p>
+    </div>
+    <div class="att-method reveal">
+      <div class="att-icon">📍</div>
+      <h4>GPS Geofence</h4>
+      <p>Auto check-in when you enter campus boundaries.</p>
+    </div>
+    <div class="att-method reveal">
+      <div class="att-icon">🧑</div>
+      <h4>Face ID</h4>
+      <p>Selfie check-in with AI face verification. Spoof-proof.</p>
+    </div>
+    <div class="att-method reveal">
+      <div class="att-icon">⚡</div>
+      <h4>Auto Check-In</h4>
+      <p>Background detection. Walk in and you're marked present.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ROLES -->
+<section id="roles">
+  <div class="section-label">For Everyone</div>
+  <div class="section-title">One App, Five Perspectives</div>
+  <div class="section-sub">Every role gets a tailored experience with exactly the features they need.</div>
+  <div class="roles-tabs">
+    <button class="role-tab active" data-role="student">Student</button>
+    <button class="role-tab" data-role="faculty">Faculty</button>
+    <button class="role-tab" data-role="parent">Parent</button>
+    <button class="role-tab" data-role="admin">College Admin</button>
+  </div>
+
+  <div class="role-content active" data-role="student">
+    <div class="role-text">
+      <h3>Your Academic<br>Command Center</h3>
+      <ul>
+        <li>AI study buddy that knows your schedule</li>
+        <li>Check in with QR, GPS, Face ID, or Auto</li>
+        <li>Pay fees with one tap via Razorpay</li>
+        <li>Digital ID card — download, share, print</li>
+        <li>Real-time chat with classmates & faculty</li>
+        <li>Library search, book availability, renewals</li>
+        <li>AI resume builder & career advisor</li>
+      </ul>
+    </div>
+    <div class="role-phone">
+      <div class="mini-phone"><div class="mini-screen">
+        <div class="mini-header" style="color:var(--indigo-light)">📚 Student Dashboard</div>
+        <div class="mini-card"><strong>92% Attendance</strong>You're doing great! 2 more classes to maintain eligibility.</div>
+        <div class="mini-card"><strong>Assignment Due Tomorrow</strong>Data Structures — Binary Tree Implementation</div>
+        <div class="mini-card"><strong>Fee Reminder</strong>₹15,000 due by Jan 30. Pay now →</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="role-content" data-role="faculty">
+    <div class="role-text">
+      <h3>Teach More,<br>Paperwork Less</h3>
+      <ul>
+        <li>Start live attendance sessions in one tap</li>
+        <li>Watch check-ins roll in real-time</li>
+        <li>AI generates question papers in seconds</li>
+        <li>AI-powered assignment grading with feedback</li>
+        <li>Exam generator from question banks</li>
+        <li>Manage courses, timetables, and students</li>
+      </ul>
+    </div>
+    <div class="role-phone">
+      <div class="mini-phone"><div class="mini-screen">
+        <div class="mini-header" style="color:var(--pink)">👨‍🏫 Faculty Dashboard</div>
+        <div class="mini-card"><strong>Live Session: Data Structures</strong>42/45 checked in • QR Code active</div>
+        <div class="mini-card"><strong>AI Question Paper</strong>Generate exam for CS-301 in 1 click</div>
+        <div class="mini-card"><strong>12 Assignments to Grade</strong>AI pre-graded: Review & approve →</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="role-content" data-role="parent">
+    <div class="role-text">
+      <h3>Stay Connected<br>With Your Child</h3>
+      <ul>
+        <li>Real-time attendance tracking</li>
+        <li>Exam results as soon as they're out</li>
+        <li>Fee reminders and payment history</li>
+        <li>WhatsApp alerts for important events</li>
+        <li>AI assistant to ask about your child's progress</li>
+        <li>Live bus tracking for safety</li>
+      </ul>
+    </div>
+    <div class="role-phone">
+      <div class="mini-phone"><div class="mini-screen">
+        <div class="mini-header" style="color:var(--green)">👨‍👩‍👧 Parent Dashboard</div>
+        <div class="mini-card"><strong>Riya's Attendance: 87%</strong>Absent in 3 lectures this month</div>
+        <div class="mini-card"><strong>Mid-Term Results</strong>CGPA: 8.7 | Rank: 5th in class</div>
+        <div class="mini-card"><strong>Bus Tracking</strong>Bus B-12 arriving in 8 minutes</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="role-content" data-role="admin">
+    <div class="role-text">
+      <h3>Complete Campus<br>Control</h3>
+      <ul>
+        <li>Manage 500+ users from one dashboard</li>
+        <li>Fee collection overview with Razorpay</li>
+        <li>Announcements to entire campus</li>
+        <li>Attendance reports and analytics</li>
+        <li>Bulk user import and management</li>
+        <li>SaaS subscription plans for your college</li>
+      </ul>
+    </div>
+    <div class="role-phone">
+      <div class="mini-phone"><div class="mini-screen">
+        <div class="mini-header" style="color:var(--amber)">🏛️ Admin Dashboard</div>
+        <div class="mini-card"><strong>500 Students • 45 Faculty</strong>Campus active today: 412 users</div>
+        <div class="mini-card"><strong>Fees Collected: ₹12.5L</strong>This semester • 94% collection rate</div>
+        <div class="mini-card"><strong>Live Attendance: 89%</strong>Campus-wide average today</div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<!-- AI -->
+<section id="ai">
+  <div class="section-label">AI-Powered</div>
+  <div class="section-title">Your Personal AI Toolkit</div>
+  <div class="section-sub">Six AI tools that make students smarter, faculty efficient, and parents informed.</div>
+  <div class="ai-showcase">
+    <div class="ai-card reveal">
+      <div class="ai-card-icon">💬</div>
+      <h4>AI Chat Assistant</h4>
+      <p>Ask anything — schedule, fees, assignments, campus info. Natural language responses, always available.</p>
+    </div>
+    <div class="ai-card reveal">
+      <div class="ai-card-icon">📅</div>
+      <h4>Study Planner</h4>
+      <p>AI generates personalized study plans based on your schedule, exams, and learning pace.</p>
+    </div>
+    <div class="ai-card reveal">
+      <div class="ai-card-icon">📈</div>
+      <h4>Grade Analyzer</h4>
+      <p>Subject-wise trends, GPA predictions, weakness identification. Know where to focus.</p>
+    </div>
+    <div class="ai-card reveal">
+      <div class="ai-card-icon">⚠️</div>
+      <h4>Attendance Predictor</h4>
+      <p>Warnings when at risk of falling below threshold. Catch-up plans before it's too late.</p>
+    </div>
+    <div class="ai-card reveal">
+      <div class="ai-card-icon">📝</div>
+      <h4>Question Paper Generator</h4>
+      <p>Faculty: select subject, difficulty, marks — AI generates exam papers instantly.</p>
+    </div>
+    <div class="ai-card reveal">
+      <div class="ai-card-icon">🎯</div>
+      <h4>Career Advisor</h4>
+      <p>AI-matched career paths, salary ranges, required skills. Resume builder and interview coach included.</p>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section>
+  <div class="section-label">Testimonials</div>
+  <div class="section-title">Loved by Campus Communities</div>
+  <div class="testimonials">
+    <div class="testimonial reveal">
+      <div class="testimonial-stars">★★★★★</div>
+      <p>"Replaced 6 different apps with Vishva ERP. Our students love the AI assistant and the digital ID card."</p>
+      <div class="testimonial-author">
+        <div class="testimonial-avatar ta-1">RK</div>
+        <div><div class="testimonial-name">Dr. Rajesh Kumar</div><div class="testimonial-role">Dean, JIIT Noida</div></div>
+      </div>
+    </div>
+    <div class="testimonial reveal">
+      <div class="testimonial-stars">★★★★★</div>
+      <p>"The QR attendance system saved us 30 minutes per class. Real-time tracking is a game changer for parents."</p>
+      <div class="testimonial-author">
+        <div class="testimonial-avatar ta-2">SP</div>
+        <div><div class="testimonial-name">Sunita Patel</div><div class="testimonial-role">Parent</div></div>
+      </div>
+    </div>
+    <div class="testimonial reveal">
+      <div class="testimonial-stars">★★★★★</div>
+      <p>"AI study planner and grade analyzer helped me improve my CGPA from 7.2 to 9.1 in one semester."</p>
+      <div class="testimonial-author">
+        <div class="testimonial-avatar ta-3">AS</div>
+        <div><div class="testimonial-name">Arjun Singh</div><div class="testimonial-role">Student, B.Tech CSE</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <h2>Ready to Transform<br>Your Campus?</h2>
+  <p>Join the future of campus management. Free for students. Affordable for colleges.</p>
+  <div class="cta-actions">
+    <button class="btn-primary" onclick="window.open('https://github.com/Shivam852131/Vishva-ERP-App/releases','_blank')">Download Now</button>
+    <button class="btn-secondary" onclick="window.open('https://github.com/Shivam852131/Vishva-ERP-App','_blank')">View on GitHub</button>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<div class="footer">
+  <p>Built with ❤️ by <a href="https://github.com/Shivam852131" target="_blank">Shivam Kumar</a> &middot; Vishva ERP &copy; 2026 &middot; <a href="https://vishva-erp-app.onrender.com/health" target="_blank">Backend Status</a></p>
+</div>
+
+<script>
+// ── PARTICLES ──
+const canvas=document.getElementById('particles'),ctx=canvas.getContext('2d');
+let particles=[],w,h;
+function resize(){w=canvas.width=window.innerWidth;h=canvas.height=window.innerHeight}
+resize();window.addEventListener('resize',resize);
+class Particle{
+  constructor(){this.reset()}
+  reset(){this.x=Math.random()*w;this.y=Math.random()*h;this.vx=(Math.random()-.5)*.3;this.vy=(Math.random()-.5)*.3;this.r=Math.random()*1.5+.5;this.a=Math.random()*.3+.1}
+  update(){this.x+=this.vx;this.y+=this.vy;if(this.x<0||this.x>w)this.vx*=-1;if(this.y<0||this.y>h)this.vy*=-1}
+  draw(){ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.fillStyle=`rgba(129,140,248,${this.a})`;ctx.fill()}
+}
+for(let i=0;i<60;i++)particles.push(new Particle());
+function drawLines(){
+  for(let i=0;i<particles.length;i++){
+    for(let j=i+1;j<particles.length;j++){
+      const dx=particles[i].x-particles[j].x,dy=particles[i].y-particles[j].y,d=Math.sqrt(dx*dx+dy*dy);
+      if(d<120){ctx.beginPath();ctx.moveTo(particles[i].x,particles[i].y);ctx.lineTo(particles[j].x,particles[j].y);ctx.strokeStyle=`rgba(79,70,229,${.08*(1-d/120)})`;ctx.stroke()}
+    }
+  }
+}
+function animate(){ctx.clearRect(0,0,w,h);particles.forEach(p=>{p.update();p.draw()});drawLines();requestAnimationFrame(animate)}
+animate();
+
+// ── SCROLL REVEAL ──
+const observer=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')})},{threshold:.15});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+
+// ── COUNTER ──
+const counterObserver=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){
+  const el=e.target,target=+el.dataset.count;let current=0;const step=target/40;
+  const timer=setInterval(()=>{current+=step;if(current>=target){current=target;clearInterval(timer)}el.textContent=Math.round(current)+'+'},30);
+  counterObserver.unobserve(el)
+}})},{threshold:.5});
+document.querySelectorAll('.stat-num[data-count]').forEach(el=>counterObserver.observe(el));
+
+// ── ROLE TABS ──
+document.querySelectorAll('.role-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.role-tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.role-content').forEach(c=>c.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelector(`.role-content[data-role="${tab.dataset.role}"]`).classList.add('active');
+  });
+});
+
+// ── CARD GLOW ──
+document.querySelectorAll('.feature-card').forEach(card=>{
+  card.addEventListener('mousemove',e=>{
+    const r=card.getBoundingClientRect();
+    card.style.setProperty('--mx',((e.clientX-r.left)/r.width*100)+'%');
+    card.style.setProperty('--my',((e.clientY-r.top)/r.height*100)+'%');
+  });
+});
+</script>
+</body>
+</html>

@@ -7,9 +7,9 @@ import { LinearGradient } from '@/src/components/LinearGradient';
 import { AppImage as Image } from '@/src/components/AppImage';
 import { router } from '@/src/navigation/router';
 import {
-  ArrowLeft, Download, Share2, QrCode, Shield, Calendar,
+  ArrowLeft, Download, Share2, QrCode, Shield,
   Building2, GraduationCap, User, Check, Fingerprint, Wifi,
-  Lock, Star, CreditCard, ChevronRight, BadgeCheck,
+  Lock, Star, CreditCard, BadgeCheck, BookOpen, Users, Crown,
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { captureRef } from 'react-native-view-shot';
@@ -22,7 +22,96 @@ import { ErrorBoundary } from '@/src/ErrorBoundary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 40;
-const CARD_HEIGHT = CARD_WIDTH * 1.5;
+// Stacked card content needs ~545pt. A pure ratio height clips the barcode on
+// narrow devices (CARD_WIDTH * 1.5 is only 420pt on a 320pt-wide screen).
+const CARD_HEIGHT = Math.max(CARD_WIDTH * 1.5, 560);
+
+type RoleTheme = {
+  label: string;
+  idLabel: string;
+  accent: string;
+  gradient: [string, string, string];
+  Icon: React.ElementType;
+};
+
+const ROLE_THEMES: Record<string, RoleTheme> = {
+  student: {
+    label: 'STUDENT',
+    idLabel: 'Student ID',
+    accent: '#0D7377',
+    gradient: ['#0D7377', '#14919B', '#0D7377'],
+    Icon: GraduationCap,
+  },
+  faculty: {
+    label: 'FACULTY',
+    idLabel: 'Faculty ID',
+    accent: '#1D4ED8',
+    gradient: ['#1E3A8A', '#2563EB', '#1E3A8A'],
+    Icon: BookOpen,
+  },
+  parent: {
+    label: 'PARENT / GUARDIAN',
+    idLabel: 'Guardian ID',
+    accent: '#6D28D9',
+    gradient: ['#5B21B6', '#7C3AED', '#5B21B6'],
+    Icon: Users,
+  },
+  college_admin: {
+    label: 'COLLEGE ADMIN',
+    idLabel: 'Staff ID',
+    accent: '#B45309',
+    gradient: ['#92400E', '#D97706', '#92400E'],
+    Icon: Building2,
+  },
+  super_admin: {
+    label: 'SUPER ADMIN',
+    idLabel: 'Admin ID',
+    accent: '#BE123C',
+    gradient: ['#9F1239', '#E11D48', '#9F1239'],
+    Icon: Crown,
+  },
+};
+
+function themeForRole(role?: string): RoleTheme {
+  return ROLE_THEMES[role || 'student'] || ROLE_THEMES.student;
+}
+
+// The backend only issues student_id for students, so derive a stable code from
+// the user id for every other role instead of rendering a blank field.
+function displayIdFor(user: any): string {
+  if (user?.student_id) return String(user.student_id);
+  const raw = String(user?.id || '');
+  if (!raw) return '—';
+  const initials = String(user?.role || 'user')
+    .split('_')
+    .map(part => part[0])
+    .join('')
+    .toUpperCase();
+  return `${initials}-${raw.slice(-6).toUpperCase()}`;
+}
+
+function detailRowsFor(user: any): { label: string; value: string }[] {
+  const role = user?.role;
+  const rows: { label: string; value: string }[] = [];
+
+  if (role === 'student') {
+    if (user?.department) rows.push({ label: 'Branch', value: user.department });
+    if (user?.year) rows.push({ label: 'Year', value: `Year ${user.year}` });
+    if (user?.cgpa != null) rows.push({ label: 'CGPA', value: String(user.cgpa) });
+  } else if (role === 'faculty') {
+    if (user?.department) rows.push({ label: 'Department', value: user.department });
+    rows.push({ label: 'Designation', value: 'Faculty Member' });
+  } else if (role === 'parent') {
+    rows.push({ label: 'Relation', value: 'Parent / Guardian' });
+    if (user?.phone) rows.push({ label: 'Contact', value: user.phone });
+  } else {
+    rows.push({ label: 'Designation', value: themeForRole(role).label });
+    if (user?.department) rows.push({ label: 'Department', value: user.department });
+  }
+
+  if (user?.college) rows.push({ label: 'Institute', value: user.college });
+  return rows.slice(0, 4);
+}
 
 function generateBarcodeLines(id: string): { width: number; opacity: number }[] {
   const seed = id || '5049199';
@@ -85,36 +174,43 @@ const holoStyles = StyleSheet.create({
   },
 });
 
-// ─── Front Card (MIT-style vertical) ─────────────
+// ─── Front Card (vertical badge) ─────────────────
 function FrontCard({ user, cardRef }: { user: any; cardRef: React.RefObject<View | null> }) {
+  const roleTheme = themeForRole(user?.role);
+  const RoleIcon = roleTheme.Icon;
+  const displayId = displayIdFor(user);
+  const rows = detailRowsFor(user);
+
   return (
     <View ref={cardRef} style={s.card}>
-      {/* White Header with MIT-style logo */}
+      {/* White header with institute mark */}
       <View style={s.whiteHeader}>
         <View style={s.headerLogoRow}>
-          <View style={s.mitLogo}>
-            <Text style={s.mitLetter}>M</Text>
-            <Text style={s.mitLetter}>I</Text>
-            <Text style={s.mitLetter}>T</Text>
+          <View style={[s.instituteMark, { backgroundColor: roleTheme.accent }]}>
+            <RoleIcon size={16} color="#fff" />
           </View>
-          <Text style={s.universityHeaderText}>VISHVA UNIVERSITY</Text>
+          <Text style={s.universityHeaderText} numberOfLines={1}>
+            VISHVA UNIVERSITY
+          </Text>
         </View>
       </View>
 
-      {/* Green Teal Background Section */}
+      {/* Role-coloured identity section */}
       <LinearGradient
-        colors={['#0D7377', '#14919B', '#0D7377']}
+        colors={roleTheme.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={s.tealSection}
       >
         <HolographicOverlay />
-        {/* Geometric decorative elements */}
         <View style={s.geoDecor1} />
         <View style={s.geoDecor2} />
         <View style={s.geoDecor3} />
 
-        {/* Profile Photo */}
+        <View style={s.roleBadge}>
+          <Text style={s.roleBadgeText} numberOfLines={1}>{roleTheme.label}</Text>
+        </View>
+
         <View style={s.photoContainer}>
           <View style={s.photoRing}>
             <View style={s.photoInner}>
@@ -129,45 +225,38 @@ function FrontCard({ user, cardRef }: { user: any; cardRef: React.RefObject<View
           </View>
         </View>
 
-        {/* Student Name */}
-        <Text style={s.studentName}>{(user?.name || 'SHIVAM KUMAR').toUpperCase()}</Text>
+        <Text style={s.studentName} numberOfLines={2}>
+          {(user?.name || 'Unknown User').toUpperCase()}
+        </Text>
 
-        {/* Student ID Label */}
-        <Text style={s.studentIdLabel}>Student ID</Text>
-        <Text style={s.studentIdNumber}>{user?.student_id || '5049199'}</Text>
+        <Text style={s.studentIdLabel}>{roleTheme.idLabel}</Text>
+        <Text style={s.studentIdNumber} numberOfLines={1}>{displayId}</Text>
       </LinearGradient>
 
-      {/* Details Section */}
+      {/* Role-specific details */}
       <View style={s.detailsSection}>
-        <View style={s.detailRow}>
-          <Text style={s.detailLabel}>Branch :</Text>
-          <Text style={s.detailValue}>{user?.department || 'COMPUTER SCIENCE AND ENGINEERING (DATA SCIENCE)'}</Text>
-        </View>
-        <View style={s.detailRow}>
-          <Text style={s.detailLabel}>Semester :</Text>
-          <Text style={s.detailValue}>{user?.semester || 'SEM 5'}</Text>
-        </View>
-        <View style={s.detailRow}>
-          <Text style={s.detailLabel}>Session :</Text>
-          <Text style={s.detailValue}>{user?.session || '2026-2027'}</Text>
-        </View>
-        <View style={[s.detailRow, { borderBottomWidth: 0 }]}>
-          <Text style={s.detailLabel}>Roll No. :</Text>
-          <Text style={s.detailValue}>{user?.roll_no || '2402921540027'}</Text>
-        </View>
+        {rows.map((row, idx) => (
+          <View
+            key={row.label}
+            style={[s.detailRow, idx === rows.length - 1 && { borderBottomWidth: 0 }]}
+          >
+            <Text style={s.detailLabel}>{row.label} :</Text>
+            <Text style={s.detailValue} numberOfLines={2}>{row.value}</Text>
+          </View>
+        ))}
       </View>
 
-      {/* Barcode Section */}
+      {/* Barcode */}
       <View style={s.barcodeSection}>
         <View style={s.barcodeLines}>
-          {generateBarcodeLines(user?.student_id || '5049199').map((line, i) => (
+          {generateBarcodeLines(displayId).map((line, i) => (
             <View
               key={i}
               style={[s.barcodeLine, { width: line.width, opacity: line.opacity }]}
             />
           ))}
         </View>
-        <Text style={s.barcodeNumber}>{user?.student_id || '5049199'}</Text>
+        <Text style={s.barcodeNumber} numberOfLines={1}>{displayId}</Text>
       </View>
     </View>
   );
@@ -175,37 +264,39 @@ function FrontCard({ user, cardRef }: { user: any; cardRef: React.RefObject<View
 
 // ─── Back Card ───────────────────────────────────
 function BackCard({ user }: { user: any }) {
+  const roleTheme = themeForRole(user?.role);
+  const RoleIcon = roleTheme.Icon;
+  const displayId = displayIdFor(user);
+
   return (
     <View style={s.card}>
       <View style={s.backContainer}>
         {/* Header */}
         <View style={s.backHeader}>
           <View style={s.backLogoRow}>
-            <View style={s.mitLogo}>
-              <Text style={s.mitLetter}>M</Text>
-              <Text style={s.mitLetter}>I</Text>
-              <Text style={s.mitLetter}>T</Text>
+            <View style={[s.instituteMarkSmall, { backgroundColor: roleTheme.accent }]}>
+              <RoleIcon size={12} color="#fff" />
             </View>
-            <Text style={s.backHeaderText}>VISHVA UNIVERSITY</Text>
+            <Text style={s.backHeaderText} numberOfLines={1}>VISHVA UNIVERSITY</Text>
           </View>
           <Text style={s.backSubText}>DIGITAL IDENTITY CARD</Text>
         </View>
 
         {/* QR Code */}
         <View style={s.backQrSection}>
-          <View style={s.backQrBorder}>
+          <View style={[s.backQrBorder, { borderColor: roleTheme.accent }]}>
             <QRCode
               value={JSON.stringify({
                 v: 'VU',
                 id: user?.id,
                 n: user?.name,
-                s: user?.student_id,
+                s: displayId,
                 e: user?.email,
                 r: user?.role,
               })}
               size={120}
               backgroundColor="#fff"
-              color="#0D7377"
+              color={roleTheme.accent}
             />
           </View>
         </View>
@@ -214,25 +305,33 @@ function BackCard({ user }: { user: any }) {
         <View style={s.backInfo}>
           <View style={s.backInfoRow}>
             <Text style={s.backInfoLabel}>NAME</Text>
-            <Text style={s.backInfoValue}>{(user?.name || 'SHIVAM KUMAR').toUpperCase()}</Text>
+            <Text style={s.backInfoValue} numberOfLines={1}>
+              {(user?.name || '—').toUpperCase()}
+            </Text>
           </View>
           <View style={s.backInfoRow}>
             <Text style={s.backInfoLabel}>ID</Text>
-            <Text style={s.backInfoValue}>{user?.student_id || '5049199'}</Text>
+            <Text style={s.backInfoValue} numberOfLines={1}>{displayId}</Text>
+          </View>
+          <View style={s.backInfoRow}>
+            <Text style={s.backInfoLabel}>ROLE</Text>
+            <Text style={s.backInfoValue} numberOfLines={1}>{roleTheme.label}</Text>
           </View>
           <View style={s.backInfoRow}>
             <Text style={s.backInfoLabel}>EMAIL</Text>
-            <Text style={s.backInfoValue}>{user?.email || 'student@vishva.edu'}</Text>
+            <Text style={s.backInfoValue} numberOfLines={1}>{user?.email || '—'}</Text>
           </View>
           <View style={s.backInfoRow}>
             <Text style={s.backInfoLabel}>PHONE</Text>
-            <Text style={s.backInfoValue}>{user?.phone || '+91 9876543210'}</Text>
+            <Text style={s.backInfoValue} numberOfLines={1}>{user?.phone || '—'}</Text>
           </View>
         </View>
 
         {/* Magnetic Stripe */}
         <View style={s.magneticStripe}>
-          <Text style={s.magneticText}>VISHVA UNIVERSITY • CAMPUS ERP • DIGITAL ID</Text>
+          <Text style={s.magneticText} numberOfLines={1}>
+            VISHVA UNIVERSITY • CAMPUS ERP • DIGITAL ID
+          </Text>
         </View>
 
         {/* Terms */}
@@ -370,10 +469,15 @@ export default function IdCardScreen() {
     }
   };
 
+  const roleTheme = themeForRole(user?.role);
+  const accent = roleTheme.accent;
+  const displayId = displayIdFor(user);
+
   const detailItems = [
     { label: 'Full Name', value: user?.name },
-    { label: 'ID Number', value: user?.student_id },
+    { label: 'ID Number', value: displayId },
     { label: 'Email', value: user?.email },
+    { label: 'Phone', value: user?.phone },
     { label: 'Department', value: user?.department },
     { label: 'Year of Study', value: user?.year ? `Year ${user.year}` : undefined },
     { label: 'College', value: user?.college },
@@ -392,7 +496,7 @@ export default function IdCardScreen() {
             <ArrowLeft size={20} color={theme.colors.text} />
           </Pressable>
           <View style={s.headerCenter}>
-            <CreditCard size={18} color="#0D7377" />
+            <CreditCard size={18} color={accent} />
             <Text style={s.headerTitle}>Digital ID</Text>
           </View>
           <View style={{ width: 40 }} />
@@ -400,7 +504,7 @@ export default function IdCardScreen() {
 
         <ScrollView
           contentContainerStyle={s.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0D7377" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}
           showsVerticalScrollIndicator={false}
         >
           {/* Card with flip */}
@@ -424,31 +528,31 @@ export default function IdCardScreen() {
           {/* Action buttons */}
           <View style={s.actions}>
             <Pressable style={({ pressed }) => [s.actionBtn, s.shareBtn, pressed && s.btnPressed]} onPress={shareCard} disabled={sharing}>
-              <Share2 size={16} color="#0D7377" />
-              <Text style={s.shareBtnText}>{sharing ? 'Sharing...' : 'Share'}</Text>
+              <Share2 size={16} color={accent} />
+              <Text style={[s.shareBtnText, { color: accent }]} numberOfLines={1}>{sharing ? 'Sharing...' : 'Share'}</Text>
             </Pressable>
 
-            <Pressable style={({ pressed }) => [s.actionBtn, s.downloadBtn, pressed && s.btnPressed]} onPress={downloadPDF} disabled={downloading}>
+            <Pressable style={({ pressed }) => [s.actionBtn, s.downloadBtn, { backgroundColor: accent, borderColor: accent }, pressed && s.btnPressed]} onPress={downloadPDF} disabled={downloading}>
               <Download size={16} color="#fff" />
-              <Text style={s.downloadBtnText}>{downloading ? 'Generating...' : 'PDF'}</Text>
+              <Text style={s.downloadBtnText} numberOfLines={1}>{downloading ? 'Saving...' : 'PDF'}</Text>
             </Pressable>
 
             <Pressable style={({ pressed }) => [s.actionBtn, s.verifyBtn, pressed && s.btnPressed]} onPress={() => setShowVerify(true)}>
-              <Fingerprint size={16} color="#0D7377" />
-              <Text style={s.verifyBtnText}>Verify</Text>
+              <Fingerprint size={16} color={accent} />
+              <Text style={[s.verifyBtnText, { color: accent }]} numberOfLines={1}>Verify</Text>
             </Pressable>
           </View>
 
           {/* Card Details */}
           <Card style={s.detailsCard}>
             <View style={s.detailsHeader}>
-              <Star size={14} color="#0D7377" />
+              <Star size={14} color={accent} />
               <Text style={s.detailsTitle}>Card Details</Text>
             </View>
             {detailItems.map((item, idx, arr) => (
-              <View key={idx} style={[s.detailInfoRow, idx === arr.length - 1 && { borderBottomWidth: 0 }]}>
+              <View key={item.label} style={[s.detailInfoRow, idx === arr.length - 1 && { borderBottomWidth: 0 }]}>
                 <Text style={s.detailInfoLabel}>{item.label}</Text>
-                <Text style={s.detailInfoValue}>{item.value}</Text>
+                <Text style={s.detailInfoValue} numberOfLines={2}>{item.value}</Text>
               </View>
             ))}
           </Card>
@@ -456,17 +560,17 @@ export default function IdCardScreen() {
           {/* Security Features */}
           <Card style={s.securityCard}>
             <View style={s.securityHeader}>
-              <Shield size={14} color="#0D7377" />
+              <Shield size={14} color={accent} />
               <Text style={s.securityTitle}>Security Features</Text>
             </View>
             <View style={s.securityGrid}>
               {[
-                { icon: <QrCode size={16} color="#0D7377" />, label: 'QR Verification' },
-                { icon: <Fingerprint size={16} color="#0D7377" />, label: 'Unique Identity' },
-                { icon: <BadgeCheck size={16} color="#0D7377" />, label: 'University Seal' },
-                { icon: <Wifi size={16} color="#0D7377" />, label: 'NFC Ready' },
-              ].map((f, i) => (
-                <View key={i} style={s.securityItem}>
+                { icon: <QrCode size={16} color={accent} />, label: 'QR Verification' },
+                { icon: <Fingerprint size={16} color={accent} />, label: 'Unique Identity' },
+                { icon: <BadgeCheck size={16} color={accent} />, label: 'University Seal' },
+                { icon: <Wifi size={16} color={accent} />, label: 'NFC Ready' },
+              ].map(f => (
+                <View key={f.label} style={s.securityItem}>
                   {f.icon}
                   <Text style={s.securityLabel}>{f.label}</Text>
                 </View>
@@ -480,29 +584,29 @@ export default function IdCardScreen() {
           <Pressable style={s.verifyOverlay} onPress={() => setShowVerify(false)}>
             <Pressable style={s.verifyModal} onPress={(e) => e.stopPropagation()}>
               <View style={s.verifyModalHeader}>
-                <View style={s.verifyIconWrap}>
-                  <Shield size={28} color="#0D7377" />
+                <View style={[s.verifyIconWrap, { backgroundColor: accent + '22' }]}>
+                  <Shield size={28} color={accent} />
                 </View>
                 <Text style={s.verifyModalTitle}>Identity Verification</Text>
                 <Text style={s.verifyModalSub}>Scan QR code to verify identity</Text>
               </View>
 
-              <View style={s.verifyQrContainer}>
+              <View style={[s.verifyQrContainer, { borderColor: accent }]}>
                 <View style={s.verifyQrBorder}>
                   <QRCode
-                    value={JSON.stringify({ v: 'VU', id: user?.id, n: user?.name, s: user?.student_id })}
+                    value={JSON.stringify({ v: 'VU', id: user?.id, n: user?.name, s: displayId, r: user?.role })}
                     size={200}
                     backgroundColor="#fff"
-                    color="#0D7377"
+                    color={accent}
                   />
                 </View>
               </View>
 
-              <Text style={s.verifyUserName}>{(user?.name || '').toUpperCase()}</Text>
-              <Text style={s.verifyUserId}>{user?.student_id}</Text>
+              <Text style={s.verifyUserName} numberOfLines={2}>{(user?.name || '').toUpperCase()}</Text>
+              <Text style={[s.verifyUserId, { color: accent }]} numberOfLines={1}>{displayId}</Text>
 
               <View style={s.verifyBadgeRow}>
-                <View style={s.verifiedBadge}>
+                <View style={[s.verifiedBadge, { backgroundColor: accent }]}>
                   <Check size={14} color="#fff" />
                   <Text style={s.verifiedBadgeText}>VISHVA VERIFIED</Text>
                 </View>
@@ -576,23 +680,43 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  mitLogo: {
-    flexDirection: 'column',
+  instituteMark: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
-    gap: 0,
+    justifyContent: 'center',
   },
-  mitLetter: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#DC2626',
-    lineHeight: 12,
-    letterSpacing: 0,
+  instituteMarkSmall: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   universityHeaderText: {
+    flex: 1,
     fontSize: 16,
     fontWeight: '900',
     color: '#1E293B',
     letterSpacing: 1,
+  },
+  roleBadge: {
+    alignSelf: 'center',
+    maxWidth: '100%',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    marginBottom: 12,
+  },
+  roleBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
   },
 
   // Teal Section
