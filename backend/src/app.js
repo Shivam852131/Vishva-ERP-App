@@ -41,6 +41,10 @@ function createApp(io) {
   app.use(express.json({ limit: '1mb' }));
   app.use(pinoHttp({ logger, autoLogging: { ignore: req => req.url === '/health' } }));
 
+  app.get('/', (_req, res) => {
+    res.json({ service: 'Vishva ERP API', version: '1.0.0', health: '/health', docs: '/api' });
+  });
+
   app.get('/health', (_req, res) => {
     res.json({ ok: true, service: 'vishva-erp-backend', time: new Date().toISOString() });
   });
