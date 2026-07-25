@@ -55,9 +55,12 @@ async function buildStudentDashboard(studentId) {
     ? Number((results.reduce((sum, r) => sum + (r.marks || 0), 0) / results.length).toFixed(2))
     : null;
 
+  const faceProfile = await db.collection('face_profiles').findOne({ userId: sid });
+
   return {
     attendance: attendance.rate,
     cgpa,
+    face_enrolled: !!faceProfile,
     pending_assignments: pendingAssignments.length,
     pending_fees: pendingFees.length,
     upcoming_classes: upcomingClasses.map(s => ({

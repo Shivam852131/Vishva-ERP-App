@@ -52,6 +52,7 @@ const ROOT_GROUPS: Record<string, string> = {
   '/interview-practice': '/interview-practice',
   '/study-planner': '/study-planner',
   '/bus-tracking': '/bus-tracking',
+  '/face-enroll': '/face-enroll',
 };
 
 function parsePath(path: string) {

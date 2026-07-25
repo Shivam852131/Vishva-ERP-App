@@ -6,6 +6,7 @@ import { router } from '@/src/navigation/router';
 import {
   LogOut, Award, Calendar, Bell, Users, BookOpen,
   Library, Bus, Home, MessageSquare, ChevronRight, IdCard,
+  ScanFace,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { theme } from '@/src/theme';
@@ -22,6 +23,7 @@ export default function Profile() {
 
   const links = [
     { icon: <IdCard size={18} color={theme.colors.brand} />, label: 'Digital ID Card', to: '/id-card' },
+    { icon: <ScanFace size={18} color={theme.colors.brand} />, label: 'Face ID Enrollment', to: '/face-enroll' },
     { icon: <Bell size={18} color={theme.colors.brand} />, label: 'Notifications', to: '/notifications' },
     { icon: <Award size={18} color={theme.colors.brand} />, label: 'Results', to: '/results' },
     { icon: <Calendar size={18} color={theme.colors.brand} />, label: 'Events', to: '/events' },

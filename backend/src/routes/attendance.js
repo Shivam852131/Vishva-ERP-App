@@ -2,6 +2,7 @@ const express = require('express');
 const { getDB, oid } = require('../db');
 const { authUser, requireRole } = require('../auth');
 const { serializeUser, sendError, makeCode, nowIso, isoDate } = require('../utils');
+const { verifyFace, encodeFace } = require('../faceVerify');
 
 function createAttendanceRouter(io) {
   const router = express.Router();
@@ -223,7 +224,7 @@ function createAttendanceRouter(io) {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    const session = await getSessionById(req.body.sessionId);
+    const session = await getSessionById(req.body.sessionId || req.body.session_id);
     if (!session) return sendError(res, 'Session not found.', 404);
     if (!session.isActive) return sendError(res, 'This session has ended.');
     const uid = oid(user._id);
@@ -231,10 +232,52 @@ function createAttendanceRouter(io) {
     if (!enrolled) return sendError(res, 'You are not enrolled in this class.');
     const existing = await db.collection('attendance_roll_entries').findOne({ sessionId: session._id, studentId: uid });
     if (existing) return sendError(res, 'You are already checked in.');
-    const method = req.body.method || 'qr';
+    const method = req.body.method || session.type || 'qr';
+
+    // ── Face verification ──
+    if (method === 'face' || req.body.selfie_base64) {
+      const selfie = req.body.selfie_base64;
+      if (!selfie) return sendError(res, 'Selfie is required for face check-in.', 400);
+
+      // Get enrolled face profile
+      const faceProfile = await db.collection('face_profiles').findOne({ userId: uid });
+
+      // Run face verification pipeline
+      const result = verifyFace(selfie, faceProfile, req.body.prev_frame_base64 || null);
+
+      if (!result.ok) {
+        return sendError(res, result.message, 400);
+      }
+
+      // Store or update face profile
+      if (result.isNewEnrollment || !faceProfile) {
+        const faceDoc = {
+          userId: uid,
+          encoding: result.encoding,
+          enrolledAt: new Date(),
+          lastVerified: new Date(),
+          verificationCount: 1,
+        };
+        if (faceProfile) {
+          await db.collection('face_profiles').updateOne({ _id: faceProfile._id }, { $set: faceDoc });
+        } else {
+          await db.collection('face_profiles').insertOne(faceDoc);
+        }
+      } else {
+        // Update last verified and count
+        await db.collection('face_profiles').updateOne(
+          { _id: faceProfile._id },
+          { $set: { lastVerified: new Date() }, $inc: { verificationCount: 1 } }
+        );
+      }
+    }
+
+    // ── QR verification ──
     if (method === 'qr' && req.body.qrCode && req.body.qrCode !== session.qrCode) {
       return sendError(res, 'Attendance code does not match.');
     }
+
+    // ── Record check-in ──
     const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
     const status = entries.length === 0 ? 'present' : 'late';
     const now = new Date();
@@ -245,7 +288,7 @@ function createAttendanceRouter(io) {
       method,
       status,
       location: req.body.location || null,
-      verified: true,
+      verified: method === 'face' ? true : (req.body.qrCode === session.qrCode),
     });
     await db.collection('attendance_records').insertOne({
       studentId: uid,
@@ -257,7 +300,14 @@ function createAttendanceRouter(io) {
     emitAttendance(session);
     const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
     await pushNotification({ audience: 'students', title: 'Attendance confirmed', body: `${course?.name || 'Course'} check-in recorded.` });
-    res.json({ ok: true, status, checked_in_at: now.toISOString(), message: 'Checked in', detail: `${course?.name || ''} via ${method.toUpperCase()}` });
+    res.json({
+      ok: true,
+      status,
+      checked_in_at: now.toISOString(),
+      message: 'Checked in',
+      detail: `${course?.name || ''} via ${method.toUpperCase()}`,
+      face_verified: method === 'face',
+    });
   });
 
   router.post('/attendance/sessions/:id/close', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
@@ -577,6 +627,103 @@ function createAttendanceRouter(io) {
     const { deletedCount } = await db.collection('schedules').deleteOne({ _id: id });
     if (!deletedCount) return sendError(res, 'Schedule not found.', 404);
     res.json({ ok: true });
+  });
+
+  // ── Face Profile Routes ──
+
+  router.get('/face/profile', requireRole('student'), async (req, res) => {
+    const user = await authUser(req);
+    if (!user) return sendError(res, 'Unauthorized.', 401);
+    const db = getDB();
+    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id) });
+    if (!profile) return res.json({ enrolled: false });
+    res.json({
+      enrolled: true,
+      enrolled_at: profile.enrolledAt,
+      last_verified: profile.lastVerified,
+      verification_count: profile.verificationCount || 0,
+    });
+  });
+
+  router.post('/face/enroll', requireRole('student'), async (req, res) => {
+    const user = await authUser(req);
+    if (!user) return sendError(res, 'Unauthorized.', 401);
+    const db = getDB();
+    const selfie = req.body.selfie_base64;
+    if (!selfie) return sendError(res, 'Selfie is required.', 400);
+
+    // Check existing profile
+    const existing = await db.collection('face_profiles').findOne({ userId: oid(user._id) });
+
+    // Run liveness check
+    const { detectLiveness } = require('../faceVerify');
+    const liveness = detectLiveness(selfie);
+    if (!liveness.isLive) {
+      return sendError(res, `Liveness check failed: ${liveness.reasons.join('; ')}`, 400);
+    }
+
+    // Generate encoding
+    const encoding = encodeFace(selfie);
+    if (!encoding) {
+      return sendError(res, 'Could not detect face. Please ensure your face is clearly visible.', 400);
+    }
+
+    const faceDoc = {
+      userId: oid(user._id),
+      encoding,
+      enrolledAt: new Date(),
+      lastVerified: new Date(),
+      verificationCount: 0,
+    };
+
+    if (existing) {
+      await db.collection('face_profiles').updateOne({ _id: existing._id }, { $set: faceDoc });
+    } else {
+      await db.collection('face_profiles').insertOne(faceDoc);
+    }
+
+    res.json({
+      ok: true,
+      message: 'Face enrolled successfully',
+      enrolled_at: faceDoc.enrolledAt,
+    });
+  });
+
+  router.post('/face/verify', requireRole('student'), async (req, res) => {
+    const user = await authUser(req);
+    if (!user) return sendError(res, 'Unauthorized.', 401);
+    const db = getDB();
+    const selfie = req.body.selfie_base64;
+    if (!selfie) return sendError(res, 'Selfie is required.', 400);
+
+    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id) });
+    if (!profile) return sendError(res, 'No face profile enrolled. Please enroll first.', 400);
+
+    const result = verifyFace(selfie, profile);
+    if (!result.ok) {
+      return sendError(res, result.message, 400);
+    }
+
+    // Update verification stats
+    await db.collection('face_profiles').updateOne(
+      { _id: profile._id },
+      { $set: { lastVerified: new Date() }, $inc: { verificationCount: 1 } }
+    );
+
+    res.json({
+      ok: true,
+      message: result.message,
+      detail: result.detail,
+      similarity: result.comparison?.similarity,
+    });
+  });
+
+  router.delete('/face/profile', requireRole('student'), async (req, res) => {
+    const user = await authUser(req);
+    if (!user) return sendError(res, 'Unauthorized.', 401);
+    const db = getDB();
+    await db.collection('face_profiles').deleteOne({ userId: oid(user._id) });
+    res.json({ ok: true, message: 'Face profile deleted' });
   });
 
   return router;

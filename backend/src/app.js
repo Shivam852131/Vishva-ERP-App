@@ -38,7 +38,7 @@ function createApp(io) {
 
   app.use(helmet());
   app.use(cors({ origin: corsOrigins.length ? corsOrigins : true, credentials: true }));
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '10mb' }));
   app.use(pinoHttp({ logger, autoLogging: { ignore: req => req.url === '/health' } }));
 
   app.get('/', (_req, res) => {
