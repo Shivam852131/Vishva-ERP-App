@@ -1,395 +1,303 @@
 /**
  * Face Verification Module — AI-powered selfie check-in
  *
- * Liveness detection + face encoding + spoof prevention
- * No external API dependencies — runs entirely on Render
+ * Two-tier detection:
+ *   1. ML mode (when @tensorflow/tfjs-node available): full face-api.js with
+ *      TinyFaceDetector + FaceLandmark68 + FaceRecognitionNet + FaceExpressionNet
+ *   2. Fallback mode: pixel-analysis-based liveness + encoding + cosine similarity
+ *
+ * On Render (Linux), @tensorflow/tfjs-node installs natively → ML mode activates.
+ * On Windows dev, falls back to pixel analysis automatically.
  */
 
-const crypto = require('crypto');
+const path = require('path');
+
+const MODEL_DIR = path.join(__dirname, '..', 'models');
+let faceapi = null;
+let modelsLoaded = false;
+
+// ── Model Loading ──
+
+async function loadModels() {
+  if (modelsLoaded) return true;
+  try {
+    // Try loading @tensorflow/tfjs-node (works on Linux/Render)
+    require('@tensorflow/tfjs-node');
+    faceapi = require('@vladmandic/face-api');
+
+    await faceapi.nets.tinyFaceDetector.loadFromDisk(MODEL_DIR);
+    await faceapi.nets.faceLandmark68TinyNet.loadFromDisk(MODEL_DIR);
+    await faceapi.nets.faceRecognitionNet.loadFromDisk(MODEL_DIR);
+    await faceapi.nets.faceExpressionNet.loadFromDisk(MODEL_DIR);
+
+    modelsLoaded = true;
+    console.log('[faceVerify] ✅ ML models loaded — full face detection active');
+    return true;
+  } catch (err) {
+    console.warn('[faceVerify] ⚠ ML models unavailable, using pixel-analysis fallback:', err.message);
+    modelsLoaded = false;
+    return false;
+  }
+}
+
+// ── Image Analysis Helpers ──
+
+function analyzeImageBuffer(buffer) {
+  let sum = 0, min = 255, max = 0;
+  let edgeCount = 0, diffSum = 0;
+  const sampleSize = Math.min(buffer.length, 20000);
+  const n = sampleSize / 4;
+
+  for (let i = 0; i < sampleSize; i += 4) {
+    const v = buffer[i];
+    sum += v;
+    if (v < min) min = v;
+    if (v > max) max = v;
+    if (i >= 4) {
+      const d = Math.abs(buffer[i] - buffer[i - 4]);
+      diffSum += d;
+      if (d > 30) edgeCount++;
+    }
+  }
+
+  return {
+    brightness: sum / n,
+    contrast: max - min,
+    edgeRatio: edgeCount / n,
+    avgDiff: diffSum / n,
+    size: buffer.length,
+  };
+}
 
 // ── Liveness Detection ──
 
-/**
- * Analyze image for liveness signals
- * Returns { isLive, confidence, reasons[] }
- */
-function detectLiveness(base64Image) {
-  const buf = Buffer.from(base64Image, 'base64');
+function detectLiveness(detections, buffer) {
+  // ML path: use face-api detections
+  if (detections && detections.length > 0) {
+    const checks = {};
+    const detection = detections[0];
 
+    checks.singleFace = detections.length === 1;
+    if (!checks.singleFace) {
+      return { isLive: false, confidence: 0, reasons: [`${detections.length} faces detected`], checks };
+    }
+
+    checks.confidence = detection.detection && detection.detection.score > 0.5;
+
+    if (detection.detection && detection.detection.box) {
+      const box = detection.detection.box;
+      const imgW = detection.detection.imageWidth || 640;
+      const imgH = detection.detection.imageHeight || 480;
+      const faceRatio = (box.width * box.height) / (imgW * imgH);
+      checks.faceSize = faceRatio > 0.05 && faceRatio < 0.8;
+    }
+
+    if (detection.expressions) {
+      checks.expression = Object.values(detection.expressions).some(v => v > 0.05);
+    }
+
+    if (detection.landmarks) {
+      checks.landmarks = detection.landmarks.positions && detection.landmarks.positions.length === 68;
+    }
+
+    if (buffer) {
+      const a = analyzeImageBuffer(buffer);
+      checks.brightness = a.brightness > 30 && a.brightness < 230;
+      checks.contrast = a.contrast > 40;
+    }
+
+    const passed = Object.values(checks).filter(Boolean).length;
+    const total = Object.keys(checks).length;
+    return {
+      isLive: passed >= 5,
+      confidence: Math.round((passed / total) * 100),
+      reasons: Object.entries(checks).filter(([, v]) => !v).map(([k]) => `${k} check failed`),
+      checks,
+    };
+  }
+
+  // Fallback path: pixel analysis
+  if (!buffer) {
+    return { isLive: false, confidence: 0, reasons: ['No image data'], checks: {} };
+  }
+
+  const a = analyzeImageBuffer(buffer);
   const checks = {
-    brightness: checkBrightness(buf),
-    contrast: checkContrast(buf),
-    noise: checkNoise(buf),
-    edges: checkEdges(buf),
-    size: checkImageSize(base64Image),
-    format: checkImageFormat(base64Image),
+    brightness: a.brightness > 30 && a.brightness < 230,
+    contrast: a.contrast > 40,
+    edges: a.edgeRatio > 0.02 && a.edgeRatio < 0.6,
+    imageSize: a.size > 5000 && a.size < 5000000,
+    format: a.size > 100,
   };
 
-  const passed = Object.values(checks).filter(c => c.pass).length;
-  const total = Object.keys(checks).length;
-  const confidence = Math.round((passed / total) * 100);
-
-  const reasons = Object.entries(checks)
-    .filter(([, c]) => !c.pass)
-    .map(([name, c]) => `${name}: ${c.reason}`);
-
+  const passed = Object.values(checks).filter(Boolean).length;
   return {
     isLive: passed >= 4,
-    confidence,
-    reasons,
+    confidence: Math.round((passed / Object.keys(checks).length) * 100),
+    reasons: Object.entries(checks).filter(([, v]) => !v).map(([k]) => `${k} check failed`),
     checks,
   };
 }
 
-function checkBrightness(buf) {
-  let sum = 0;
-  const sampleSize = Math.min(buf.length, 10000);
-  for (let i = 0; i < sampleSize; i += 4) {
-    sum += buf[i]; // sample red channel
+// ── Anti-Spoofing ──
+
+function detectSpoofing(detections) {
+  const warnings = [];
+  if (!detections || !detections.length) return { isSpoof: true, warnings: ['No face detected'], scores: {} };
+
+  const detection = detections[0];
+
+  if (detection.expressions) {
+    const neutralScore = detection.expressions.neutral || 0;
+    if (neutralScore > 0.9) warnings.push('Dominant neutral expression — possible printed photo');
   }
-  const avg = sum / (sampleSize / 4);
-  const pass = avg > 30 && avg < 230;
-  return { pass, value: Math.round(avg), reason: pass ? '' : `brightness ${Math.round(avg)} out of range` };
-}
 
-function checkContrast(buf) {
-  let min = 255, max = 0;
-  const sampleSize = Math.min(buf.length, 10000);
-  for (let i = 0; i < sampleSize; i += 4) {
-    const v = buf[i];
-    if (v < min) min = v;
-    if (v > max) max = v;
-  }
-  const contrast = max - min;
-  const pass = contrast > 40;
-  return { pass, value: contrast, reason: pass ? '' : `low contrast (${contrast})` };
-}
-
-function checkNoise(buf) {
-  let diff = 0;
-  let count = 0;
-  const sampleSize = Math.min(buf.length, 8000);
-  for (let i = 4; i < sampleSize; i += 4) {
-    diff += Math.abs(buf[i] - buf[i - 4]);
-    count++;
-  }
-  const avgDiff = count ? diff / count : 0;
-  const pass = avgDiff > 1 && avgDiff < 80;
-  return { pass, value: Math.round(avgDiff), reason: pass ? '' : `noise level ${Math.round(avgDiff)}` };
-}
-
-function checkEdges(buf) {
-  let edgeCount = 0;
-  const width = Math.sqrt(buf.length / 4) | 0;
-  const sampleSize = Math.min(buf.length, 16000);
-  for (let i = 4; i < sampleSize; i += 4) {
-    const diff = Math.abs(buf[i] - buf[i - 4]);
-    if (diff > 30) edgeCount++;
-  }
-  const ratio = edgeCount / (sampleSize / 4);
-  const pass = ratio > 0.02 && ratio < 0.6;
-  return { pass, value: (ratio * 100).toFixed(1), reason: pass ? '' : `edge ratio ${(ratio * 100).toFixed(1)}%` };
-}
-
-function checkImageSize(base64) {
-  const bytes = Math.ceil((base64.length * 3) / 4);
-  const kb = bytes / 1024;
-  const pass = kb > 5 && kb < 5000;
-  return { pass, value: `${Math.round(kb)}KB`, reason: pass ? '' : `image size ${Math.round(kb)}KB` };
-}
-
-function checkImageFormat(base64) {
-  const pass = base64.length > 100;
-  return { pass, value: 'base64', reason: pass ? '' : 'invalid image data' };
-}
-
-// ── Face Encoding ──
-
-/**
- * Generate a face encoding from image data
- * Uses pixel sampling at key facial regions to create a unique fingerprint
- * This is a simplified encoding — production would use a proper face recognition model
- */
-function encodeFace(base64Image) {
-  const buf = Buffer.from(base64Image, 'base64');
-  const width = Math.sqrt(buf.length / 4) | 0;
-  const height = (buf.length / 4 / width) | 0;
-
-  if (width < 50 || height < 50) return null;
-
-  // Sample 128 feature points from facial regions
-  const encoding = [];
-  const regions = [
-    // Forehead region
-    { cx: 0.5, cy: 0.2, r: 0.08 },
-    // Left eye region
-    { cx: 0.35, cy: 0.35, r: 0.06 },
-    // Right eye region
-    { cx: 0.65, cy: 0.35, r: 0.06 },
-    // Nose region
-    { cx: 0.5, cy: 0.48, r: 0.05 },
-    // Left cheek
-    { cx: 0.3, cy: 0.52, r: 0.07 },
-    // Right cheek
-    { cx: 0.7, cy: 0.52, r: 0.07 },
-    // Mouth region
-    { cx: 0.5, cy: 0.65, r: 0.06 },
-    // Chin region
-    { cx: 0.5, cy: 0.78, r: 0.05 },
-    // Left jaw
-    { cx: 0.25, cy: 0.6, r: 0.05 },
-    // Right jaw
-    { cx: 0.75, cy: 0.6, r: 0.05 },
-    // Left temple
-    { cx: 0.2, cy: 0.35, r: 0.04 },
-    // Right temple
-    { cx: 0.8, cy: 0.35, r: 0.04 },
-  ];
-
-  for (const region of regions) {
-    const cx = (region.cx * width) | 0;
-    const cy = (region.cy * height) | 0;
-    const radius = (region.r * Math.min(width, height)) | 0;
-
-    // Sample multiple points within region
-    for (let dx = -radius; dx <= radius; dx += Math.max(1, radius / 3)) {
-      for (let dy = -radius; dy <= radius; dy += Math.max(1, radius / 3)) {
-        const px = Math.min(Math.max(0, cx + dx), width - 1);
-        const py = Math.min(Math.max(0, cy + dy), height - 1);
-        const offset = (py * width + px) * 4;
-        if (offset + 2 < buf.length) {
-          // RGB normalized to [0,1]
-          encoding.push(buf[offset] / 255);
-          encoding.push(buf[offset + 1] / 255);
-          encoding.push(buf[offset + 2] / 255);
-        }
+  if (detection.landmarks && detection.landmarks.positions) {
+    const lm = detection.landmarks.positions;
+    if (lm.length === 68) {
+      const eyeDiff = Math.abs(lm[36].y - lm[45].y);
+      const faceWidth = Math.abs(lm[45].x - lm[36].x);
+      if (faceWidth > 0 && eyeDiff / faceWidth > 0.15) {
+        warnings.push('Face tilt too extreme — possible rotated image');
       }
     }
   }
 
-  // Pad or truncate to fixed size (128 features)
+  return { isSpoof: warnings.length >= 2, warnings, scores: {} };
+}
+
+// ── Encoding ──
+
+function extractEncoding(detection) {
+  if (!detection || !detection.descriptor) return null;
+  return Array.from(detection.descriptor);
+}
+
+function generateFallbackEncoding(buffer) {
+  const width = Math.sqrt(buffer.length / 4) | 0;
+  const height = (buffer.length / 4 / width) | 0;
+  if (width < 50 || height < 50) return null;
+
+  const encoding = [];
+  const regions = [
+    { cx: 0.5, cy: 0.2 }, { cx: 0.35, cy: 0.35 }, { cx: 0.65, cy: 0.35 },
+    { cx: 0.5, cy: 0.48 }, { cx: 0.3, cy: 0.52 }, { cx: 0.7, cy: 0.52 },
+    { cx: 0.5, cy: 0.65 }, { cx: 0.5, cy: 0.78 }, { cx: 0.25, cy: 0.6 },
+    { cx: 0.75, cy: 0.6 }, { cx: 0.2, cy: 0.35 }, { cx: 0.8, cy: 0.35 },
+  ];
+
+  for (const r of regions) {
+    const px = Math.min(Math.max(0, (r.cx * width) | 0), width - 1);
+    const py = Math.min(Math.max(0, (r.cy * height) | 0), height - 1);
+    const offset = (py * width + px) * 4;
+    if (offset + 2 < buffer.length) {
+      encoding.push(buffer[offset] / 255);
+      encoding.push(buffer[offset + 1] / 255);
+      encoding.push(buffer[offset + 2] / 255);
+    }
+  }
+
   while (encoding.length < 128) encoding.push(0);
   encoding.length = 128;
 
-  // Normalize the vector
   const norm = Math.sqrt(encoding.reduce((s, v) => s + v * v, 0)) || 1;
   return encoding.map(v => v / norm);
 }
 
 // ── Face Comparison ──
 
-/**
- * Compare two face encodings using cosine similarity
- * Returns { match, similarity, threshold }
- */
-function compareFaces(encoding1, encoding2, threshold = 0.85) {
-  if (!encoding1 || !encoding2) return { match: false, similarity: 0, threshold };
-  if (encoding1.length !== encoding2.length) return { match: false, similarity: 0, threshold };
+function compareFaces(encoding1, encoding2, threshold = 0.6) {
+  if (!encoding1 || !encoding2) return { match: false, distance: 1, threshold };
+  if (encoding1.length !== encoding2.length) return { match: false, distance: 1, threshold };
 
-  let dotProduct = 0;
-  let norm1 = 0;
-  let norm2 = 0;
-
+  let sumSq = 0;
   for (let i = 0; i < encoding1.length; i++) {
-    dotProduct += encoding1[i] * encoding2[i];
-    norm1 += encoding1[i] * encoding1[i];
-    norm2 += encoding2[i] * encoding2[i];
+    const diff = encoding1[i] - encoding2[i];
+    sumSq += diff * diff;
   }
+  const distance = Math.sqrt(sumSq);
+  const similarity = Math.max(0, 1 - distance);
 
-  const similarity = dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2) || 1);
   return {
-    match: similarity >= threshold,
+    match: distance <= threshold,
+    distance: Math.round(distance * 1000) / 1000,
     similarity: Math.round(similarity * 1000) / 1000,
     threshold,
   };
 }
 
-// ── Anti-Spoofing ──
+// ── Full Verification Pipeline ──
 
-/**
- * Detect potential spoofing attempts
- * Checks for screen photos, printed photos, and masks
- */
-function detectSpoofing(base64Image, prevFrameBase64) {
-  const buf = Buffer.from(base64Image, 'base64');
-  const warnings = [];
+async function verifyFace(selfieBase64, enrolledProfile, prevFrameBase64 = null) {
+  const buffer = Buffer.from(selfieBase64, 'base64');
 
-  // Check for uniform color distribution (printed photo)
-  const colorVariance = computeColorVariance(buf);
-  if (colorVariance < 0.02) {
-    warnings.push('Low color variance — possible printed photo');
-  }
+  // Try ML detection
+  let detections = null;
+  let usedML = false;
 
-  // Check for moiré patterns (screen photo)
-  const moireScore = detectMoire(buf);
-  if (moireScore > 0.7) {
-    warnings.push('Moiré pattern detected — possible screen photo');
-  }
+  if (modelsLoaded && faceapi) {
+    try {
+      const { createCanvas, Image } = require('canvas');
+      const img = new Image();
+      img.src = buffer;
+      const canvas = createCanvas(img.width, img.height);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
 
-  // Check for flat lighting (2D spoof)
-  const lightingVariance = computeLightingVariance(buf);
-  if (lightingVariance < 0.01) {
-    warnings.push('Flat lighting — possible 2D spoof');
-  }
+      detections = await faceapi
+        .detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 }))
+        .withFaceLandmarks(true)
+        .withFaceDescriptors()
+        .withFaceExpressions();
 
-  // Frame difference check (if previous frame provided)
-  if (prevFrameBase64) {
-    const prevBuf = Buffer.from(prevFrameBase64, 'base64');
-    const diff = computeFrameDifference(buf, prevBuf);
-    if (diff < 0.001) {
-      warnings.push('No movement detected — possible static image');
+      usedML = true;
+    } catch (err) {
+      console.warn('[faceVerify] ML detection error, using fallback:', err.message);
     }
   }
 
-  return {
-    isSpoof: warnings.length >= 2,
-    warnings,
-    scores: { colorVariance, moireScore, lightingVariance },
-  };
-}
-
-function computeColorVariance(buf) {
-  let rSum = 0, gSum = 0, bSum = 0;
-  let rSqSum = 0, gSqSum = 0, bSqSum = 0;
-  const n = Math.min(buf.length / 4, 5000);
-
-  for (let i = 0; i < n * 4; i += 4) {
-    rSum += buf[i]; gSum += buf[i + 1]; bSum += buf[i + 2];
-    rSqSum += buf[i] ** 2; gSqSum += buf[i + 1] ** 2; bSqSum += buf[i + 2] ** 2;
-  }
-
-  const rVar = (rSqSum / n) - (rSum / n) ** 2;
-  const gVar = (gSqSum / n) - (gSum / n) ** 2;
-  const bVar = (bSqSum / n) - (bSum / n) ** 2;
-
-  return ((rVar + gVar + bVar) / 3) / (255 * 255);
-}
-
-function detectMoire(buf) {
-  let highFreqCount = 0;
-  const sampleSize = Math.min(buf.length, 8000);
-  for (let i = 8; i < sampleSize; i += 4) {
-    const diff = Math.abs(buf[i] - buf[i - 8]);
-    if (diff > 50) highFreqCount++;
-  }
-  return highFreqCount / (sampleSize / 4);
-}
-
-function computeLightingVariance(buf) {
-  let sum = 0, sqSum = 0;
-  const n = Math.min(buf.length / 4, 5000);
-  for (let i = 0; i < n * 4; i += 4) {
-    const brightness = (buf[i] + buf[i + 1] + buf[i + 2]) / 3;
-    sum += brightness;
-    sqSum += brightness ** 2;
-  }
-  const mean = sum / n;
-  return ((sqSum / n) - mean * mean) / (255 * 255);
-}
-
-function computeFrameDifference(buf1, buf2) {
-  const len = Math.min(buf1.length, buf2.length);
-  let diff = 0;
-  const n = Math.min(len, 10000);
-  for (let i = 0; i < n; i += 4) {
-    diff += Math.abs(buf1[i] - buf2[i]);
-  }
-  return diff / (n / 4) / 255;
-}
-
-// ── Full Verification Pipeline ──
-
-/**
- * Run complete face verification
- * @param {string} selfieBase64 - Current selfie
- * @param {object|null} enrolledProfile - Stored face profile { encoding, photo }
- * @param {string|null} prevFrameBase64 - Previous frame for motion detection
- * @returns {object} Verification result
- */
-function verifyFace(selfieBase64, enrolledProfile, prevFrameBase64 = null) {
-  // Step 1: Liveness check
-  const liveness = detectLiveness(selfieBase64);
+  // ── Liveness ──
+  const liveness = detectLiveness(usedML ? detections : null, buffer);
   if (!liveness.isLive) {
-    return {
-      ok: false,
-      status: 'liveness_failed',
-      message: 'Liveness check failed',
-      detail: `Confidence: ${liveness.confidence}%. ${liveness.reasons.join('; ')}`,
-      liveness,
-    };
+    return { ok: false, status: 'liveness_failed', message: 'Liveness check failed',
+      detail: `Confidence: ${liveness.confidence}%. ${liveness.reasons.join('; ')}`, liveness };
   }
 
-  // Step 2: Anti-spoofing
-  const spoof = detectSpoofing(selfieBase64, prevFrameBase64);
-  if (spoof.isSpoof) {
-    return {
-      ok: false,
-      status: 'spoof_detected',
-      message: 'Spoof attempt detected',
-      detail: spoof.warnings.join('; '),
-      liveness,
-      spoof,
-    };
+  // ── Anti-spoofing (ML only) ──
+  if (usedML) {
+    const spoof = detectSpoofing(detections);
+    if (spoof.isSpoof) {
+      return { ok: false, status: 'spoof_detected', message: 'Spoof attempt detected',
+        detail: spoof.warnings.join('; '), liveness, spoof };
+    }
   }
 
-  // Step 3: Face encoding
-  const encoding = encodeFace(selfieBase64);
+  // ── Encoding ──
+  const encoding = usedML ? extractEncoding(detections[0]) : generateFallbackEncoding(buffer);
   if (!encoding) {
-    return {
-      ok: false,
-      status: 'encoding_failed',
-      message: 'Could not detect face encoding',
-      detail: 'Please ensure your face is clearly visible',
-      liveness,
-      spoof,
-    };
+    return { ok: false, status: 'encoding_failed', message: 'Could not generate face encoding',
+      detail: 'Ensure your face is clearly visible', liveness };
   }
 
-  // Step 4: If no enrolled profile, this is enrollment
-  if (!enrolledProfile) {
-    return {
-      ok: true,
-      status: 'enrolled',
-      message: 'Face enrolled successfully',
-      detail: 'Your face has been registered for future verification',
-      encoding,
-      liveness,
-      spoof,
-      isNewEnrollment: true,
-    };
+  // ── New enrollment ──
+  if (!enrolledProfile || !enrolledProfile.encoding) {
+    return { ok: true, status: 'enrolled', message: 'Face enrolled successfully',
+      detail: 'Your face is now registered for check-in',
+      encoding, liveness, isNewEnrollment: true, ml: usedML };
   }
 
-  // Step 5: Compare with enrolled face
-  const comparison = compareFaces(encoding, enrolledProfile.encoding);
+  // ── Compare ──
+  const threshold = usedML ? 0.6 : 0.7;
+  const comparison = compareFaces(encoding, enrolledProfile.encoding, threshold);
   if (!comparison.match) {
-    return {
-      ok: false,
-      status: 'mismatch',
-      message: 'Face does not match enrolled profile',
-      detail: `Similarity: ${(comparison.similarity * 100).toFixed(1)}% (threshold: ${(comparison.threshold * 100).toFixed(0)}%)`,
-      liveness,
-      spoof,
-      comparison,
-    };
+    return { ok: false, status: 'mismatch', message: 'Face does not match enrolled profile',
+      detail: `Similarity: ${(comparison.similarity * 100).toFixed(1)}%`,
+      liveness, comparison };
   }
 
-  return {
-    ok: true,
-    status: 'verified',
-    message: 'Face verified successfully',
+  return { ok: true, status: 'verified', message: 'Face verified successfully',
     detail: `Match confidence: ${(comparison.similarity * 100).toFixed(1)}%`,
-    encoding,
-    liveness,
-    spoof,
-    comparison,
-    isNewEnrollment: false,
-  };
+    encoding, liveness, comparison, isNewEnrollment: false, ml: usedML };
 }
 
-module.exports = {
-  detectLiveness,
-  encodeFace,
-  compareFaces,
-  detectSpoofing,
-  verifyFace,
-};
+module.exports = { loadModels, detectLiveness, detectSpoofing, extractEncoding, compareFaces, verifyFace };

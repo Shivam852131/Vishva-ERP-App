@@ -243,7 +243,7 @@ function createAttendanceRouter(io) {
       const faceProfile = await db.collection('face_profiles').findOne({ userId: uid });
 
       // Run face verification pipeline
-      const result = verifyFace(selfie, faceProfile, req.body.prev_frame_base64 || null);
+      const result = await verifyFace(selfie, faceProfile, req.body.prev_frame_base64 || null);
 
       if (!result.ok) {
         return sendError(res, result.message, 400);
@@ -699,7 +699,7 @@ function createAttendanceRouter(io) {
     const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id) });
     if (!profile) return sendError(res, 'No face profile enrolled. Please enroll first.', 400);
 
-    const result = verifyFace(selfie, profile);
+    const result = await verifyFace(selfie, profile);
     if (!result.ok) {
       return sendError(res, result.message, 400);
     }

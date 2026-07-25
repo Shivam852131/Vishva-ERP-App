@@ -5,6 +5,7 @@ const pino = require('pino');
 const { connectDB } = require('./db');
 const { createApp } = require('./app');
 const { createSocketServer } = require('./socket');
+const { loadModels } = require('./faceVerify');
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const PORT = Number(process.env.PORT || 8000);
@@ -12,6 +13,14 @@ const PORT = Number(process.env.PORT || 8000);
 async function main() {
   await connectDB();
   logger.info('MongoDB connected.');
+
+  logger.info('Loading face-api ML models...');
+  const modelsOk = await loadModels();
+  if (modelsOk) {
+    logger.info('Face verification ML models loaded successfully.');
+  } else {
+    logger.warn('Face verification models failed to load — face check-in will be degraded.');
+  }
 
   const io = createSocketServer();
   const app = createApp(io);
