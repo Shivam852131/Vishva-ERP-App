@@ -60,7 +60,7 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
     const res = await fetch(`${BASE_URL}/api${normalized}`, { ...opts, headers, signal: controller.signal });
