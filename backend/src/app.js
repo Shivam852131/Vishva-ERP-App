@@ -22,6 +22,11 @@ const adminUsersRoutes = require('./routes/admin-users');
 const collegesRoutes = require('./routes/colleges');
 const { createAiRouter } = require('./routes/ai');
 const twilioRoutes = require('./routes/twilio');
+const { createLiveClassesRouter } = require('./routes/live-classes');
+const { createPlacementRouter } = require('./routes/placement');
+const { createAssessmentsRouter } = require('./routes/assessments');
+const { createMentorshipRouter } = require('./routes/mentorship');
+const { createSkillsRouter, createCareerRouter } = require('./routes/skills');
 
 function createApp(io) {
   const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -72,6 +77,12 @@ function createApp(io) {
   app.use('/api', collegesRoutes);
   app.use('/api/ai', createAiRouter(io));
   app.use('/api', twilioRoutes);
+  app.use('/api/live-classes', createLiveClassesRouter(io));
+  app.use('/api/placement', createPlacementRouter(io));
+  app.use('/api/assessments', createAssessmentsRouter(io));
+  app.use('/api/mentorship', createMentorshipRouter(io));
+  app.use('/api/skills', createSkillsRouter(io));
+  app.use('/api/career', createCareerRouter(io));
 
   app.use('/api', (_req, res) => {
     sendError(res, 'Route not found.', 404);

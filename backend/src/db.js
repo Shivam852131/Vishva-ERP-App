@@ -51,6 +51,23 @@ async function connectDB(retries = 3, delay = 2000) {
           db.collection('chat_messages').createIndex({ senderId: 1, receiverId: 1, createdAt: -1 }),
           db.collection('assignments').createIndex({ courseId: 1 }),
           db.collection('submissions').createIndex({ assignmentId: 1, studentId: 1 }),
+          db.collection('live_sessions').createIndex({ status: 1, scheduledAt: 1 }),
+          db.collection('live_participants').createIndex({ sessionId: 1, studentId: 1 }),
+          db.collection('live_messages').createIndex({ sessionId: 1, createdAt: -1 }),
+          db.collection('live_questions').createIndex({ sessionId: 1 }),
+          db.collection('live_polls').createIndex({ sessionId: 1 }),
+          db.collection('placement_drives').createIndex({ status: 1, deadline: 1 }),
+          db.collection('placement_applications').createIndex({ studentId: 1, driveId: 1 }, { unique: true }),
+          db.collection('assessments').createIndex({ key: 1 }, { unique: true }),
+          db.collection('assessment_attempts').createIndex({ studentId: 1, assessmentId: 1, status: 1 }),
+          db.collection('student_skills').createIndex({ studentId: 1, skillKey: 1 }, { unique: true }),
+          db.collection('skill_endorsements').createIndex({ studentId: 1, skillKey: 1, endorserId: 1 }, { unique: true }),
+          db.collection('student_certifications').createIndex({ studentId: 1 }),
+          db.collection('student_projects').createIndex({ studentId: 1 }),
+          db.collection('mentors').createIndex({ expertise: 1 }),
+          db.collection('mentorship_connections').createIndex({ studentId: 1, mentorId: 1 }),
+          db.collection('mentorship_sessions').createIndex({ studentId: 1, scheduledAt: 1 }),
+          db.collection('mentorship_goals').createIndex({ studentId: 1 }),
         ]);
 
         console.log(`[MongoDB] Connected to "${DB_NAME}" via ${label}`);

@@ -19,6 +19,27 @@ function createSocketServer() {
     const userId = user ? String(user._id) : null;
     if (userId) socket.join(roomForUser(userId));
     socket.emit('socket:ready', { ok: true, userId });
+
+    // Live class rooms are only reachable by authenticated sockets; the HTTP
+    // join endpoint is what actually records participation.
+    socket.on('live:subscribe', sessionId => {
+      if (!userId || !sessionId) return;
+      socket.join(`live:${String(sessionId)}`);
+    });
+
+    socket.on('live:unsubscribe', sessionId => {
+      if (!sessionId) return;
+      socket.leave(`live:${String(sessionId)}`);
+    });
+
+    socket.on('live:typing', payload => {
+      if (!userId || !payload?.sessionId) return;
+      socket.to(`live:${String(payload.sessionId)}`).emit('live:typing', {
+        user_id: userId,
+        user_name: user.name,
+        typing: !!payload.typing,
+      });
+    });
   });
 
   return io;
