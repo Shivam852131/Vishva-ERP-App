@@ -53,6 +53,7 @@ export default function AssignmentChecker() {
   const [showSubjects, setShowSubjects] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scoreAnim = useRef(new Animated.Value(0)).current;
+  const [displayScore, setDisplayScore] = useState(0);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
@@ -63,6 +64,11 @@ export default function AssignmentChecker() {
       Animated.timing(scoreAnim, { toValue: result.score / 100, duration: 1200, useNativeDriver: false }).start();
     }
   }, [result]);
+
+  useEffect(() => {
+    const id = scoreAnim.addListener(({ value }) => setDisplayScore(Math.round(value * 100)));
+    return () => scoreAnim.removeListener(id);
+  }, []);
 
   const handleCheck = () => {
     if (!subject) return Alert.alert('Select Subject', 'Please choose a subject');
@@ -75,8 +81,6 @@ export default function AssignmentChecker() {
   };
 
   const handleUpload = () => setUploaded(true);
-
-  const scoreInterpolated = scoreAnim.interpolate({ inputRange: [0, 1], outputRange: [0, result?.score || 0] });
 
   return (
     <ErrorBoundary>
@@ -144,7 +148,7 @@ export default function AssignmentChecker() {
                 <Card style={styles.scoreCard}>
                   <View style={styles.scoreRing}>
                     <Animated.Text style={[styles.scoreText, { opacity: scoreAnim }]}>
-                      {Math.round(scoreInterpolated)}
+                      {displayScore}
                     </Animated.Text>
                     <Text style={styles.scoreLabel}>/ 100</Text>
                   </View>

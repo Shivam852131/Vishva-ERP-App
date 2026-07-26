@@ -238,7 +238,7 @@ export default function PhoneOTPLogin() {
                 {['phone', 'otp', 'role'].map((s, i) => (
                   <View key={s} style={styles.stepRow}>
                     <View style={[styles.stepDot, (step === 'phone' && i === 0) || (step === 'otp' && i <= 1) || (step === 'role' && i <= 2) ? styles.stepDotActive : styles.stepDotInactive]}>
-                      {((step === 'otp' && i === 0) || (step === 'role' && i <= 1) || step === 'success') ?
+                      {((step === 'otp' && i === 0) || (step === 'role' && i <= 1)) ?
                         <Check size={10} color="#fff" /> :
                         <Text style={styles.stepNumber}>{i + 1}</Text>}
                     </View>

@@ -195,9 +195,9 @@ export default function AssetManagement() {
                     const count = ASSETS.filter(a => a.category === c).length;
                     return (
                       <View key={c} style={styles.summaryRow}>
-                        <Text style={{ fontSize: 13, color: theme.colors.muted }}>{c}</Text>
+                        <Text style={{ fontSize: 13, color: theme.colors.muted, flexShrink: 1 }} numberOfLines={1}>{c}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <View style={[styles.miniBar, { width: count * 30 }]} />
+                          <View style={[styles.miniBar, { width: Math.min(count * 30, 120) }]} />
                           <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.text }}>{count}</Text>
                         </View>
                       </View>

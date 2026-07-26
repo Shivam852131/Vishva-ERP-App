@@ -97,9 +97,9 @@ export default function ParentDashboard() {
         >
           {/* Header */}
           <View style={styles.topBar}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.welcomeTxt}>Welcome back</Text>
-              <Text style={styles.nameTxt}>{parent?.name || 'Parent'}</Text>
+              <Text style={styles.nameTxt} numberOfLines={1}>{parent?.name || 'Parent'}</Text>
             </View>
             <Pressable
               testID="notif-btn"

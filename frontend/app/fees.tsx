@@ -136,9 +136,9 @@ export default function Fees() {
                   )}
                 </View>
                 <View style={styles.amtRow}>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.amtLabel}>Amount</Text>
-                    <Text style={styles.amt}>{formatAmount(f.amount, f.currency)}</Text>
+                    <Text style={styles.amt} numberOfLines={1}>{formatAmount(f.amount, f.currency)}</Text>
                   </View>
                   {f.status === 'pending' && (
                     <GradientButton

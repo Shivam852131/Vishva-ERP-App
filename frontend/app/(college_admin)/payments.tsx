@@ -113,13 +113,13 @@ export default function PaymentsScreen() {
               </View>
               <View style={styles.receiptFooter}>
                 <View style={styles.receiptMetaCol}>
-                  <Text style={styles.receiptId}>Pay: {r.payment_id?.slice(0, 20)}...</Text>
-                  {r.order_id ? <Text style={styles.receiptId}>Order: {r.order_id.slice(0, 22)}...</Text> : null}
+                  <Text style={styles.receiptId} numberOfLines={1}>Pay: {r.payment_id?.slice(0, 20)}...</Text>
+                  {r.order_id ? <Text style={styles.receiptId} numberOfLines={1}>Order: {r.order_id.slice(0, 22)}...</Text> : null}
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={[styles.receiptStatus, { color: r.status === 'paid' ? '#10b981' : '#f59e0b' }]}>{r.status}</Text>
-                  {r.fee_id ? <Text style={styles.receiptFeeId}>Fee: {r.fee_id}</Text> : null}
-                  {r.plan_id ? <Text style={styles.receiptFeeId}>Plan: {r.plan_id}</Text> : null}
+                <View style={{ alignItems: 'flex-end', flexShrink: 1 }}>
+                  <Text style={[styles.receiptStatus, { color: r.status === 'paid' ? '#10b981' : '#f59e0b' }]} numberOfLines={1}>{r.status}</Text>
+                  {r.fee_id ? <Text style={styles.receiptFeeId} numberOfLines={1}>Fee: {String(r.fee_id).slice(0, 12)}</Text> : null}
+                  {r.plan_id ? <Text style={styles.receiptFeeId} numberOfLines={1}>Plan: {String(r.plan_id).slice(0, 12)}</Text> : null}
                 </View>
               </View>
             </View>

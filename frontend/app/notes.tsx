@@ -317,7 +317,7 @@ export default function Notes() {
 
                     <View style={styles.noteFooter}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.uploadedBy}>Shared by {note.uploaded_by || 'Community Member'}</Text>
+                        <Text style={styles.uploadedBy} numberOfLines={1}>Shared by {note.uploaded_by || 'Community Member'}</Text>
                         <Text style={styles.noteDate}>{new Date(note.created_at).toLocaleDateString()}</Text>
                       </View>
                       <View style={styles.footerStats}>

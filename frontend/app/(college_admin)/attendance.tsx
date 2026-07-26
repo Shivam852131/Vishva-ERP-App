@@ -312,9 +312,9 @@ function LiveTab({ liveData, router, onRefresh }: any) {
         liveClasses.map((cls: any, i: number) => (
           <TouchableOpacity key={i} style={styles.liveDetailCard} onPress={() => router.push(`/attendance-live?sid=${cls.session_id || cls.schedule.id}`)}>
             <View style={styles.liveDetailHeader}>
-              <View>
-                <Text style={styles.liveDetailCourse}>{cls.schedule.course_name}</Text>
-                <Text style={styles.liveDetailSub}>{cls.schedule.classroom_name} • {cls.schedule.faculty_name}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.liveDetailCourse} numberOfLines={1}>{cls.schedule.course_name}</Text>
+                <Text style={styles.liveDetailSub} numberOfLines={1}>{cls.schedule.classroom_name} • {cls.schedule.faculty_name}</Text>
               </View>
               <View style={styles.liveDetailPercent}>
                 <Text style={styles.livePercentValue}>{cls.percentage}%</Text>
@@ -379,7 +379,7 @@ function ReportsTab({ reports }: any) {
             <View key={i} style={styles.courseReportRow}>
               <View style={styles.courseReportInfo}>
                 <View style={[styles.courseDot, { backgroundColor: c.color || theme.colors.brand }]} />
-                <Text style={styles.courseReportName}>{c.course_code}</Text>
+                <Text style={styles.courseReportName} numberOfLines={1}>{c.course_code}</Text>
               </View>
               <View style={styles.courseReportBar}>
                 <View style={[styles.courseReportFill, { width: `${c.percentage}%`, backgroundColor: c.color || theme.colors.brand }]} />
@@ -712,9 +712,9 @@ const styles = StyleSheet.create({
   courseReportCard: { backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, marginBottom: 16 },
   courseReportTitle: { fontSize: 14, fontWeight: '700', color: theme.colors.text, marginBottom: 12 },
   courseReportRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  courseReportInfo: { flexDirection: 'row', alignItems: 'center', width: 60 },
+  courseReportInfo: { flexDirection: 'row', alignItems: 'center', width: 72 },
   courseDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
-  courseReportName: { fontSize: 12, fontWeight: '600', color: theme.colors.text },
+  courseReportName: { fontSize: 12, fontWeight: '600', color: theme.colors.text, flexShrink: 1 },
   courseReportBar: { flex: 1, height: 8, backgroundColor: theme.colors.border, borderRadius: 4, marginHorizontal: 8 },
   courseReportFill: { height: 8, borderRadius: 4 },
   courseReportPct: { fontSize: 13, fontWeight: '700', color: theme.colors.text, width: 45, textAlign: 'right' },

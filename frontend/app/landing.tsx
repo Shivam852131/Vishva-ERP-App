@@ -23,8 +23,9 @@ function Particle({ delay, x, size, color }: { delay: number; x: number; size: n
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    setTimeout(() => {
-      Animated.loop(
+    let loop: Animated.CompositeAnimation | undefined;
+    const timer = setTimeout(() => {
+      loop = Animated.loop(
         Animated.parallel([
           Animated.timing(yAnim, {
             toValue: -50,
@@ -37,8 +38,14 @@ function Particle({ delay, x, size, color }: { delay: number; x: number; size: n
             Animated.timing(opacityAnim, { toValue: 0, duration: 2000, useNativeDriver: true }),
           ]),
         ]),
-      ).start();
+      );
+      loop.start();
     }, delay);
+
+    return () => {
+      clearTimeout(timer);
+      loop?.stop();
+    };
   }, []);
 
   return (

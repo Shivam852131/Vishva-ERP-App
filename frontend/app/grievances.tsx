@@ -96,7 +96,7 @@ export default function Grievances() {
                 <Text style={styles.gSubject}>{g.subject}</Text>
                 <Text style={styles.gDesc}>{g.description}</Text>
                 <View style={styles.gMeta}>
-                  <Text style={styles.gMetaTxt}>{g.is_anonymous ? 'Anonymous' : g.student_name}</Text>
+                  <Text style={[styles.gMetaTxt, { flex: 1 }]} numberOfLines={1}>{g.is_anonymous ? 'Anonymous' : g.student_name}</Text>
                   <Text style={styles.gMetaTxt}>{new Date(g.created_at).toLocaleDateString()}</Text>
                 </View>
                 {g.response && (

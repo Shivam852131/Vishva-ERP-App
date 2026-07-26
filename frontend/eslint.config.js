@@ -43,6 +43,9 @@ module.exports = tseslint.config(
       ...reactHooks.configs.recommended.rules,
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
+      // Apostrophes in RN <Text> are plain string content, not HTML — there is no
+      // entity to escape and the suggested &apos; would render literally.
+      'react/no-unescaped-entities': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       // Config/tooling files in this project (eslint.config.js, metro.config.js, scripts/**)
@@ -60,7 +63,7 @@ module.exports = tseslint.config(
     },
   },
   {
-    files: ['**/*.test.{js,jsx,ts,tsx}', '**/__tests__/**'],
+    files: ['**/*.test.{js,jsx,ts,tsx}', '**/__tests__/**', 'jest.setup.js', 'tests/**'],
     languageOptions: {
       globals: { ...globals.jest },
     },

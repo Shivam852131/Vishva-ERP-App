@@ -235,8 +235,8 @@ export default function Attendance() {
                             <Icon color={theme.colors.brand} size={20} />
                           </View>
                           <View style={{ flex: 1 }}>
-                            <Text style={styles.sessionName}>{s.course_name}</Text>
-                            <Text style={styles.sessionMeta}>{s.faculty_name} · ends in {minutesLeft(s.expires_at)} min</Text>
+                            <Text style={styles.sessionName} numberOfLines={1}>{s.course_name}</Text>
+                            <Text style={styles.sessionMeta} numberOfLines={1}>{s.faculty_name} · ends in {minutesLeft(s.expires_at)} min</Text>
                           </View>
                           <View style={styles.methodPill}>
                             <Text style={styles.methodTxt}>{M.label}</Text>

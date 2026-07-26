@@ -22,7 +22,9 @@ export default function SubscriptionScreen() {
 
   React.useEffect(() => subscribeRealtime('subscription:update', () => refresh()), [refresh]);
 
-  const isActive = subData?.active !== false;
+  // subData is undefined until the fetch resolves; `undefined !== false` would
+  // flash an "Active Subscription" banner with an Invalid Date.
+  const isActive = subData?.active === true;
   const currentPlan = subData?.plan;
   const expiresAt = subData?.expires_at;
 
@@ -80,8 +82,11 @@ export default function SubscriptionScreen() {
           <Ionicons name="checkmark-circle" size={24} color="#10b981" />
           <View style={{ marginLeft: 12, flex: 1 }}>
             <Text style={styles.activeText}>Active Subscription</Text>
-            <Text style={styles.activeSubtext}>
-              {currentPlan?.toUpperCase()} — expires {new Date(expiresAt!).toLocaleDateString()}
+            <Text style={styles.activeSubtext} numberOfLines={1}>
+              {currentPlan?.toUpperCase() || 'PLAN'}
+              {expiresAt && !Number.isNaN(new Date(expiresAt).getTime())
+                ? ` — expires ${new Date(expiresAt).toLocaleDateString()}`
+                : ''}
             </Text>
           </View>
           <Ionicons name="shield-checkmark" size={28} color="#10b981" />

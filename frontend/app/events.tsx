@@ -51,7 +51,7 @@ export default function Events() {
                     <Text style={styles.eventTitle}>{e.title}</Text>
                     <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 6 }}>
                       <MapPin size={12} color={theme.colors.muted} />
-                      <Text style={styles.eventVenue}>{e.venue}</Text>
+                      <Text style={styles.eventVenue} numberOfLines={1}>{e.venue}</Text>
                     </View>
                     <Text style={styles.eventDesc}>{e.description}</Text>
                   </View>

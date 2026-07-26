@@ -235,12 +235,15 @@ const ringStyles = StyleSheet.create({
 });
 
 // ─── Progress Bar ──────────────────────────────────
-export function ProgressBar({ value, max = 100, height = 8, color, bg, label, showPct = false }: any) {
-  const pct = Math.min(1, Math.max(0, value / max));
+export function ProgressBar({ value, max = 100, height = 8, color, bg, label, showPct = false, style }: any) {
+  // max can be 0 (an assessment with no questions), which makes value/max NaN and
+  // renders width: "NaN%". Guard the divisor and the numerator.
+  const ratio = max > 0 ? Number(value) / max : 0;
+  const pct = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
   const barColor = color || (pct >= 0.75 ? theme.colors.success : pct >= 0.5 ? theme.colors.warning : theme.colors.error);
 
   return (
-    <View style={{ gap: 6 }}>
+    <View style={[{ gap: 6 }, style]}>
       {(label || showPct) && (
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           {label && <Text style={{ fontSize: 12, color: theme.colors.muted, fontWeight: '600' }}>{label}</Text>}
@@ -265,9 +268,9 @@ export function StatCard({ label, value, sub, color = theme.colors.brandPrimary,
     <View testID={testID} style={[statStyles.card]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <View style={{ flex: 1 }}>
-          <Text style={statStyles.label}>{label}</Text>
-          <Text style={[statStyles.value, { color: color || theme.colors.brandPrimary }]}>{value}</Text>
-          {sub ? <Text style={statStyles.sub}>{sub}</Text> : null}
+          <Text style={statStyles.label} numberOfLines={1}>{label}</Text>
+          <Text style={[statStyles.value, { color: color || theme.colors.brandPrimary }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{value}</Text>
+          {sub ? <Text style={statStyles.sub} numberOfLines={1}>{sub}</Text> : null}
         </View>
         {icon && <View style={[statStyles.iconWrap, { backgroundColor: (color || theme.colors.brandPrimary) + '12' }]}>{icon}</View>}
       </View>
@@ -384,13 +387,16 @@ const cardStyles = StyleSheet.create({
 });
 
 // ─── Section Title ────────────────────────────────
-export function SectionTitle({ title, action, actionLabel, onPress }: any) {
+// Accepts either <SectionTitle title="X" /> or <SectionTitle>X</SectionTitle>;
+// both spellings are used widely across the app.
+export function SectionTitle({ title, action, actionLabel, onPress, children }: any) {
   const handler = typeof action === 'function' ? action : onPress;
   const showAction = !!handler || !!actionLabel;
+  const label = title ?? children;
 
   return (
     <View style={sectionStyles.row}>
-      <Text style={sectionStyles.title}>{title}</Text>
+      <Text style={sectionStyles.title} numberOfLines={1}>{label}</Text>
       {showAction && (
         <Pressable onPress={handler} disabled={!handler}>
           <Text style={sectionStyles.action}>{actionLabel || 'See all'}</Text>

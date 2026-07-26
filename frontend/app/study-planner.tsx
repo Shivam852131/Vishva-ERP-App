@@ -94,7 +94,7 @@ const MOCK_REVISION_PLAN = {
 export default function StudyPlanner() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [plan, setPlan] = useState(MOCK_WEEKLY_PLAN);
-  const [fadeAnim] = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
