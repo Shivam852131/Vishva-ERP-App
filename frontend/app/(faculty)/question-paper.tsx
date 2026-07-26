@@ -89,7 +89,7 @@ export default function QuestionPaperGenerator() {
     if (selectedTypes.length === 0) return Alert.alert('Select Types', 'Choose at least one question type');
     setGenerating(true);
     setTimeout(() => {
-      const pool = MOCK_QUESTIONS[subject] || MOCK_QUESTIONS[Mathematics];
+      const pool = MOCK_QUESTIONS[subject] || MOCK_QUESTIONS.Mathematics;
       const qs = pool.slice(0, Math.min(questionCount, pool.length)).map((q, i) => ({ ...q, id: i + 1 }));
       const paper: GeneratedPaper = {
         id: Date.now().toString(), subject, difficulty, totalMarks, questionCount: qs.length,

@@ -43,7 +43,6 @@ const ROOT_GROUPS: Record<string, string> = {
   '/push-notifications': '/push-notifications',
   '/email': '/email',
   '/whatsapp': '/whatsapp',
-  '/(parent)/ai': '/(parent)',
   '/(faculty)/question-paper': '/(faculty)/question-paper',
   '/assignment-checker': '/assignment-checker',
   '/report-card': '/report-card',

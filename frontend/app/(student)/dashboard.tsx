@@ -110,9 +110,9 @@ export default function StudentDashboard() {
             <SafeAreaView edges={['top']} style={{ flex: 1 }}>
               <View style={styles.heroTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.greeting}>Good day, {user?.name?.split(' ')[0]}</Text>
-                  <Text style={styles.date}>{today}</Text>
-                  <Text style={styles.heroSub}>
+                  <Text style={styles.greeting} numberOfLines={1}>Good day, {user?.name?.split(' ')[0]}</Text>
+                  <Text style={styles.date} numberOfLines={1}>{today}</Text>
+                  <Text style={styles.heroSub} numberOfLines={1}>
                     {user?.department} · Year {user?.year || 3} · ID: {user?.student_id}
                   </Text>
                 </View>
@@ -255,10 +255,10 @@ export default function StudentDashboard() {
                   {(analytics as any).attendance_by_course.slice(0, 4).map((c: any, i: number) => (
                     <Card key={i} style={styles.attRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.attCourse}>{c.code}</Text>
-                        <Text style={styles.attCourseName}>{c.course}</Text>
+                        <Text style={styles.attCourse} numberOfLines={1}>{c.code}</Text>
+                        <Text style={styles.attCourseName} numberOfLines={1}>{c.course}</Text>
                       </View>
-                      <ProgressBar value={c.percentage} max={100} height={8} label="" showPct={false} />
+                      <ProgressBar value={c.percentage} max={100} height={8} label="" showPct={false} style={{ flex: 1 }} />
                       <Text
                         style={[
                           styles.attPct,
@@ -310,8 +310,8 @@ export default function StudentDashboard() {
                   </View>
                   <View style={styles.classDivider} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.className}>{c.course_name}</Text>
-                    <Text style={styles.classMeta}>
+                    <Text style={styles.className} numberOfLines={1}>{c.course_name}</Text>
+                    <Text style={styles.classMeta} numberOfLines={1}>
                       {c.faculty_name} · {c.room}
                     </Text>
                   </View>
@@ -343,8 +343,8 @@ export default function StudentDashboard() {
                     ]}
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.notifTitle}>{n.title}</Text>
-                    <Text style={styles.notifBody}>{n.body}</Text>
+                    <Text style={styles.notifTitle} numberOfLines={1}>{n.title}</Text>
+                    <Text style={styles.notifBody} numberOfLines={2}>{n.body}</Text>
                   </View>
                 </Card>
               ))}
@@ -385,6 +385,26 @@ export default function StudentDashboard() {
                 style={{ position: 'absolute', right: -10, bottom: -10 }}
               />
             </LinearGradient>
+          </View>
+
+          <View style={{ marginTop: theme.spacing.lg, marginHorizontal: theme.spacing.lg }}>
+            <SectionTitle title="Career & Growth" />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {[
+                { icon: '🎯', label: 'Career Hub', route: '/career-dashboard' },
+                { icon: '🎥', label: 'Live Classes', route: '/live-classes' },
+                { icon: '💼', label: 'Placements', route: '/placement' },
+                { icon: '📝', label: 'Assessments', route: '/skill-assessment' },
+                { icon: '🤝', label: 'Mentorship', route: '/mentorship' },
+                { icon: '⭐', label: 'Skill Profile', route: '/skill-profile' },
+              ].map((item, i) => (
+                <Pressable key={i} onPress={() => router.push(item.route as any)}
+                  style={{ width: '30%', alignItems: 'center', gap: 4, padding: 12, borderRadius: 12, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border }}>
+                  <Text style={{ fontSize: 24 }}>{item.icon}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.text, textAlign: 'center' }}>{item.label}</Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
 
           <View style={{ marginTop: theme.spacing.lg, marginHorizontal: theme.spacing.lg }}>

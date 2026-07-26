@@ -262,3 +262,260 @@ export interface NotificationQueueItem {
   channels: string[]; title: string; body: string;
   status: string; attempts: number; created_at: string;
 }
+
+// ─── Live Classes ────────────────────────────────────────────────
+export interface LiveSession {
+  id: string; title: string; description: string;
+  course_id: string | null; course_name: string | null;
+  host_id: string; host_name: string;
+  scheduled_at: string; started_at: string | null; ended_at: string | null;
+  duration_minutes: number; status: 'scheduled' | 'live' | 'ended';
+  meeting_url: string | null; recording_url: string | null;
+  allow_chat: boolean; allow_questions: boolean;
+  department: string | null; year: number | null; tags: string[];
+  materials: string[]; created_at: string;
+  participant_count?: number; active_count?: number;
+  joined?: boolean; is_host?: boolean;
+}
+
+export interface LiveParticipant {
+  id: string; student_id: string; student_name: string;
+  joined_at: string; left_at: string | null; active: boolean;
+  hand_raised: boolean; attention_seconds: number; present: boolean;
+}
+
+export interface LiveMessage {
+  id: string; text: string; author_id: string;
+  author_name: string; author_role: string; created_at: string;
+}
+
+export interface LiveQuestion {
+  id: string; text: string; author_id: string; author_name: string;
+  anonymous: boolean; upvotes: number; upvoted: boolean;
+  answered: boolean; answer: string | null; created_at: string;
+}
+
+export interface LivePoll {
+  id: string; question: string; options: string[];
+  votes: number[]; total_votes: number; my_vote: number | null;
+  status: 'open' | 'closed'; created_at: string;
+}
+
+export interface LiveSessionDetail extends LiveSession {
+  participants: LiveParticipant[];
+  questions: LiveQuestion[];
+  polls: LivePoll[];
+}
+
+// ─── Placement ───────────────────────────────────────────────────
+export interface EligibilityCheck {
+  key: string; label: string; required: string;
+  actual: string; passed: boolean; unverified?: boolean;
+}
+
+export interface DriveEligibility {
+  eligible: boolean;
+  checks: EligibilityCheck[];
+  failed_checks: string[];
+  skill_gaps: { skill_key: string; name: string; score: number }[];
+  skill_readiness: number;
+}
+
+export interface PlacementDrive {
+  id: string; company: string; role: string; sector: string | null;
+  package_lpa: number; package_label: string; location: string;
+  job_type: string; description: string;
+  min_cgpa: number | null; min_attendance: number | null; max_backlogs: number | null;
+  allowed_departments: string[];
+  required_skills: { skill_key: string; name: string }[];
+  rounds: string[]; deadline: string; drive_date: string | null;
+  openings: number | null; status: string; application_count: number;
+  created_at: string;
+  eligibility: DriveEligibility;
+  applied: boolean; application_status: string | null; application_id: string | null;
+  days_left: number; closing_soon?: boolean;
+}
+
+export interface ApplicationRound {
+  name: string; status: string; scheduledAt: string | null; feedback: string | null;
+}
+
+export interface PlacementApplication {
+  id: string; drive_id: string; student_id: string; student_name: string;
+  company: string; role: string; package_label: string;
+  status: string; current_round: number; rounds: ApplicationRound[];
+  resume_url: string | null; cover_note: string | null;
+  applied_at: string; updated_at: string; offer: any | null;
+  timeline: { event: string; at: string; note: string | null }[];
+  drive?: PlacementDrive | null;
+}
+
+export interface PlacementStats {
+  open_drives: number; total_drives: number; applications: number;
+  shortlisted: number; in_process: number; offers: number; rejected: number;
+  conversion_rate: number; highest_package: number; average_package: number;
+  by_stage: { stage: string; count: number }[];
+  top_recruiters: { company: string; count: number }[];
+}
+
+// ─── Assessments ─────────────────────────────────────────────────
+export interface Assessment {
+  id: string; key: string; title: string; description: string;
+  skill_key: string; skill_name: string; category: string;
+  duration_minutes: number; total_questions: number;
+  pass_score: number; difficulty: string; attempts: number;
+  my_attempts: number; best_score: number | null; passed: boolean;
+  in_progress_attempt_id: string | null;
+}
+
+export interface AttemptQuestion {
+  index: number; question: string; options: string[]; difficulty: string;
+}
+
+export interface AssessmentAttempt {
+  attempt_id: string; assessment: Assessment;
+  started_at: string; expires_at: string; seconds_remaining: number;
+  answers: Record<string, number>;
+  questions: AttemptQuestion[];
+}
+
+export interface AssessmentResult {
+  attempt_id: string; assessment: Assessment;
+  score_percent: number; correct: number; total: number; passed: boolean;
+  time_taken_seconds: number; submitted_at: string; certificate_id: string | null;
+  breakdown: {
+    index: number; question: string; options: string[]; difficulty: string;
+    correct_index: number; selected_index: number | null; correct: boolean;
+  }[];
+  by_difficulty: { difficulty: string; total: number; correct: number; percent: number }[];
+  skill?: SkillEntry;
+}
+
+export interface AssessmentHistoryItem {
+  id: string; assessment_id: string; assessment_title: string;
+  skill_key: string; score_percent: number; correct: number; total: number;
+  passed: boolean; time_taken_seconds: number; submitted_at: string;
+}
+
+export interface LeaderboardRow {
+  rank: number; student_id: string; student_name: string;
+  best_score: number; average_score: number;
+  attempts: number; passed: number; is_me: boolean;
+}
+
+// ─── Skill Profile ───────────────────────────────────────────────
+export interface SkillEntry {
+  skill_key: string; name: string; category: string;
+  score: number; level: string; level_label: string;
+  self_rating: number | null; assessment_score: number | null;
+  assessment_count: number; endorsement_count: number;
+  verified: boolean; updated_at: string | null;
+}
+
+export interface SkillProfile {
+  skills: SkillEntry[];
+  summary: {
+    total_skills: number; verified_skills: number; average_score: number;
+    top_skill: SkillEntry | null; certifications: number;
+    projects: number; endorsements: number;
+  };
+  certifications: {
+    id: string; title: string; issuer: string; skill_key: string | null;
+    credential_id: string | null; credential_url: string | null;
+    issued_at: string; expires_at: string | null; source: string;
+  }[];
+  projects: {
+    id: string; title: string; description: string; skills: string[];
+    repo_url: string | null; demo_url: string | null; created_at: string;
+  }[];
+  endorsements: {
+    id: string; skill_key: string; endorser_name: string;
+    endorser_role: string; note: string | null; created_at: string;
+  }[];
+}
+
+export interface SkillCatalogItem {
+  skill_key: string; name: string; category: string;
+}
+
+// ─── Mentorship ──────────────────────────────────────────────────
+export interface Mentor {
+  id: string; name: string; headline: string; company: string; bio: string;
+  expertise: { skill_key: string; name: string }[];
+  career_tracks: { key: string; title: string }[];
+  experience_years: number; languages: string[]; availability: string[];
+  rating: number; sessions_completed: number; is_active: boolean;
+  relevance?: number;
+  connection_status: string | null; connection_id: string | null;
+  reviews?: { student_name: string; rating: number; feedback: string; at: string }[];
+}
+
+export interface MentorshipConnection {
+  id: string; mentor_id: string; mentor_name: string; mentor_headline: string;
+  student_id: string; student_name: string; status: string; goal: string;
+  focus_skills: { skill_key: string; name: string }[];
+  message: string | null; decline_reason: string | null;
+  requested_at: string; responded_at: string | null; sessions_count: number;
+}
+
+export interface MentorshipSession {
+  id: string; connection_id: string; mentor_id: string; mentor_name: string;
+  student_id: string; student_name: string; topic: string; agenda: string;
+  scheduled_at: string; duration_minutes: number; meeting_url: string | null;
+  status: string; notes: string | null; action_items: string[];
+  rating: number | null; feedback: string | null; created_at: string;
+}
+
+export interface MentorshipGoal {
+  id: string; connection_id: string | null; title: string; description: string;
+  skill_key: string | null; target_date: string | null; status: string;
+  progress: number; milestones: { title: string; done: boolean }[];
+  created_at: string; completed_at: string | null;
+}
+
+export interface MentorshipOverview {
+  stats: {
+    active_mentors: number; pending_requests: number;
+    upcoming_sessions: number; completed_sessions: number;
+    total_hours: number; active_goals: number; completed_goals: number;
+  };
+  next_session: MentorshipSession | null;
+  connections: MentorshipConnection[];
+  upcoming_sessions: MentorshipSession[];
+  goals: MentorshipGoal[];
+}
+
+// ─── Career Dashboard ────────────────────────────────────────────
+export interface CareerPillar {
+  key: string; label: string; weight: number; score: number; detail: string;
+}
+
+export interface CareerMatch {
+  key: string; title: string; category: string; description: string;
+  salary_range: string; growth: number; education: string; match: number;
+  core_skills: { skill_key: string; name: string; score: number; verified: boolean; required: boolean }[];
+  support_skills: { skill_key: string; name: string; score: number; verified: boolean; required: boolean }[];
+  gaps: { skill_key: string; name: string; score: number; gap: number }[];
+}
+
+export interface CareerDashboard {
+  readiness_score: number; readiness_label: string;
+  pillars: CareerPillar[];
+  top_matches: CareerMatch[];
+  skill_gaps: { skill_key: string; name: string; score: number; gap: number }[];
+  pipeline: { stage: string; count: number }[];
+  stats: {
+    applications: number; active_applications: number; offers: number;
+    assessments_passed: number; assessments_taken: number;
+    verified_skills: number; certifications: number; projects: number;
+    active_mentors: number; upcoming_sessions: number;
+  };
+  upcoming_sessions: {
+    id: string; topic: string; mentor_name: string;
+    scheduled_at: string; duration_minutes: number;
+  }[];
+  recommendations: {
+    key: string; priority: string; title: string; body: string; action: string;
+  }[];
+  recent_activity: { type: string; title: string; at: string; status: string }[];
+}

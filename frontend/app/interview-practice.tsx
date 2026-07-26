@@ -8,7 +8,7 @@ import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import {
   Sparkles, Mic, Play, Pause, RotateCcw, CheckCircle, AlertTriangle,
-  ChevronRight, Clock, Target, TrendingUp, MessageSquare,
+  ChevronRight, Clock, Target, TrendingUp, MessageSquare, Award,
 } from 'lucide-react-native';
 
 const INTERVIEW_TYPES = [

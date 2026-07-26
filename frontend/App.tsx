@@ -87,6 +87,13 @@ import ResumeBuilderScreen from './app/resume-builder';
 import InterviewPracticeScreen from './app/interview-practice';
 import StudyPlannerScreen from './app/study-planner';
 import BusTrackingScreen from './app/bus-tracking';
+import LiveClassesScreen from './app/live-classes';
+import LiveClassRoomScreen from './app/live-class';
+import SkillAssessmentScreen from './app/skill-assessment';
+import AssessmentAttemptScreen from './app/assessment-attempt';
+import MentorshipScreen from './app/mentorship';
+import SkillProfileScreen from './app/skill-profile';
+import CareerDashboardScreen from './app/career-dashboard';
 import { ErrorBoundary } from './src/ErrorBoundary';
 import { navigationRef } from './src/navigation/navigation-ref';
 import { AuthProvider } from './src/providers/AuthContext';
@@ -351,6 +358,13 @@ export default function App() {
                   <RootStack.Screen name="/interview-practice" component={InterviewPracticeScreen} />
                   <RootStack.Screen name="/study-planner" component={StudyPlannerScreen} />
                   <RootStack.Screen name="/bus-tracking" component={BusTrackingScreen} />
+                  <RootStack.Screen name="/live-classes" component={LiveClassesScreen} />
+                  <RootStack.Screen name="/live-class" component={LiveClassRoomScreen} />
+                  <RootStack.Screen name="/skill-assessment" component={SkillAssessmentScreen} />
+                  <RootStack.Screen name="/assessment-attempt" component={AssessmentAttemptScreen} />
+                  <RootStack.Screen name="/mentorship" component={MentorshipScreen} />
+                  <RootStack.Screen name="/skill-profile" component={SkillProfileScreen} />
+                  <RootStack.Screen name="/career-dashboard" component={CareerDashboardScreen} />
                 </RootStack.Navigator>
               </NavigationContainer>
             </BottomSheetModalProvider>

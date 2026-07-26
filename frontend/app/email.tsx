@@ -9,7 +9,7 @@ import { ErrorBoundary } from '@/src/ErrorBoundary';
 import {
   Mail, Send, Inbox, Star, Trash2, Archive, Search, Filter,
   ChevronRight, Clock, Check, CheckCheck, AlertCircle, Paperclip,
-  Reply, Forward, MoreHorizontal, Settings, Bell, BellOff,
+  Reply, Forward, MoreHorizontal, Settings, Bell, BellOff, Zap,
 } from 'lucide-react-native';
 
 type Email = {

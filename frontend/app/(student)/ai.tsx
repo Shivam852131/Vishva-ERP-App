@@ -30,8 +30,11 @@ const TABS = [
 ];
 
 const AI_TOOLS = [
+  { key: 'career-dashboard', title: 'Career Dashboard', icon: Target, color: '#4F46E5', desc: 'Your placement readiness score', route: '/career-dashboard', tag: 'New' },
+  { key: 'skill-assessment', title: 'Skill Assessments', icon: ClipboardCheck, color: '#7C3AED', desc: 'Verify your skills with a test', route: '/skill-assessment', tag: 'New' },
+  { key: 'mentorship', title: 'Mentorship', icon: Globe, color: '#0891B2', desc: 'Learn from industry mentors', route: '/mentorship', tag: 'New' },
   { key: 'assignment-checker', title: 'Assignment Checker', icon: ClipboardCheck, color: '#4F46E5', desc: 'AI feedback on assignments', route: '/assignment-checker', tag: 'Popular' },
-  { key: 'report-card', title: 'Report Analysis', icon: FileText, color: '#7C3AED', desc: 'Academic performance insights', route: '/report-card', tag: 'New' },
+  { key: 'report-card', title: 'Report Analysis', icon: FileText, color: '#7C3AED', desc: 'Academic performance insights', route: '/report-card', tag: '' },
   { key: 'career-advisor', title: 'Career Advisor', icon: Briefcase, color: '#059669', desc: 'Discover your career path', route: '/career-advisor', tag: '' },
   { key: 'resume-builder', title: 'Resume Builder', icon: GraduationCap, color: '#0891B2', desc: 'Professional resume in minutes', route: '/resume-builder', tag: '' },
   { key: 'interview-practice', title: 'Interview Prep', icon: Mic, color: '#DC2626', desc: 'Master your next interview', route: '/interview-practice', tag: 'Popular' },

@@ -112,12 +112,12 @@ export default function FacultyDashboard() {
               style={styles.heroContent}
             >
               <View style={styles.heroTop}>
-                <View>
-                  <Text style={styles.greeting}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.greeting} numberOfLines={1}>
                     Welcome, Prof. {user?.name?.split(' ').pop()}
                   </Text>
-                  <Text style={styles.date}>{today}</Text>
-                  <Text style={styles.dept}>
+                  <Text style={styles.date} numberOfLines={1}>{today}</Text>
+                  <Text style={styles.dept} numberOfLines={1}>
                     {user?.department} · Faculty
                   </Text>
                 </View>
@@ -267,6 +267,12 @@ export default function FacultyDashboard() {
                 label: 'Question Paper',
                 to: '/(faculty)/question-paper',
                 color: '#8B5CF6',
+              },
+              {
+                icon: <BarChart3 size={20} color="#fff" />,
+                label: 'Live Classes',
+                to: '/live-classes',
+                color: '#DC2626',
               },
             ].map((a) => (
               <Pressable
