@@ -1,21 +1,22 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from '@/src/navigation/router';
 import {
   ArrowLeft, Send, Hand, MessageCircle, HelpCircle, BarChart3,
   Users, ChevronUp, Radio, CheckCircle2, Plus, X, Video,
+  Clock, CalendarDays,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
-import { useFetch, useMutate } from '@/src/hooks/useFetch';
+import { useFetch } from '@/src/hooks/useFetch';
 import { api } from '@/src/api';
 import type { LiveSessionDetail, LiveMessage, LiveQuestion, LivePoll, LiveParticipant } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
-import { Card, AsyncView, Button, EmptyState, ProgressBar } from '@/src/ui';
+import { AsyncView, Button, EmptyState, ProgressBar } from '@/src/ui';
 import { connectRealtime, subscribeRealtime } from '@/src/realtime/socket';
 
 const TABS = [
@@ -29,26 +30,31 @@ function timeOf(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// ─── Chat ────────────────────────────────────────────────────────
+function elapsed(startIso: string) {
+  const ms = Date.now() - new Date(startIso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+// ─── Chat Panel ──────────────────────────────────────────────────
 function ChatPanel({ sessionId, initial, canPost }: {
   sessionId: string;
-  initial: LiveMessage[] | undefined;
+  initial: LiveMessage[];
   canPost: boolean;
 }) {
   const { user } = useAuth();
-  const [messages, setMessages] = useState<LiveMessage[]>(initial || []);
+  const [messages, setMessages] = useState<LiveMessage[]>(initial);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  // History can resolve after this panel mounts, and realtime messages may already
-  // have arrived — merge rather than overwrite.
   useEffect(() => {
-    if (!initial?.length) return;
+    if (!initial.length) return;
     setMessages(prev => {
       const seen = new Set(prev.map(m => m.id));
       const missing = initial.filter(m => !seen.has(m.id));
-      return missing.length ? [...missing, ...prev] : prev;
+      return missing.length ? [...prev, ...missing] : prev;
     });
   }, [initial]);
 
@@ -59,7 +65,7 @@ function ChatPanel({ sessionId, initial, canPost }: {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     return () => clearTimeout(timer);
   }, [messages.length]);
 
@@ -83,24 +89,33 @@ function ChatPanel({ sessionId, initial, canPost }: {
   };
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView ref={scrollRef} contentContainerStyle={{ padding: theme.spacing.lg, gap: 10 }}>
+    <View style={styles.panelWrap}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.panelScrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {messages.length === 0 ? (
-          <EmptyState title="No messages yet" sub="Say hello to get the conversation started." icon={<MessageCircle size={44} color={theme.colors.muted} />} />
+          <EmptyState
+            title="No messages yet"
+            sub="Say hello to get the conversation started."
+            icon={<MessageCircle size={40} color={theme.colors.muted} />}
+          />
         ) : (
           messages.map(message => {
             const mine = String(message.author_id) === String(user?.id);
             return (
-              <View key={message.id} style={[styles.msgRow, mine && { justifyContent: 'flex-end' }]}>
+              <View key={message.id} style={[styles.msgRow, mine && styles.msgRowEnd]}>
                 <View style={[styles.msgBubble, mine ? styles.msgMine : styles.msgTheirs]}>
                   {!mine && (
-                    <Text style={styles.msgAuthor}>
+                    <Text style={[styles.msgAuthor, message.author_role === 'faculty' && styles.msgAuthorHost]}>
                       {message.author_name}
-                      {message.author_role === 'faculty' ? ' · Host' : ''}
+                      {message.author_role === 'faculty' ? '  \u00B7  Host' : ''}
                     </Text>
                   )}
-                  <Text style={[styles.msgText, mine && { color: '#fff' }]}>{message.text}</Text>
-                  <Text style={[styles.msgTime, mine && { color: 'rgba(255,255,255,0.7)' }]}>{timeOf(message.created_at)}</Text>
+                  <Text style={[styles.msgText, mine && styles.msgTextMine]}>{message.text}</Text>
+                  <Text style={[styles.msgTime, mine && styles.msgTimeMine]}>{timeOf(message.created_at)}</Text>
                 </View>
               </View>
             );
@@ -114,7 +129,7 @@ function ChatPanel({ sessionId, initial, canPost }: {
             style={styles.composerInput}
             value={text}
             onChangeText={setText}
-            placeholder="Type a message"
+            placeholder="Type a message..."
             placeholderTextColor={theme.colors.muted}
             multiline
             maxLength={1000}
@@ -122,10 +137,10 @@ function ChatPanel({ sessionId, initial, canPost }: {
           <Pressable
             onPress={send}
             disabled={!text.trim() || sending}
-            style={[styles.sendBtn, (!text.trim() || sending) && { opacity: 0.4 }]}
+            style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
             accessibilityLabel="Send message"
           >
-            {sending ? <ActivityIndicator color="#fff" size="small" /> : <Send size={17} color="#fff" />}
+            {sending ? <ActivityIndicator color="#fff" size="small" /> : <Send size={16} color="#fff" />}
           </Pressable>
         </View>
       ) : (
@@ -137,7 +152,7 @@ function ChatPanel({ sessionId, initial, canPost }: {
   );
 }
 
-// ─── Q&A ─────────────────────────────────────────────────────────
+// ─── Q&A Panel ──────────────────────────────────────────────────
 function QAPanel({ sessionId, initial, isHost, enabled }: {
   sessionId: string;
   initial: LiveQuestion[];
@@ -183,7 +198,6 @@ function QAPanel({ sessionId, initial, isHost, enabled }: {
   };
 
   const upvote = async (question: LiveQuestion) => {
-    // Optimistic — the socket event reconciles the authoritative count.
     setQuestions(prev => prev.map(q => (
       q.id === question.id
         ? { ...q, upvoted: !q.upvoted, upvotes: q.upvotes + (q.upvoted ? -1 : 1) }
@@ -216,94 +230,106 @@ function QAPanel({ sessionId, initial, isHost, enabled }: {
     }
   };
 
-  const sorted = [...questions].sort((a, b) => {
-    if (a.answered !== b.answered) return a.answered ? 1 : -1;
-    return b.upvotes - a.upvotes;
-  });
+  const sorted = useMemo(() => {
+    return [...questions].sort((a, b) => {
+      if (a.answered !== b.answered) return a.answered ? 1 : -1;
+      return b.upvotes - a.upvotes;
+    });
+  }, [questions]);
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: 10 }}>
+    <View style={styles.panelWrap}>
+      <ScrollView
+        contentContainerStyle={styles.panelScrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {sorted.length === 0 ? (
-          <EmptyState title="No questions yet" sub="Ask the first one — upvoted questions rise to the top." icon={<HelpCircle size={44} color={theme.colors.muted} />} />
+          <EmptyState
+            title="No questions yet"
+            sub="Ask the first one — upvoted questions rise to the top."
+            icon={<HelpCircle size={40} color={theme.colors.muted} />}
+          />
         ) : (
           sorted.map(question => (
-            <Card key={question.id} style={{ gap: 8 }}>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View key={question.id} style={styles.qaCard}>
+              <View style={styles.qaRow}>
                 <Pressable
                   onPress={() => upvote(question)}
                   style={[styles.voteBtn, question.upvoted && styles.voteBtnActive]}
                   accessibilityLabel="Upvote question"
                 >
-                  <ChevronUp size={16} color={question.upvoted ? '#fff' : theme.colors.brandPrimary} />
-                  <Text style={[styles.voteCount, question.upvoted && { color: '#fff' }]}>{question.upvotes}</Text>
+                  <ChevronUp size={14} color={question.upvoted ? '#fff' : theme.colors.brandPrimary} />
+                  <Text style={[styles.voteCount, question.upvoted && styles.voteCountActive]}>{question.upvotes}</Text>
                 </Pressable>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.qText}>{question.text}</Text>
-                  <Text style={styles.qMeta}>{question.author_name} · {timeOf(question.created_at)}</Text>
+                <View style={styles.qaContent}>
+                  <Text style={styles.qaText}>{question.text}</Text>
+                  <Text style={styles.qaMeta}>
+                    {question.anonymous ? 'Anonymous' : question.author_name}  \u00B7  {timeOf(question.created_at)}
+                  </Text>
                 </View>
-                {question.answered && <CheckCircle2 size={17} color={theme.colors.success} />}
+                {question.answered && <CheckCircle2 size={16} color={theme.colors.success} />}
               </View>
 
               {question.answer ? (
                 <View style={styles.answerBox}>
-                  <Text style={styles.answerLabel}>Answer</Text>
+                  <Text style={styles.answerLabel}>HOST ANSWER</Text>
                   <Text style={styles.answerText}>{question.answer}</Text>
                 </View>
               ) : null}
 
               {isHost && !question.answered && (
                 answering === question.id ? (
-                  <View style={{ gap: 8 }}>
+                  <View style={styles.answerForm}>
                     <TextInput
                       style={styles.answerInput}
                       value={answerText}
                       onChangeText={setAnswerText}
-                      placeholder="Type your answer"
+                      placeholder="Type your answer..."
                       placeholderTextColor={theme.colors.muted}
                       multiline
                     />
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <Button label="Post answer" onPress={() => submitAnswer(question.id)} style={{ flex: 1 }} />
+                    <View style={styles.answerActions}>
+                      <Button label="Post" onPress={() => submitAnswer(question.id)} style={{ flex: 1 }} />
                       <Button label="Cancel" variant="secondary" onPress={() => { setAnswering(null); setAnswerText(''); }} style={{ flex: 1 }} />
                     </View>
                   </View>
                 ) : (
-                  <Pressable onPress={() => setAnswering(question.id)}>
+                  <Pressable onPress={() => setAnswering(question.id)} style={styles.answerLinkWrap}>
                     <Text style={styles.answerLink}>Answer this question</Text>
                   </Pressable>
                 )
               )}
-            </Card>
+            </View>
           ))
         )}
       </ScrollView>
 
       {enabled ? (
         <View style={styles.composer}>
-          <View style={{ flex: 1, gap: 6 }}>
+          <View style={styles.composerField}>
             <TextInput
               style={styles.composerInput}
               value={text}
               onChangeText={setText}
-              placeholder="Ask a question"
+              placeholder="Ask a question..."
               placeholderTextColor={theme.colors.muted}
               multiline
             />
             <Pressable onPress={() => setAnonymous(v => !v)} style={styles.anonRow} accessibilityLabel="Toggle anonymous">
               <View style={[styles.checkbox, anonymous && styles.checkboxOn]}>
-                {anonymous && <Text style={styles.checkMark}>✓</Text>}
+                {anonymous && <Text style={styles.checkMark}>\u2713</Text>}
               </View>
-              <Text style={styles.anonText}>Ask anonymously</Text>
+              <Text style={styles.anonText}>Anonymous</Text>
             </Pressable>
           </View>
           <Pressable
             onPress={ask}
             disabled={!text.trim() || busy}
-            style={[styles.sendBtn, (!text.trim() || busy) && { opacity: 0.4 }]}
+            style={[styles.sendBtn, (!text.trim() || busy) && styles.sendBtnDisabled]}
             accessibilityLabel="Post question"
           >
-            {busy ? <ActivityIndicator color="#fff" size="small" /> : <Send size={17} color="#fff" />}
+            {busy ? <ActivityIndicator color="#fff" size="small" /> : <Send size={16} color="#fff" />}
           </Pressable>
         </View>
       ) : (
@@ -315,7 +341,7 @@ function QAPanel({ sessionId, initial, isHost, enabled }: {
   );
 }
 
-// ─── Polls ───────────────────────────────────────────────────────
+// ─── Polls Panel ────────────────────────────────────────────────
 function PollsPanel({ sessionId, initial, isHost }: {
   sessionId: string;
   initial: LivePoll[];
@@ -384,92 +410,103 @@ function PollsPanel({ sessionId, initial, isHost }: {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: 12 }}>
-      {isHost && (
-        creating ? (
-          <Card style={{ gap: 10 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={styles.sectionLabel}>New poll</Text>
-              <Pressable onPress={() => setCreating(false)} accessibilityLabel="Cancel poll">
-                <X size={18} color={theme.colors.muted} />
-              </Pressable>
-            </View>
-            <TextInput
-              style={styles.pollInput}
-              value={question}
-              onChangeText={setQuestion}
-              placeholder="Poll question"
-              placeholderTextColor={theme.colors.muted}
-            />
-            {options.map((option, index) => (
+    <View style={styles.panelWrap}>
+      <ScrollView
+        contentContainerStyle={styles.panelScrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {isHost && (
+          creating ? (
+            <View style={styles.pollForm}>
+              <View style={styles.pollFormHeader}>
+                <Text style={styles.pollFormTitle}>New Poll</Text>
+                <Pressable onPress={() => setCreating(false)} accessibilityLabel="Cancel poll">
+                  <X size={16} color={theme.colors.muted} />
+                </Pressable>
+              </View>
               <TextInput
-                key={index}
                 style={styles.pollInput}
-                value={option}
-                onChangeText={value => setOptions(prev => prev.map((o, i) => (i === index ? value : o)))}
-                placeholder={`Option ${index + 1}`}
+                value={question}
+                onChangeText={setQuestion}
+                placeholder="Enter your question..."
                 placeholderTextColor={theme.colors.muted}
               />
-            ))}
-            {options.length < 6 && (
-              <Pressable onPress={() => setOptions(prev => [...prev, ''])} style={styles.addOption}>
-                <Plus size={14} color={theme.colors.brandPrimary} />
-                <Text style={styles.addOptionText}>Add option</Text>
-              </Pressable>
-            )}
-            <Button label="Launch poll" onPress={createPoll} />
-          </Card>
-        ) : (
-          <Button label="Create a poll" icon={<Plus size={16} color="#fff" />} onPress={() => setCreating(true)} />
-        )
-      )}
+              {options.map((option, index) => (
+                <TextInput
+                  key={index}
+                  style={styles.pollInput}
+                  value={option}
+                  onChangeText={value => setOptions(prev => prev.map((o, i) => (i === index ? value : o)))}
+                  placeholder={`Option ${index + 1}`}
+                  placeholderTextColor={theme.colors.muted}
+                />
+              ))}
+              {options.length < 6 && (
+                <Pressable onPress={() => setOptions(prev => [...prev, ''])} style={styles.addOption}>
+                  <Plus size={14} color={theme.colors.brandPrimary} />
+                  <Text style={styles.addOptionText}>Add option</Text>
+                </Pressable>
+              )}
+              <Button label="Launch poll" onPress={createPoll} />
+            </View>
+          ) : (
+            <Button label="Create a poll" icon={<Plus size={14} color="#fff" />} onPress={() => setCreating(true)} />
+          )
+        )}
 
-      {polls.length === 0 ? (
-        <EmptyState title="No polls yet" sub={isHost ? 'Create a poll to check understanding in real time.' : 'Your host has not run a poll yet.'} icon={<BarChart3 size={44} color={theme.colors.muted} />} />
-      ) : (
-        polls.map(poll => (
-          <Card key={poll.id} style={{ gap: 10 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-              <Text style={styles.pollQuestion}>{poll.question}</Text>
-              <View style={[styles.pill, { backgroundColor: poll.status === 'open' ? '#DCFCE7' : theme.colors.surfaceTertiary }]}>
-                <Text style={[styles.pillText, { color: poll.status === 'open' ? '#16A34A' : theme.colors.muted }]}>
-                  {poll.status === 'open' ? 'OPEN' : 'CLOSED'}
-                </Text>
+        {polls.length === 0 ? (
+          <EmptyState
+            title="No polls yet"
+            sub={isHost ? 'Create a poll to check understanding in real time.' : 'Your host has not run a poll yet.'}
+            icon={<BarChart3 size={40} color={theme.colors.muted} />}
+          />
+        ) : (
+          polls.map(poll => (
+            <View key={poll.id} style={styles.pollCard}>
+              <View style={styles.pollHeader}>
+                <Text style={styles.pollQuestion} numberOfLines={2}>{poll.question}</Text>
+                <View style={[styles.pollBadge, { backgroundColor: poll.status === 'open' ? '#DCFCE7' : theme.colors.surfaceTertiary }]}>
+                  <Text style={[styles.pollBadgeText, { color: poll.status === 'open' ? '#16A34A' : theme.colors.muted }]}>
+                    {poll.status === 'open' ? 'OPEN' : 'CLOSED'}
+                  </Text>
+                </View>
+              </View>
+
+              {poll.options.map((option, index) => {
+                const count = poll.votes[index] || 0;
+                const pct = poll.total_votes ? Math.round((count / poll.total_votes) * 100) : 0;
+                const chosen = poll.my_vote === index;
+                return (
+                  <Pressable key={index} onPress={() => vote(poll, index)} disabled={poll.status !== 'open'} style={styles.pollOptionWrap}>
+                    <View style={styles.pollOptionHeader}>
+                      <Text style={[styles.pollOptionText, chosen && styles.pollOptionChosen]}>
+                        {chosen ? '\u25CF ' : '\u25CB '}{option}
+                      </Text>
+                      <Text style={styles.pollOptionPct}>{pct}% ({count})</Text>
+                    </View>
+                    <ProgressBar value={pct} max={100} height={5} color={chosen ? theme.colors.brandPrimary : theme.colors.brandSecondary} />
+                  </Pressable>
+                );
+              })}
+
+              <View style={styles.pollFooter}>
+                <Text style={styles.pollTotal}>{poll.total_votes} vote{poll.total_votes === 1 ? '' : 's'}</Text>
+                {isHost && poll.status === 'open' && (
+                  <Pressable onPress={() => closePoll(poll.id)} style={styles.closePollBtn}>
+                    <Text style={styles.closePollText}>Close poll</Text>
+                  </Pressable>
+                )}
               </View>
             </View>
-
-            {poll.options.map((option, index) => {
-              const count = poll.votes[index] || 0;
-              const pct = poll.total_votes ? Math.round((count / poll.total_votes) * 100) : 0;
-              const chosen = poll.my_vote === index;
-              return (
-                <Pressable key={index} onPress={() => vote(poll, index)} disabled={poll.status !== 'open'}>
-                  <View style={{ gap: 4 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={[styles.pollOption, chosen && { color: theme.colors.brandPrimary, fontWeight: '700' }]}>
-                        {chosen ? '● ' : '○ '}{option}
-                      </Text>
-                      <Text style={styles.pollPct}>{pct}% ({count})</Text>
-                    </View>
-                    <ProgressBar value={pct} max={100} height={6} color={chosen ? theme.colors.brandPrimary : theme.colors.brandSecondary} />
-                  </View>
-                </Pressable>
-              );
-            })}
-
-            <Text style={styles.pollTotal}>{poll.total_votes} vote{poll.total_votes === 1 ? '' : 's'}</Text>
-
-            {isHost && poll.status === 'open' && (
-              <Button label="Close poll" variant="secondary" onPress={() => closePoll(poll.id)} />
-            )}
-          </Card>
-        ))
-      )}
-    </ScrollView>
+          ))
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
-// ─── People ──────────────────────────────────────────────────────
+// ─── People Panel ───────────────────────────────────────────────
 function PeoplePanel({ participants }: { participants: LiveParticipant[] }) {
   const [people, setPeople] = useState<LiveParticipant[]>(participants);
 
@@ -498,45 +535,63 @@ function PeoplePanel({ participants }: { participants: LiveParticipant[] }) {
   const inactive = people.filter(p => !p.active);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: 8 }}>
-      <Text style={styles.sectionLabel}>In class ({active.length})</Text>
-      {active.map(person => (
-        <Card key={person.student_id} style={styles.personRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{person.student_name?.charAt(0)?.toUpperCase() || '?'}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.personName}>{person.student_name}</Text>
-            <Text style={styles.personMeta}>Joined {timeOf(person.joined_at)}</Text>
-          </View>
-          {person.hand_raised && <Hand size={17} color={theme.colors.warning} />}
-        </Card>
-      ))}
-      {active.length === 0 && (
-        <EmptyState title="Nobody here yet" sub="Participants appear as they join." icon={<Users size={44} color={theme.colors.muted} />} />
-      )}
-
-      {inactive.length > 0 && (
-        <>
-          <Text style={[styles.sectionLabel, { marginTop: theme.spacing.md }]}>Left ({inactive.length})</Text>
-          {inactive.map(person => (
-            <Card key={person.student_id} style={[styles.personRow, { opacity: 0.55 }]}>
-              <View style={[styles.avatar, { backgroundColor: theme.colors.surfaceTertiary }]}>
-                <Text style={[styles.avatarText, { color: theme.colors.muted }]}>{person.student_name?.charAt(0)?.toUpperCase() || '?'}</Text>
+    <View style={styles.panelWrap}>
+      <ScrollView
+        contentContainerStyle={styles.panelScrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.peopleHeader}>
+          <Text style={styles.peopleSectionTitle}>In class ({active.length})</Text>
+        </View>
+        {active.length === 0 ? (
+          <EmptyState
+            title="Nobody here yet"
+            sub="Participants appear as they join."
+            icon={<Users size={40} color={theme.colors.muted} />}
+          />
+        ) : (
+          active.map(person => (
+            <View key={person.student_id} style={styles.personRow}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{person.student_name?.charAt(0)?.toUpperCase() || '?'}</Text>
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={styles.personInfo}>
                 <Text style={styles.personName}>{person.student_name}</Text>
-                <Text style={styles.personMeta}>Left {person.left_at ? timeOf(person.left_at) : ''}</Text>
+                <Text style={styles.personMeta}>Joined {timeOf(person.joined_at)}</Text>
               </View>
-            </Card>
-          ))}
-        </>
-      )}
-    </ScrollView>
+              {person.hand_raised && (
+                <View style={styles.handBadge}>
+                  <Hand size={14} color={theme.colors.warning} />
+                </View>
+              )}
+            </View>
+          ))
+        )}
+
+        {inactive.length > 0 && (
+          <>
+            <View style={styles.peopleHeader}>
+              <Text style={[styles.peopleSectionTitle, { marginTop: theme.spacing.lg }]}>Left ({inactive.length})</Text>
+            </View>
+            {inactive.map(person => (
+              <View key={person.student_id} style={[styles.personRow, styles.personRowInactive]}>
+                <View style={[styles.avatar, styles.avatarInactive]}>
+                  <Text style={[styles.avatarText, { color: theme.colors.muted }]}>{person.student_name?.charAt(0)?.toUpperCase() || '?'}</Text>
+                </View>
+                <View style={styles.personInfo}>
+                  <Text style={styles.personName}>{person.student_name}</Text>
+                  <Text style={styles.personMeta}>Left {person.left_at ? timeOf(person.left_at) : ''}</Text>
+                </View>
+              </View>
+            ))}
+          </>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
-// ─── Screen ──────────────────────────────────────────────────────
+// ─── Screen ─────────────────────────────────────────────────────
 export default function LiveClassRoom() {
   const params = useLocalSearchParams<{ id: string }>();
   const sessionId = String(params.id || '');
@@ -552,20 +607,25 @@ export default function LiveClassRoom() {
 
   const isHost = !!data?.is_host;
 
-  // Subscribe the socket to this class's room so realtime events arrive.
+  // Socket room subscription — subscribe on mount, unsubscribe on unmount
   useEffect(() => {
     if (!sessionId) return;
     let socketRef: any = null;
+    let active = true;
     connectRealtime().then(socket => {
-      if (!socket) return;
+      if (!active || !socket) return;
       socketRef = socket;
       socket.emit('live:subscribe', sessionId);
     });
     return () => {
-      if (socketRef) socketRef.emit('live:unsubscribe', sessionId);
+      active = false;
+      if (socketRef) {
+        try { socketRef.emit('live:unsubscribe', sessionId); } catch {}
+      }
     };
   }, [sessionId]);
 
+  // Sync joined state from server
   useEffect(() => {
     if (data?.joined) {
       setJoined(true);
@@ -573,6 +633,7 @@ export default function LiveClassRoom() {
     }
   }, [data?.joined]);
 
+  // Listen for status changes (started/ended)
   useEffect(() => subscribeRealtime<{ sessionId: string; status: string }>('live:status', () => refresh()), [refresh]);
 
   const join = useCallback(async () => {
@@ -593,14 +654,13 @@ export default function LiveClassRoom() {
   const leave = useCallback(async () => {
     try {
       await api(`/live-classes/${sessionId}/leave`, { method: 'POST', body: JSON.stringify({}) });
-    } catch {
-      // Leaving is best-effort; the host's end-class sweep closes stragglers.
-    }
+    } catch {}
     joinedRef.current = false;
     setJoined(false);
-  }, [sessionId]);
+    refresh();
+  }, [sessionId, refresh]);
 
-  // Mark the student as left if they navigate away without tapping Leave.
+  // Cleanup: leave on unmount
   useEffect(() => () => {
     if (joinedRef.current) {
       api(`/live-classes/${sessionId}/leave`, { method: 'POST', body: JSON.stringify({}) }).catch(() => {});
@@ -647,36 +707,49 @@ export default function LiveClassRoom() {
 
   return (
     <ErrorBoundary>
-      <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        {/* Header */}
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} testID="back-btn" accessibilityLabel="Go back">
-            <ArrowLeft color={theme.colors.onSurface} size={22} />
+          <Pressable onPress={() => router.back()} testID="back-btn" accessibilityLabel="Go back" style={styles.backBtn}>
+            <ArrowLeft color={theme.colors.onSurface} size={20} />
           </Pressable>
-          <View style={{ flex: 1, marginHorizontal: 12 }}>
+          <View style={styles.headerInfo}>
             <Text style={styles.headerTitle} numberOfLines={1}>{data?.title || 'Live class'}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={styles.headerMeta}>
               {data?.status === 'live' && <View style={styles.liveDot} />}
               <Text style={styles.headerSub}>
                 {data?.status === 'live'
-                  ? `Live · ${data?.active_count || 0} watching`
+                  ? `Live \u00B7 ${data?.active_count || 0} watching`
                   : data?.status === 'ended' ? 'Ended' : 'Not started yet'}
               </Text>
+              {data?.status === 'live' && data?.started_at && (
+                <Text style={styles.headerElapsed}>{elapsed(data.started_at)}</Text>
+              )}
             </View>
           </View>
           {joined && data?.status === 'live' && !isHost && (
-            <Pressable onPress={toggleHand} style={[styles.handBtn, handRaised && styles.handBtnOn]} accessibilityLabel="Raise hand">
-              <Hand size={18} color={handRaised ? '#fff' : theme.colors.warning} />
+            <Pressable
+              onPress={toggleHand}
+              style={[styles.handBtn, handRaised && styles.handBtnActive]}
+              accessibilityLabel={handRaised ? 'Lower hand' : 'Raise hand'}
+            >
+              <Hand size={16} color={handRaised ? '#fff' : theme.colors.warning} />
             </Pressable>
           )}
         </View>
 
         <AsyncView loading={loading && !data} error={error} onRetry={refresh} empty={false}>
           {data && (
-            <>
+            <View style={styles.roomBody}>
+              {/* Status Banner */}
               {data.status !== 'live' && (
-                <View style={styles.banner}>
-                  <Video size={16} color={theme.colors.brandPrimary} />
-                  <Text style={styles.bannerText}>
+                <View style={[styles.banner, data.status === 'ended' && styles.bannerEnded]}>
+                  {data.status === 'ended' ? (
+                    <CheckCircle2 size={14} color={theme.colors.muted} />
+                  ) : (
+                    <Video size={14} color={theme.colors.brandPrimary} />
+                  )}
+                  <Text style={[styles.bannerText, data.status === 'ended' && styles.bannerTextEnded]}>
                     {data.status === 'ended'
                       ? 'This class has ended. You can still read the chat and Q&A.'
                       : `Starts ${new Date(data.scheduled_at).toLocaleString()}`}
@@ -684,19 +757,19 @@ export default function LiveClassRoom() {
                 </View>
               )}
 
+              {/* Action Bar */}
               {isHost && data.status === 'scheduled' && (
-                <View style={styles.hostBar}>
-                  <Button label="Start class" icon={<Radio size={16} color="#fff" />} onPress={startClass} style={{ flex: 1 }} />
+                <View style={styles.actionBar}>
+                  <Button label="Start class" icon={<Radio size={14} color="#fff" />} onPress={startClass} style={{ flex: 1 }} />
                 </View>
               )}
               {isHost && data.status === 'live' && (
-                <View style={styles.hostBar}>
+                <View style={styles.actionBar}>
                   <Button label="End class" variant="secondary" onPress={endClass} style={{ flex: 1 }} />
                 </View>
               )}
-
               {!isHost && data.status !== 'ended' && (
-                <View style={styles.hostBar}>
+                <View style={styles.actionBar}>
                   {joined ? (
                     <Button label="Leave class" variant="secondary" onPress={leave} style={{ flex: 1 }} />
                   ) : (
@@ -705,25 +778,25 @@ export default function LiveClassRoom() {
                 </View>
               )}
 
+              {/* Tab Bar */}
               <View style={styles.tabBar}>
                 {TABS.map(t => {
                   const Icon = t.icon;
                   const active = tab === t.key;
                   return (
                     <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tab, active && styles.tabActive]}>
-                      <Icon size={16} color={active ? theme.colors.brandPrimary : theme.colors.muted} />
-                      <Text style={[styles.tabLabel, active && { color: theme.colors.brandPrimary, fontWeight: '700' }]}>
-                        {t.label}
-                      </Text>
+                      <Icon size={14} color={active ? theme.colors.brandPrimary : theme.colors.muted} />
+                      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
                     </Pressable>
                   );
                 })}
               </View>
 
+              {/* Panel */}
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                style={{ flex: 1 }}
-                keyboardVerticalOffset={90}
+                style={styles.panelContainer}
+                keyboardVerticalOffset={0}
               >
                 {tab === 'chat' && (
                   <ChatPanel
@@ -747,7 +820,7 @@ export default function LiveClassRoom() {
                   <PeoplePanel participants={data.participants || []} />
                 )}
               </KeyboardAvoidingView>
-            </>
+            </View>
           )}
         </AsyncView>
       </SafeAreaView>
@@ -756,97 +829,122 @@ export default function LiveClassRoom() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md,
-    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
-  },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: theme.colors.onSurface },
-  headerSub: { fontSize: 11, color: theme.colors.muted, marginTop: 2 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#DC2626' },
-  handBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF3C7' },
-  handBtnOn: { backgroundColor: theme.colors.warning },
-  banner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: theme.colors.brandTertiary,
-    paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md,
-  },
-  bannerText: { flex: 1, fontSize: 12, color: theme.colors.onBrandTertiary, fontWeight: '600' },
-  hostBar: { flexDirection: 'row', gap: 10, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },
-  tabBar: {
-    flexDirection: 'row', marginTop: theme.spacing.md,
-    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
-  },
-  tab: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive: { borderBottomColor: theme.colors.brandPrimary },
-  tabLabel: { fontSize: 11, color: theme.colors.muted, fontWeight: '600' },
+  safeArea: { flex: 1, backgroundColor: theme.colors.surface },
 
+  // Header
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.surfaceSecondary },
+  backBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  headerInfo: { flex: 1, marginHorizontal: theme.spacing.md },
+  headerTitle: { fontSize: 15, fontWeight: '800', color: theme.colors.onSurface },
+  headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#DC2626' },
+  headerSub: { fontSize: 11, color: theme.colors.muted, fontWeight: '500' },
+  headerElapsed: { fontSize: 11, color: '#DC2626', fontWeight: '700' },
+  handBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FDE68A' },
+  handBtnActive: { backgroundColor: theme.colors.warning, borderColor: theme.colors.warning },
+
+  // Room body
+  roomBody: { flex: 1 },
+
+  // Banner
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.brandTertiary, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
+  bannerEnded: { backgroundColor: theme.colors.surfaceTertiary },
+  bannerText: { flex: 1, fontSize: 12, color: theme.colors.onBrandTertiary, fontWeight: '600' },
+  bannerTextEnded: { color: theme.colors.muted },
+
+  // Action bar
+  actionBar: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+
+  // Tab bar
+  tabBar: { flexDirection: 'row', backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabActive: { borderBottomColor: theme.colors.brandPrimary },
+  tabLabel: { fontSize: 12, color: theme.colors.muted, fontWeight: '600' },
+  tabLabelActive: { color: theme.colors.brandPrimary, fontWeight: '700' },
+
+  // Panel container
+  panelContainer: { flex: 1 },
+  panelWrap: { flex: 1 },
+  panelScrollContent: { padding: theme.spacing.lg, gap: theme.spacing.sm },
+
+  // Chat
   msgRow: { flexDirection: 'row' },
-  msgBubble: { maxWidth: '82%', borderRadius: theme.radius.lg, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
+  msgRowEnd: { justifyContent: 'flex-end' },
+  msgBubble: { maxWidth: '80%', borderRadius: theme.radius.lg, paddingHorizontal: 12, paddingVertical: 8, gap: 3 },
   msgMine: { backgroundColor: theme.colors.brandPrimary, borderBottomRightRadius: 4 },
   msgTheirs: { backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border, borderBottomLeftRadius: 4 },
   msgAuthor: { fontSize: 10, fontWeight: '700', color: theme.colors.brandPrimary },
-  msgText: { fontSize: 14, color: theme.colors.onSurface, lineHeight: 19 },
+  msgAuthorHost: { color: '#DC2626' },
+  msgText: { fontSize: 13, color: theme.colors.onSurface, lineHeight: 18 },
+  msgTextMine: { color: '#fff' },
   msgTime: { fontSize: 9, color: theme.colors.muted, alignSelf: 'flex-end' },
+  msgTimeMine: { color: 'rgba(255,255,255,0.7)' },
 
-  composer: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
-    padding: theme.spacing.md,
-    borderTopWidth: 1, borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSecondary,
-  },
-  composerInput: {
-    flex: 1, maxHeight: 100, minHeight: 42,
-    borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.lg,
-    paddingHorizontal: 14, paddingVertical: 10,
-    fontSize: 14, color: theme.colors.onSurface, backgroundColor: theme.colors.surface,
-  },
-  sendBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: theme.colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
+  // Composer
+  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: theme.spacing.sm, padding: theme.spacing.md, borderTopWidth: 1, borderTopColor: theme.colors.border, backgroundColor: theme.colors.surfaceSecondary },
+  composerField: { flex: 1, gap: 6 },
+  composerInput: { flex: 1, maxHeight: 90, minHeight: 40, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.lg, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: theme.colors.onSurface, backgroundColor: theme.colors.surface },
+  sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
+  sendBtnDisabled: { opacity: 0.4 },
   disabledBar: { padding: theme.spacing.lg, borderTopWidth: 1, borderTopColor: theme.colors.border, alignItems: 'center' },
   disabledText: { fontSize: 12, color: theme.colors.muted, fontWeight: '600' },
 
-  voteBtn: {
-    alignItems: 'center', justifyContent: 'center', width: 44, paddingVertical: 6,
-    borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.brandPrimary,
-    backgroundColor: theme.colors.brandTertiary,
-  },
+  // Q&A
+  qaCard: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.md, gap: 8 },
+  qaRow: { flexDirection: 'row', gap: theme.spacing.sm },
+  voteBtn: { alignItems: 'center', justifyContent: 'center', width: 40, paddingVertical: 6, borderRadius: theme.radius.sm, borderWidth: 1, borderColor: theme.colors.brandPrimary, backgroundColor: theme.colors.brandTertiary },
   voteBtnActive: { backgroundColor: theme.colors.brandPrimary },
-  voteCount: { fontSize: 12, fontWeight: '800', color: theme.colors.brandPrimary },
-  qText: { fontSize: 14, color: theme.colors.onSurface, fontWeight: '600', lineHeight: 19 },
-  qMeta: { fontSize: 11, color: theme.colors.muted, marginTop: 3 },
-  answerBox: { backgroundColor: '#ECFDF5', borderRadius: theme.radius.md, padding: 10, gap: 3 },
-  answerLabel: { fontSize: 10, fontWeight: '800', color: '#059669', letterSpacing: 0.5 },
-  answerText: { fontSize: 13, color: '#065F46', lineHeight: 18 },
+  voteCount: { fontSize: 11, fontWeight: '800', color: theme.colors.brandPrimary },
+  voteCountActive: { color: '#fff' },
+  qaContent: { flex: 1 },
+  qaText: { fontSize: 13, color: theme.colors.onSurface, fontWeight: '600', lineHeight: 18 },
+  qaMeta: { fontSize: 11, color: theme.colors.muted, marginTop: 3 },
+  answerBox: { backgroundColor: '#ECFDF5', borderRadius: theme.radius.sm, padding: theme.spacing.md, gap: 3, borderLeftWidth: 3, borderLeftColor: '#10B981' },
+  answerLabel: { fontSize: 9, fontWeight: '800', color: '#059669', letterSpacing: 0.5 },
+  answerText: { fontSize: 12, color: '#065F46', lineHeight: 17 },
+  answerForm: { gap: 8 },
+  answerInput: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, padding: theme.spacing.md, minHeight: 60, textAlignVertical: 'top', fontSize: 12, color: theme.colors.onSurface, backgroundColor: theme.colors.surface },
+  answerActions: { flexDirection: 'row', gap: 8 },
+  answerLinkWrap: { paddingTop: 4 },
   answerLink: { fontSize: 12, fontWeight: '700', color: theme.colors.brandPrimary },
-  answerInput: {
-    borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md,
-    padding: 10, minHeight: 70, textAlignVertical: 'top',
-    fontSize: 13, color: theme.colors.onSurface, backgroundColor: theme.colors.surface,
-  },
   anonRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   checkbox: { width: 16, height: 16, borderRadius: 4, borderWidth: 1.5, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
   checkboxOn: { backgroundColor: theme.colors.brandPrimary, borderColor: theme.colors.brandPrimary },
   checkMark: { color: '#fff', fontSize: 10, fontWeight: '900' },
   anonText: { fontSize: 11, color: theme.colors.muted, fontWeight: '600' },
 
-  sectionLabel: { fontSize: 13, fontWeight: '800', color: theme.colors.onSurface },
-  pollQuestion: { flex: 1, fontSize: 14, fontWeight: '700', color: theme.colors.onSurface },
-  pollOption: { fontSize: 13, color: theme.colors.onSurface },
-  pollPct: { fontSize: 11, color: theme.colors.muted, fontWeight: '700' },
-  pollTotal: { fontSize: 11, color: theme.colors.muted },
-  pollInput: {
-    borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md,
-    paddingHorizontal: 12, paddingVertical: 10,
-    fontSize: 13, color: theme.colors.onSurface, backgroundColor: theme.colors.surface,
-  },
+  // Polls
+  pollForm: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg, gap: theme.spacing.sm },
+  pollFormHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pollFormTitle: { fontSize: 14, fontWeight: '800', color: theme.colors.onSurface },
+  pollInput: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm, fontSize: 13, color: theme.colors.onSurface, backgroundColor: theme.colors.surface },
   addOption: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   addOptionText: { fontSize: 12, fontWeight: '700', color: theme.colors.brandPrimary },
-  pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: theme.radius.sm },
-  pillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  pollCard: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg, gap: theme.spacing.sm },
+  pollHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.spacing.sm },
+  pollQuestion: { flex: 1, fontSize: 14, fontWeight: '700', color: theme.colors.onSurface, lineHeight: 19 },
+  pollBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: theme.radius.sm },
+  pollBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  pollOptionWrap: { gap: 4 },
+  pollOptionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pollOptionText: { fontSize: 12, color: theme.colors.onSurface, flex: 1 },
+  pollOptionChosen: { color: theme.colors.brandPrimary, fontWeight: '700' },
+  pollOptionPct: { fontSize: 11, color: theme.colors.muted, fontWeight: '700', marginLeft: theme.spacing.sm },
+  pollFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: theme.spacing.xs },
+  pollTotal: { fontSize: 11, color: theme.colors.muted },
+  closePollBtn: { paddingHorizontal: theme.spacing.md, paddingVertical: 6, borderRadius: theme.radius.sm, backgroundColor: theme.colors.surfaceTertiary, borderWidth: 1, borderColor: theme.colors.border },
+  closePollText: { fontSize: 11, fontWeight: '700', color: theme.colors.muted },
 
-  personRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.colors.brandTertiary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 14, fontWeight: '800', color: theme.colors.brandPrimary },
+  // People
+  peopleHeader: { paddingBottom: theme.spacing.sm },
+  peopleSectionTitle: { fontSize: 12, fontWeight: '800', color: theme.colors.onSurface, textTransform: 'uppercase', letterSpacing: 0.5 },
+  personRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.sm, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.sm, paddingHorizontal: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.border },
+  personRowInactive: { opacity: 0.55, backgroundColor: theme.colors.surfaceTertiary },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.colors.brandTertiary, alignItems: 'center', justifyContent: 'center' },
+  avatarInactive: { backgroundColor: theme.colors.surfaceTertiary },
+  avatarText: { fontSize: 13, fontWeight: '800', color: theme.colors.brandPrimary },
+  personInfo: { flex: 1 },
   personName: { fontSize: 13, fontWeight: '700', color: theme.colors.onSurface },
   personMeta: { fontSize: 11, color: theme.colors.muted, marginTop: 1 },
+  handBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' },
 });

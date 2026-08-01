@@ -19,6 +19,7 @@ import type {
   Fee,
   Grievance,
   Hostel,
+  HostelAllocation,
   LibraryBook,
   LibraryIssue,
   Note,
@@ -203,8 +204,15 @@ const issues: LibraryIssue[] = [
 ];
 
 const hostels: Hostel[] = [
-  { id: 'hostel-1', name: 'Nalanda Block', type: 'Boys', total_rooms: 120, warden_name: 'Mr. Ramesh Nair', contact: '+91 98765 00010' },
-  { id: 'hostel-2', name: 'Gargi Block', type: 'Girls', total_rooms: 110, warden_name: 'Ms. Kavita Menon', contact: '+91 98765 00011' },
+  { id: 'hostel-1', name: 'Nalanda Block', type: 'Boys', total_rooms: 120, occupied: 98, warden_name: 'Mr. Ramesh Nair', contact: '+91 98765 00010', amenities: ['WiFi', 'Power Backup', 'Mess', 'Laundry', 'Hot Water', 'CCTV'], description: 'Premium boys hostel with modern facilities' },
+  { id: 'hostel-2', name: 'Gargi Block', type: 'Girls', total_rooms: 110, occupied: 85, warden_name: 'Ms. Kavita Menon', contact: '+91 98765 00011', amenities: ['WiFi', 'Power Backup', 'Mess', 'Laundry', 'Hot Water', 'CCTV'], description: 'Well-maintained girls hostel with 24/7 security' },
+];
+
+const hostelAllocations: HostelAllocation[] = [
+  { id: 'alloc-1', hostel_id: 'hostel-1', hostel_name: 'Nalanda Block', room_number: '302', student_id: 'stu-001', student_name: 'Aarav Sharma', student_email: 'student@campus.edu', allocated_at: daysFromNow(-30), active: true },
+  { id: 'alloc-2', hostel_id: 'hostel-1', hostel_name: 'Nalanda Block', room_number: '105', student_id: 'stu-002', student_name: 'Rohan Mehta', student_email: 'rohan@campus.edu', allocated_at: daysFromNow(-15), active: true },
+  { id: 'alloc-3', hostel_id: 'hostel-2', hostel_name: 'Gargi Block', room_number: '201', student_id: 'stu-003', student_name: 'Isha Patel', student_email: 'isha@campus.edu', allocated_at: daysFromNow(-20), active: true },
+  { id: 'alloc-4', hostel_id: 'hostel-2', hostel_name: 'Gargi Block', room_number: '410', student_id: 'stu-004', student_name: 'Neha Singh', student_email: 'neha@campus.edu', allocated_at: daysFromNow(-45), active: false },
 ];
 
 const transportRoutes: TransportRoute[] = [
@@ -564,8 +572,20 @@ export async function demoApi<T = any>(path: string, opts: DemoRequest = {}): Pr
   if (pathname === '/library/books') return ok(books as T);
   if (pathname === '/library/issues') return ok(issues as T);
   if (pathname === '/hostels') return ok(hostels as T);
+  if (pathname === '/hostel/stats') return ok({
+    total_hostels: hostels.length,
+    total_rooms: hostels.reduce((s, h) => s + h.total_rooms, 0),
+    total_occupied: hostels.reduce((s, h) => s + (h.occupied || 0), 0),
+    occupancy_rate: Math.round(hostels.reduce((s, h) => s + (h.occupied || 0), 0) / hostels.reduce((s, h) => s + h.total_rooms, 0) * 100),
+    active_allocations: hostelAllocations.filter(a => a.active).length,
+    boys_hostels: hostels.filter(h => h.type === 'Boys').length,
+    girls_hostels: hostels.filter(h => h.type === 'Girls').length,
+    boys_occupied: hostels.filter(h => h.type === 'Boys').reduce((s, h) => s + (h.occupied || 0), 0),
+    girls_occupied: hostels.filter(h => h.type === 'Girls').reduce((s, h) => s + (h.occupied || 0), 0),
+  } as T);
+  if (pathname === '/hostel/allocations') return ok(hostelAllocations as T);
   if (pathname === '/transport/routes') return ok(transportRoutes as T);
-  if (pathname === '/transport/my-route') return ok({ id: 'enroll-1', route_id: 'route-1', route_name: 'Green Line - Central City', student_id: 'stu-001', student_name: 'Aarav Sharma', active: true } as TransportEnrollment as T);
+  if (pathname === '/transport/my-route') return ok({ id: 'enroll-1', route_id: 'route-1', route_name: 'Green Line - Central City', vehicle_number: 'VIT BUS 07', driver_name: 'Suresh Kumar', driver_phone: '+91 99880 00001', stops: [{ name: 'Central Metro', time: '07:35' }, { name: 'River Road', time: '07:50' }, { name: 'Campus Gate', time: '08:15' }], student_id: 'stu-001', student_name: 'Aarav Sharma', active: true } as TransportEnrollment as T);
   if (pathname === '/grievances') return ok(grievances as T);
   if (pathname === '/colleges') return ok(colleges as T);
 

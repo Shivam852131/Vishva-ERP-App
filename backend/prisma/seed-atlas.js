@@ -176,13 +176,13 @@ async function seed() {
 
   // ──── TRANSPORT (upsert) ────
   await db.collection('transport_routes').updateOne(
-    { name: 'Route A - Koramangala' },
-    { $setOnInsert: { name: 'Route A - Koramangala', routeNumber: 'A1', stops: [{ name: 'Koramangala', time: '07:30' }, { name: 'HSR Layout', time: '07:50' }, { name: 'College', time: '08:30' }], fare: 1500, timing: '07:30 - 16:30', createdAt: now } },
+    { route_name: 'Koramangala Express' },
+    { $setOnInsert: { route_name: 'Koramangala Express', vehicle_number: 'KA-01-AB-1234', driver_name: 'Rajesh Kumar', driver_phone: '+91 98765 43210', stops: [{ name: 'Koramangala', time: '07:30' }, { name: 'HSR Layout', time: '07:50' }, { name: 'College', time: '08:30' }], active: true, createdAt: now } },
     { upsert: true }
   );
   await db.collection('transport_routes').updateOne(
-    { name: 'Route B - Whitefield' },
-    { $setOnInsert: { name: 'Route B - Whitefield', routeNumber: 'B1', stops: [{ name: 'Whitefield', time: '07:00' }, { name: 'Marathahalli', time: '07:30' }, { name: 'College', time: '08:30' }], fare: 2000, timing: '07:00 - 16:30', createdAt: now } },
+    { route_name: 'Whitefield Shuttle' },
+    { $setOnInsert: { route_name: 'Whitefield Shuttle', vehicle_number: 'KA-02-CD-5678', driver_name: 'Mohammed Irfan', driver_phone: '+91 98765 43211', stops: [{ name: 'Whitefield', time: '07:00' }, { name: 'Marathahalli', time: '07:30' }, { name: 'College', time: '08:30' }], active: true, createdAt: now } },
     { upsert: true }
   );
 

@@ -157,13 +157,14 @@ export interface LibraryIssue {
 
 export interface Hostel {
   id: string; name: string; type: string;
-  total_rooms: number; warden_name: string; contact: string;
+  total_rooms: number; occupied?: number; warden_name: string; contact: string;
+  amenities?: string[]; description?: string; created_at?: string;
 }
 
 export interface HostelAllocation {
   id: string; hostel_id: string; hostel_name: string;
   room_number: string; student_id: string; student_name: string;
-  allocated_at: string; active: boolean;
+  student_email?: string; allocated_at: string; active: boolean;
 }
 
 export interface TransportRoute {
@@ -178,6 +179,8 @@ export interface TransportStop {
 
 export interface TransportEnrollment {
   id: string; route_id: string; route_name: string;
+  vehicle_number: string; driver_name: string; driver_phone: string;
+  stops: TransportStop[];
   student_id: string; student_name: string; active: boolean;
 }
 

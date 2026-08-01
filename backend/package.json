@@ -11,6 +11,7 @@
     "dev": "node src/server.js",
     "db:seed": "node prisma/seed.js",
     "db:seed:atlas": "node prisma/seed-atlas.js",
+    "db:seed:all": "node prisma/seed-all.js",
     "test": "node test-api.js"
   },
   "dependencies": {

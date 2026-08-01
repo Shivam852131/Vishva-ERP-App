@@ -36,22 +36,6 @@ const ROOT_GROUPS: Record<string, string> = {
   '/(super_admin)/users': '/(super_admin)',
   '/(super_admin)/reports': '/(super_admin)',
   '/(super_admin)/profile': '/(super_admin)',
-  '/phone-login': '/phone-login',
-  '/visitor': '/visitor',
-  '/complaints': '/complaints',
-  '/assets': '/assets',
-  '/push-notifications': '/push-notifications',
-  '/email': '/email',
-  '/whatsapp': '/whatsapp',
-  '/(faculty)/question-paper': '/(faculty)/question-paper',
-  '/assignment-checker': '/assignment-checker',
-  '/report-card': '/report-card',
-  '/career-advisor': '/career-advisor',
-  '/resume-builder': '/resume-builder',
-  '/interview-practice': '/interview-practice',
-  '/study-planner': '/study-planner',
-  '/bus-tracking': '/bus-tracking',
-  '/face-enroll': '/face-enroll',
 };
 
 function parsePath(path: string) {

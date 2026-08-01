@@ -129,7 +129,7 @@ export default function AdminDashboard() {
     { icon: <Users size={18} color="#fff" />, label: 'Users', color: '#047857', route: '/(college_admin)/users' },
     { icon: <Building size={18} color="#fff" />, label: 'Academics', color: '#059669', route: '/(college_admin)/academics' },
     { icon: <Library size={18} color="#fff" />, label: 'Library', color: '#10B981', route: '/library' },
-    { icon: <Home size={18} color="#fff" />, label: 'Hostel', color: '#065F46', route: '/hostel' },
+    { icon: <Home size={18} color="#fff" />, label: 'Hostel', color: '#065F46', route: '/(college_admin)/hostel-admin' },
     { icon: <Bus size={18} color="#fff" />, label: 'Transport', color: '#0F766E', route: '/transport' },
     { icon: <MessageSquare size={18} color="#fff" />, label: 'Grievances', color: '#059669', route: '/grievances' },
     { icon: <CreditCard size={18} color="#fff" />, label: 'Payments', color: '#0891b2', route: '/(college_admin)/payments' },

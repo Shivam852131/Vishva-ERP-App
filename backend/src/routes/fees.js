@@ -66,6 +66,7 @@ function createFeesRouter(io) {
       };
       const result = await db.collection('fees').insertOne(fee);
       fee._id = result.insertedId;
+      if (io) io.to(roomForUser(userId)).emit('fees:update', { feeId: String(result.insertedId), status: 'created' });
       res.json(fee);
     } catch (e) {
       sendError(res, e);
@@ -129,9 +130,77 @@ function createFeesRouter(io) {
       const notifResult = await db.collection('notifications').insertOne(notification);
       notification._id = notifResult.insertedId;
 
-      if (io) io.to(roomForUser(fee.userId)).emit('notifications:update', notification);
+      if (io) {
+        io.to(roomForUser(fee.userId)).emit('notifications:update', notification);
+        io.to(roomForUser(fee.userId)).emit('fees:update', { feeId, status: 'paid' });
+        io.to(roomForUser(fee.userId)).emit('payments:update', { receiptId: String(receipt._id) });
+      }
 
       res.json(receipt);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.get('/fees/all', async (req, res) => {
+    try {
+      const db = getDB();
+      const fees = await db.collection('fees')
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(fees);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/fees/create', async (req, res) => {
+    try {
+      const db = getDB();
+      const { student_id, type, amount, due_date, semester } = req.body;
+      const fee = {
+        userId: oid(student_id),
+        type,
+        amount,
+        dueDate: due_date,
+        status: 'pending',
+        semester,
+        receiptId: null,
+        createdAt: nowIso(),
+      };
+      const result = await db.collection('fees').insertOne(fee);
+      fee._id = result.insertedId;
+      if (io) io.to(roomForUser(student_id)).emit('fees:update', { feeId: String(result.insertedId), status: 'created' });
+      res.json(fee);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/fees/:id/remind', async (req, res) => {
+    try {
+      const db = getDB();
+      const fee = await db.collection('fees').findOne({ _id: oid(req.params.id) });
+      if (!fee) return sendError(res, 'Fee not found', 404);
+
+      const notification = {
+        audience: 'individual',
+        title: 'Fee Payment Reminder',
+        body: `Reminder: Your ${fee.type} fee of ₹${fee.amount} is pending. Please pay before the due date.`,
+        recipientIds: [fee.userId],
+        readBy: [],
+        createdAt: nowIso(),
+      };
+      const notifResult = await db.collection('notifications').insertOne(notification);
+      notification._id = notifResult.insertedId;
+
+      if (io) {
+        io.to(roomForUser(fee.userId)).emit('notifications:update', notification);
+        io.to(roomForUser(fee.userId)).emit('fees:update', { feeId: req.params.id, status: 'reminded' });
+      }
+
+      res.json({ ok: true });
     } catch (e) {
       sendError(res, e);
     }

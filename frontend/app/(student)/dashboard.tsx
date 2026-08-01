@@ -79,10 +79,10 @@ export default function StudentDashboard() {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   const quickActions = [
-    { icon: <QrCode size={20} color="#fff" />, label: 'Attendance', to: '/attendance', color: theme.colors.brandPrimary },
+    { icon: <QrCode size={20} color="#fff" />, label: 'Attendance', to: '/attendance-advanced', color: theme.colors.brandPrimary },
     { icon: <BookOpen size={20} color="#fff" />, label: 'Notes', to: '/notes', color: theme.colors.brandPrimary },
     { icon: <Award size={20} color="#fff" />, label: 'Results', to: '/results', color: '#10B981' },
-    { icon: <Wallet size={20} color="#fff" />, label: 'Fees', to: '/fees', color: theme.colors.brand },
+    { icon: <Wallet size={20} color="#fff" />, label: 'Fees', to: '/(student)/fees', color: theme.colors.brand },
     { icon: <Library size={20} color="#fff" />, label: 'Library', to: '/library', color: '#065F46' },
     { icon: <Building size={20} color="#fff" />, label: 'Hostel', to: '/hostel', color: theme.colors.brandPrimary },
     { icon: <Bus size={20} color="#fff" />, label: 'Transport', to: '/transport', color: '#10B981' },
@@ -152,11 +152,11 @@ export default function StudentDashboard() {
                       </View>
                     </View>
                   </View>
-                  <Pressable
+                   <Pressable
                     testID="qr-btn"
                     accessibilityLabel="Attendance QR"
                     accessibilityRole="button"
-                    onPress={() => router.push('/attendance' as any)}
+                    onPress={() => router.push('/attendance-advanced' as any)}
                     style={styles.qrBtn}
                   >
                     <QrCode color="#fff" size={28} />

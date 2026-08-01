@@ -46,6 +46,7 @@ import CollegeAdminReportsScreen from './app/(college_admin)/reports';
 import CollegeAdminProfileScreen from './app/(college_admin)/profile';
 import CollegeAdminPaymentsScreen from './app/(college_admin)/payments';
 import CollegeAdminSubscriptionScreen from './app/(college_admin)/subscription';
+import CollegeAdminHostelAdminScreen from './app/(college_admin)/hostel-admin';
 import SuperAdminDashboardScreen from './app/(super_admin)/dashboard';
 import SuperAdminCollegesScreen from './app/(super_admin)/colleges';
 import SuperAdminUsersScreen from './app/(super_admin)/users';
@@ -54,6 +55,9 @@ import SuperAdminProfileScreen from './app/(super_admin)/profile';
 import AnalyticsScreen from './app/analytics';
 import AttendanceScreen from './app/attendance';
 import AttendanceLiveScreen from './app/attendance-live';
+import AttendanceAdvancedScreen from './app/attendance-advanced';
+import AttendanceLiveAdvancedScreen from './app/attendance-live-advanced';
+import LeaveManagementScreen from './app/leave-management';
 import ChatScreen from './app/chat';
 import EventsScreen from './app/events';
 import ExamsScreen from './app/exams';
@@ -79,6 +83,7 @@ import PushNotificationsScreen from './app/push-notifications';
 import EmailIntegrationScreen from './app/email';
 import WhatsAppIntegrationScreen from './app/whatsapp';
 import ParentAiScreen from './app/(parent)/ai';
+import StudentFeesScreen from './app/(student)/fees';
 import FacultyQuestionPaperScreen from './app/(faculty)/question-paper';
 import AssignmentCheckerScreen from './app/assignment-checker';
 import ReportCardScreen from './app/report-card';
@@ -94,6 +99,7 @@ import AssessmentAttemptScreen from './app/assessment-attempt';
 import MentorshipScreen from './app/mentorship';
 import SkillProfileScreen from './app/skill-profile';
 import CareerDashboardScreen from './app/career-dashboard';
+import FaceEnrollScreen from './app/face-enroll';
 import { ErrorBoundary } from './src/ErrorBoundary';
 import { navigationRef } from './src/navigation/navigation-ref';
 import { AuthProvider } from './src/providers/AuthContext';
@@ -319,12 +325,17 @@ export default function App() {
                   <RootStack.Screen name="/(faculty)" component={FacultyTabNavigator} />
                   <RootStack.Screen name="/(college_admin)" component={CollegeAdminTabNavigator} />
                   <RootStack.Screen name="/(super_admin)" component={SuperAdminTabNavigator} />
+                  <RootStack.Screen name="/(student)/fees" component={StudentFeesScreen} />
                   <RootStack.Screen name="/(faculty)/exam-generator" component={FacultyExamGeneratorScreen} />
                   <RootStack.Screen name="/(college_admin)/payments" component={CollegeAdminPaymentsScreen} />
                   <RootStack.Screen name="/(college_admin)/subscription" component={CollegeAdminSubscriptionScreen} />
+                  <RootStack.Screen name="/(college_admin)/hostel-admin" component={CollegeAdminHostelAdminScreen} />
                   <RootStack.Screen name="/analytics" component={AnalyticsScreen} />
                   <RootStack.Screen name="/attendance" component={AttendanceScreen} />
                   <RootStack.Screen name="/attendance-live" component={AttendanceLiveScreen} />
+                  <RootStack.Screen name="/attendance-advanced" component={AttendanceAdvancedScreen} />
+                  <RootStack.Screen name="/attendance-live-advanced" component={AttendanceLiveAdvancedScreen} />
+                  <RootStack.Screen name="/leave-management" component={LeaveManagementScreen} />
                   <RootStack.Screen name="/chat" component={ChatScreen} />
                   <RootStack.Screen name="/events" component={EventsScreen} />
                   <RootStack.Screen name="/exams" component={ExamsScreen} />
@@ -365,6 +376,7 @@ export default function App() {
                   <RootStack.Screen name="/mentorship" component={MentorshipScreen} />
                   <RootStack.Screen name="/skill-profile" component={SkillProfileScreen} />
                   <RootStack.Screen name="/career-dashboard" component={CareerDashboardScreen} />
+                  <RootStack.Screen name="/face-enroll" component={FaceEnrollScreen} />
                 </RootStack.Navigator>
               </NavigationContainer>
             </BottomSheetModalProvider>

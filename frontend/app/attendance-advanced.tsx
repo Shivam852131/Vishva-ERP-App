@@ -17,6 +17,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
+import { api } from '@/src/api';
 import type { AttendanceData, AttendanceByCourse } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme, bg } from '@/src/theme';
@@ -39,6 +40,7 @@ const METHOD_META: Record<string, { label: string; icon: any; cta: string; color
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// ─── Animated Attendance Ring ─────────────────────────
 function AnimatedAttendanceRing({ percentage, size = 140, strokeWidth = 12 }: {
   percentage: number; size?: number; strokeWidth?: number;
 }) {
@@ -95,6 +97,7 @@ function AnimatedAttendanceRing({ percentage, size = 140, strokeWidth = 12 }: {
   );
 }
 
+// ─── Attendance Heatmap ────────────────────────────────
 function AttendanceHeatmap({ records, month, year }: {
   records: any[]; month: number; year: number;
 }) {
@@ -170,6 +173,7 @@ function AttendanceHeatmap({ records, month, year }: {
   );
 }
 
+// ─── Course Analytics Card ─────────────────────────────
 function CourseAnalyticsCard({ course, index }: { course: AttendanceByCourse; index: number }) {
   const [expanded, setExpanded] = useState(false);
   const scaleValue = useSharedValue(0.95);
@@ -263,6 +267,7 @@ function CourseAnalyticsCard({ course, index }: { course: AttendanceByCourse; in
   );
 }
 
+// ─── Quick Action Button ───────────────────────────────
 function QuickActionButton({ icon, label, onPress, color, badge }: {
   icon: any; label: string; onPress: () => void; color: string; badge?: number;
 }) {
@@ -292,6 +297,7 @@ function QuickActionButton({ icon, label, onPress, color, badge }: {
   );
 }
 
+// ─── Trend Indicator ───────────────────────────────────
 function TrendIndicator({ value, label }: { value: number; label: string }) {
   const isPositive = value > 0;
   const isNeutral = value === 0;
@@ -315,6 +321,7 @@ function TrendIndicator({ value, label }: { value: number; label: string }) {
   );
 }
 
+// ─── Streak Counter ────────────────────────────────────
 function StreakCounter({ streak, maxStreak }: { streak: number; maxStreak: number }) {
   return (
     <View style={styles.streakContainer}>
@@ -349,7 +356,8 @@ function StreakCounter({ streak, maxStreak }: { streak: number; maxStreak: numbe
   );
 }
 
-export default function Attendance() {
+// ─── Main Component ────────────────────────────────────
+export default function AdvancedAttendance() {
   const { user } = useAuth();
   const { data, loading, error, refresh } = useFetch<AttendanceData>('/attendance/me');
   const { data: analyticsData, loading: analyticsLoading } = useFetch<any>(
@@ -374,6 +382,7 @@ export default function Attendance() {
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [leaveDate, setLeaveDate] = useState('');
   const [leaveReason, setLeaveReason] = useState('');
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
   const pollRef = useRef<any>(null);
 
   const sessions = sessionData?.sessions || [];
@@ -486,6 +495,7 @@ export default function Attendance() {
   return (
     <ErrorBoundary>
       <View style={styles.container}>
+        {/* Hero Section */}
         <View style={styles.hero}>
           <Image source={{ uri: bg.attendance }} style={StyleSheet.absoluteFill} contentFit="cover" />
           <LinearGradient colors={['rgba(10,15,13,0.6)', 'rgba(10,15,13,0.95)']} style={StyleSheet.absoluteFill} />
@@ -520,6 +530,7 @@ export default function Attendance() {
           </SafeAreaView>
         </View>
 
+        {/* Tab Navigation */}
         <View style={styles.tabContainer}>
           {(['overview', 'courses', 'calendar', 'trends'] as const).map(tab => (
             <Pressable
@@ -534,6 +545,7 @@ export default function Attendance() {
           ))}
         </View>
 
+        {/* Content */}
         <ScrollView
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.brandPrimary} />}
@@ -546,8 +558,10 @@ export default function Attendance() {
             </Animated.View>
           )}
 
+          {/* Overview Tab */}
           {activeTab === 'overview' && (
             <>
+              {/* Quick Actions */}
               <Text style={styles.sectionTitle}>Quick Actions</Text>
               <View style={styles.quickActionsGrid}>
                 <QuickActionButton
@@ -577,6 +591,7 @@ export default function Attendance() {
                 />
               </View>
 
+              {/* Active Sessions */}
               <Text style={styles.sectionTitle}>Live Sessions</Text>
               {sessionsLoading ? (
                 <Skeleton height={100} radius={theme.radius.lg} />
@@ -659,8 +674,10 @@ export default function Attendance() {
                 </Animated.View>
               )}
 
+              {/* Streak Counter */}
               <StreakCounter streak={streak} maxStreak={maxStreak} />
 
+              {/* Stats Grid */}
               <Text style={styles.sectionTitle}>Overview</Text>
               <View style={styles.statsGrid}>
                 <StatCard
@@ -699,6 +716,7 @@ export default function Attendance() {
             </>
           )}
 
+          {/* Courses Tab */}
           {activeTab === 'courses' && (
             <>
               <Text style={styles.sectionTitle}>Course-wise Attendance</Text>
@@ -712,6 +730,7 @@ export default function Attendance() {
             </>
           )}
 
+          {/* Calendar Tab */}
           {activeTab === 'calendar' && (
             <>
               <View style={styles.monthNavigation}>
@@ -733,10 +752,12 @@ export default function Attendance() {
             </>
           )}
 
+          {/* Trends Tab */}
           {activeTab === 'trends' && (
             <>
               <Text style={styles.sectionTitle}>Attendance Trends</Text>
 
+              {/* Weekly Trend Chart (Simplified) */}
               <Card style={styles.trendChart}>
                 <Text style={styles.chartTitle}>Weekly Attendance</Text>
                 <View style={styles.chartBars}>
@@ -752,6 +773,7 @@ export default function Attendance() {
                 </View>
               </Card>
 
+              {/* Method Distribution */}
               <Card style={styles.methodDistribution}>
                 <Text style={styles.chartTitle}>Check-in Methods</Text>
                 <View style={styles.methodGrid}>
@@ -775,6 +797,7 @@ export default function Attendance() {
                 </View>
               </Card>
 
+              {/* Predictions */}
               <Card style={styles.predictionCard}>
                 <View style={styles.predictionHeader}>
                   <Sparkles size={20} color="#6366F1" />
@@ -795,6 +818,7 @@ export default function Attendance() {
             </>
           )}
 
+          {/* Background Auto Check-in */}
           {user?.role === 'student' && (
             <Card style={styles.bgCheckinCard}>
               <View style={styles.bgCheckinHeader}>
@@ -813,6 +837,7 @@ export default function Attendance() {
           )}
         </ScrollView>
 
+        {/* Leave Request Modal */}
         <Modal visible={showLeaveModal} transparent animationType="slide">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
@@ -838,13 +863,40 @@ export default function Attendance() {
                 multiline
                 numberOfLines={3}
               />
-              <Pressable style={styles.submitButton} onPress={() => {
-                setShowLeaveModal(false);
-                flash(true, 'Leave request submitted successfully');
-                setLeaveDate('');
-                setLeaveReason('');
-              }}>
-                <Text style={styles.submitButtonText}>Submit Request</Text>
+              <Pressable
+                style={[styles.submitButton, leaveSubmitting && { opacity: 0.6 }]}
+                disabled={leaveSubmitting}
+                onPress={async () => {
+                  const date = leaveDate.trim();
+                  const reason = leaveReason.trim();
+                  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                    flash(false, 'Enter a date as YYYY-MM-DD');
+                    return;
+                  }
+                  if (!reason) {
+                    flash(false, 'Please enter a reason for leave');
+                    return;
+                  }
+                  setLeaveSubmitting(true);
+                  try {
+                    const r = await api('/attendance/leave-request', {
+                      method: 'POST',
+                      body: JSON.stringify({ date, reason }),
+                    });
+                    setShowLeaveModal(false);
+                    setLeaveDate('');
+                    setLeaveReason('');
+                    flash(true, r?.message || 'Leave request submitted successfully');
+                  } catch (e: any) {
+                    flash(false, e.message || 'Could not submit leave request');
+                  } finally {
+                    setLeaveSubmitting(false);
+                  }
+                }}
+              >
+                <Text style={styles.submitButtonText}>
+                  {leaveSubmitting ? 'Submitting…' : 'Submit Request'}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -865,6 +917,7 @@ const styles = StyleSheet.create({
   heroSubtext: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4, lineHeight: 18 },
   trendRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
 
+  // Ring
   ringContainer: { alignItems: 'center' },
   ringOuter: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
   ringBackground: { position: 'absolute' },
@@ -873,6 +926,7 @@ const styles = StyleSheet.create({
   ringPercentage: { fontSize: 28, fontWeight: '800' },
   ringGrade: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
 
+  // Tabs
   tabContainer: { flexDirection: 'row', backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   tab: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   activeTab: { borderBottomWidth: 2, borderBottomColor: theme.colors.brandPrimary },
@@ -881,10 +935,13 @@ const styles = StyleSheet.create({
 
   content: { padding: theme.spacing.lg, paddingBottom: 100 },
 
+  // Toast
   toast: { flexDirection: 'row', padding: 12, borderRadius: theme.radius.md, marginBottom: theme.spacing.md },
 
+  // Section
   sectionTitle: { fontSize: 16, fontWeight: '800', color: theme.colors.onSurface, marginTop: theme.spacing.xl, marginBottom: theme.spacing.md },
 
+  // Quick Actions
   quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   quickActionContainer: { width: (SCREEN_WIDTH - 48) / 4 },
   quickAction: { alignItems: 'center', backgroundColor: theme.colors.surfaceSecondary, padding: 12, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border },
@@ -893,6 +950,7 @@ const styles = StyleSheet.create({
   quickActionBadge: { position: 'absolute', top: 4, right: 4, backgroundColor: theme.colors.error, borderRadius: 10, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
   quickActionBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 
+  // Sessions
   emptySession: { alignItems: 'center', backgroundColor: theme.colors.surfaceSecondary, padding: theme.spacing.xl, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border },
   emptySessionText: { fontSize: 14, fontWeight: '600', color: theme.colors.onSurface, marginTop: 12 },
   emptySessionSubtext: { fontSize: 12, color: theme.colors.muted, marginTop: 4 },
@@ -917,8 +975,10 @@ const styles = StyleSheet.create({
   autoStatusBanner: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.35)', padding: 12, borderRadius: theme.radius.md, marginBottom: 6 },
   autoStatusText: { flex: 1, color: '#F59E0B', fontSize: 12, fontWeight: '600' },
 
+  // Stats
   statsGrid: { flexDirection: 'row', gap: 12 },
 
+  // Streak
   streakContainer: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg, marginTop: theme.spacing.xl },
   streakHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   streakTitle: { fontSize: 14, fontWeight: '700', color: theme.colors.onSurface },
@@ -934,6 +994,7 @@ const styles = StyleSheet.create({
   streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF3C7', padding: 8, borderRadius: theme.radius.sm, marginTop: 12 },
   streakBadgeText: { fontSize: 12, fontWeight: '600', color: '#92400E' },
 
+  // Courses
   courseCard: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, overflow: 'hidden' },
   courseCardHeader: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.lg },
   courseColorBar: { width: 4, height: 40, borderRadius: 2 },
@@ -953,6 +1014,7 @@ const styles = StyleSheet.create({
   courseDetailLabel: { fontSize: 12, color: theme.colors.muted, flex: 1 },
   courseDetailValue: { fontSize: 12, fontWeight: '700', color: theme.colors.onSurface },
 
+  // Calendar
   monthNavigation: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.md },
   monthTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.onSurface },
   heatmapContainer: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg },
@@ -969,6 +1031,7 @@ const styles = StyleSheet.create({
   heatmapToday: { borderWidth: 2, borderColor: theme.colors.brandPrimary },
   heatmapTodayText: { fontWeight: '800' },
 
+  // Trends
   trendChart: { marginBottom: 12 },
   chartTitle: { fontSize: 14, fontWeight: '700', color: theme.colors.onSurface, marginBottom: 12 },
   chartBars: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 120 },
@@ -989,11 +1052,13 @@ const styles = StyleSheet.create({
   predictionContent: { backgroundColor: theme.colors.surface, padding: 12, borderRadius: theme.radius.md },
   predictionText: { fontSize: 13, color: theme.colors.onSurfaceTertiary, lineHeight: 20 },
 
+  // Trend Indicator
   trendContainer: { alignItems: 'center' },
   trendBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: theme.radius.sm },
   trendValue: { fontSize: 12, fontWeight: '700' },
   trendLabel: { fontSize: 10, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
 
+  // Background Check-in
   bgCheckinCard: { marginTop: theme.spacing.xl },
   bgCheckinHeader: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   bgCheckinTitle: { fontSize: 14, fontWeight: '800', color: theme.colors.onSurface },
@@ -1001,6 +1066,7 @@ const styles = StyleSheet.create({
   enableButton: { backgroundColor: theme.colors.brandTertiary, paddingVertical: 11, borderRadius: theme.radius.pill, alignItems: 'center', marginTop: theme.spacing.md },
   enableButtonText: { color: theme.colors.brand, fontWeight: '800', fontSize: 13 },
 
+  // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: theme.colors.surfaceSecondary, borderTopLeftRadius: theme.radius.xl, borderTopRightRadius: theme.radius.xl, padding: theme.spacing.xxl, paddingBottom: 40 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.lg },

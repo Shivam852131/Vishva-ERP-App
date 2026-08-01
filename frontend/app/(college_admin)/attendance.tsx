@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, Modal, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from '@/src/navigation/router';
-import { MapPin, Calendar, Users, BarChart3, Bell, ChevronRight, Plus, X, Radio, Wifi, Navigation, Clock, CheckCircle, AlertTriangle, Send, Settings, Download, Eye } from 'lucide-react-native';
+import { MapPin, Calendar, Users, BarChart3, Bell, ChevronRight, Plus, X, Radio, Wifi, Navigation, Clock, CheckCircle, AlertTriangle, Send, Settings, Download, Eye, FileText } from 'lucide-react-native';
 import { theme } from '@/src/theme';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import type { Classroom, ClassSchedule, LiveClass, AttendanceReport } from '@/src/types';
@@ -68,6 +68,9 @@ export default function AttendanceManagement() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Attendance Management</Text>
+        <TouchableOpacity onPress={() => router.push('/leave-management')} style={styles.headerBtn}>
+          <FileText size={20} color={theme.colors.text} />
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => setShowReportModal(true)} style={styles.headerBtn}>
           <Settings size={20} color={theme.colors.text} />
         </TouchableOpacity>
@@ -114,7 +117,7 @@ function OverviewTab({ liveData, dailyReport, reports, classrooms, schedules, ro
         </View>
       ) : (
           liveClasses.map((cls: any, i: number) => (
-          <TouchableOpacity key={i} style={styles.liveCard} onPress={() => router.push(`/attendance-live?sid=${cls.session_id || cls.schedule.id}`)}>
+          <TouchableOpacity key={i} style={styles.liveCard} onPress={() => router.push(`/attendance-live-advanced?sid=${cls.session_id || cls.schedule.id}`)}>
             <View style={styles.liveCardHeader}>
               <View style={styles.liveDot} />
               <Text style={styles.liveCourseName}>{cls.schedule.course_name}</Text>
@@ -310,7 +313,7 @@ function LiveTab({ liveData, router, onRefresh }: any) {
         </View>
       ) : (
         liveClasses.map((cls: any, i: number) => (
-          <TouchableOpacity key={i} style={styles.liveDetailCard} onPress={() => router.push(`/attendance-live?sid=${cls.session_id || cls.schedule.id}`)}>
+          <TouchableOpacity key={i} style={styles.liveDetailCard} onPress={() => router.push(`/attendance-live-advanced?sid=${cls.session_id || cls.schedule.id}`)}>
             <View style={styles.liveDetailHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.liveDetailCourse} numberOfLines={1}>{cls.schedule.course_name}</Text>
@@ -332,7 +335,7 @@ function LiveTab({ liveData, router, onRefresh }: any) {
                 <Users size={14} color={theme.colors.muted} />
                 <Text style={styles.liveStatText}>{cls.enrolled} enrolled</Text>
               </View>
-              <TouchableOpacity style={styles.viewBtn} onPress={() => router.push(`/attendance-live?sid=${cls.session_id || cls.schedule.id}`)}>
+              <TouchableOpacity style={styles.viewBtn} onPress={() => router.push(`/attendance-live-advanced?sid=${cls.session_id || cls.schedule.id}`)}>
                 <Eye size={14} color={theme.colors.brand} />
                 <Text style={styles.viewBtnText}>View Roll</Text>
               </TouchableOpacity>

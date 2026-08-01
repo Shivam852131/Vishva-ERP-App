@@ -112,12 +112,14 @@ function createSkillsRouter(io) {
 
     const updated = await upsertSkill(req.user._id, req.params.skillKey, { selfRating: clamp(selfRating) });
     if (!updated) return sendError(res, 'Unknown skill.', 404);
+    io.to(roomForUser(req.user._id)).emit('skills:updated', { skillKey: req.params.skillKey, skill: updated });
     res.json(updated);
   });
 
   router.delete('/profile/:skillKey', async (req, res) => {
     const db = getDB();
     await db.collection('student_skills').deleteOne({ studentId: oid(req.user._id), skillKey: req.params.skillKey });
+    io.to(roomForUser(req.user._id)).emit('skills:removed', { skillKey: req.params.skillKey });
     res.json({ success: true });
   });
 
@@ -171,6 +173,7 @@ function createSkillsRouter(io) {
       createdAt: nowIso(),
     };
     const { insertedId } = await db.collection('student_certifications').insertOne(doc);
+    io.to(roomForUser(req.user._id)).emit('skills:certifications-changed', { action: 'added', certification: { id: String(insertedId), ...doc, studentId: String(req.user._id) } });
     res.status(201).json({ id: String(insertedId), ...doc, studentId: String(req.user._id) });
   });
 
@@ -181,6 +184,7 @@ function createSkillsRouter(io) {
       studentId: oid(req.user._id),
     });
     if (!result.deletedCount) return sendError(res, 'Certification not found.', 404);
+    io.to(roomForUser(req.user._id)).emit('skills:certifications-changed', { action: 'removed', certificationId: req.params.id });
     res.json({ success: true });
   });
 
@@ -199,6 +203,7 @@ function createSkillsRouter(io) {
       createdAt: nowIso(),
     };
     const { insertedId } = await db.collection('student_projects').insertOne(doc);
+    io.to(roomForUser(req.user._id)).emit('skills:projects-changed', { action: 'added', project: { id: String(insertedId), ...doc, studentId: String(req.user._id) } });
     res.status(201).json({ id: String(insertedId), ...doc, studentId: String(req.user._id) });
   });
 
@@ -209,6 +214,7 @@ function createSkillsRouter(io) {
       studentId: oid(req.user._id),
     });
     if (!result.deletedCount) return sendError(res, 'Project not found.', 404);
+    io.to(roomForUser(req.user._id)).emit('skills:projects-changed', { action: 'removed', projectId: req.params.id });
     res.json({ success: true });
   });
 

@@ -1,18 +1,28 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Modal, TextInput, Alert } from 'react-native';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl,
+  Modal, TextInput, Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { router } from '@/src/navigation/router';
 import {
-  ArrowLeft, Users, Star, Briefcase, Calendar, Clock, Target,
+  ArrowLeft, Users, Star, Calendar, Clock, Target,
   X, CheckCircle2, Plus, MessageSquare, Search, Globe, Award,
 } from 'lucide-react-native';
 import { useFetch } from '@/src/hooks/useFetch';
 import { api } from '@/src/api';
-import type { Mentor, MentorshipOverview, MentorshipSession, MentorshipGoal } from '@/src/types';
+import { subscribeRealtime } from '@/src/realtime/socket';
+import type {
+  Mentor, MentorshipOverview, MentorshipSession, MentorshipGoal, MentorshipConnection,
+} from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
-import { Card, AsyncView, ChipBtn, Button, ProgressBar, EmptyState, Input } from '@/src/ui';
+import {
+  Card, AsyncView, ChipBtn, Button, ProgressBar, EmptyState, Input,
+} from '@/src/ui';
+
+const POLL_MS = 30_000;
 
 const TABS = [
   { key: 'discover', label: 'Find Mentors' },
@@ -27,6 +37,36 @@ const SORTS = [
   { key: 'experience', label: 'Most experienced' },
 ];
 
+const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  active:   { bg: '#DCFCE7', fg: '#16A34A' },
+  pending:  { bg: '#FEF3C7', fg: '#D97706' },
+  scheduled:{ bg: '#DBEAFE', fg: '#2563EB' },
+  completed:{ bg: '#DCFCE7', fg: '#16A34A' },
+  cancelled:{ bg: '#FEE2E2', fg: '#DC2626' },
+  no_show:  { bg: '#FEE2E2', fg: '#DC2626' },
+};
+
+function statusStyle(s: string) {
+  return STATUS_COLORS[s] || { bg: theme.colors.surfaceTertiary, fg: theme.colors.muted };
+}
+
+// ─── Shared hooks ──────────────────────────────────────────────
+function usePollingRefresh(...refreshers: (() => void)[]) {
+  const interval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshersRef = useRef(refreshers);
+  refreshersRef.current = refreshers;
+
+  useEffect(() => {
+    interval.current = setInterval(() => {
+      refreshersRef.current.forEach(r => r());
+    }, POLL_MS);
+    return () => {
+      if (interval.current) clearInterval(interval.current);
+    };
+  }, []);
+}
+
+// ─── Reusable small components ────────────────────────────────
 function Avatar({ name, size = 46 }: { name: string; size?: number }) {
   const initials = name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
   return (
@@ -37,6 +77,7 @@ function Avatar({ name, size = 46 }: { name: string; size?: number }) {
 }
 
 function Stars({ rating }: { rating: number }) {
+  if (!rating) return null;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
       <Star size={12} color={theme.colors.warning} fill={theme.colors.warning} />
@@ -45,7 +86,16 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
-// ─── Mentor detail + request ─────────────────────────────────────
+function StatusBadge({ status }: { status: string }) {
+  const c = statusStyle(status);
+  return (
+    <View style={[styles.statusBadge, { backgroundColor: c.bg }]}>
+      <Text style={[styles.statusText, { color: c.fg }]}>{status.toUpperCase()}</Text>
+    </View>
+  );
+}
+
+// ─── Mentor detail + request modal ────────────────────────────
 function MentorModal({ mentor, visible, onClose, onRequested }: {
   mentor: Mentor | null;
   visible: boolean;
@@ -55,6 +105,14 @@ function MentorModal({ mentor, visible, onClose, onRequested }: {
   const [goal, setGoal] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setGoal('');
+      setMessage('');
+      setBusy(false);
+    }
+  }, [visible]);
 
   if (!mentor) return null;
 
@@ -205,10 +263,10 @@ function MentorModal({ mentor, visible, onClose, onRequested }: {
   );
 }
 
-// ─── Book session ────────────────────────────────────────────────
+// ─── Book session modal ───────────────────────────────────────
 function BookSessionModal({ visible, connections, onClose, onBooked }: {
   visible: boolean;
-  connections: MentorshipOverview['connections'];
+  connections: MentorshipConnection[];
   onClose: () => void;
   onBooked: () => void;
 }) {
@@ -221,6 +279,16 @@ function BookSessionModal({ visible, connections, onClose, onBooked }: {
   const [busy, setBusy] = useState(false);
 
   const selected = connectionId || active[0]?.id || null;
+
+  useEffect(() => {
+    if (!visible) {
+      setTopic('');
+      setAgenda('');
+      setDaysAhead('2');
+      setDuration('45');
+      setBusy(false);
+    }
+  }, [visible]);
 
   const book = async () => {
     if (!selected) {
@@ -244,8 +312,7 @@ function BookSessionModal({ visible, connections, onClose, onBooked }: {
           durationMinutes: Number(duration) || 45,
         }),
       });
-      setTopic('');
-      setAgenda('');
+      Alert.alert('Session booked', 'Your mentor will confirm the slot.');
       onBooked();
       onClose();
     } catch (e: any) {
@@ -312,15 +379,25 @@ function BookSessionModal({ visible, connections, onClose, onBooked }: {
   );
 }
 
-// ─── Goal creation ───────────────────────────────────────────────
+// ─── Goal creation modal ──────────────────────────────────────
 function GoalModal({ visible, onClose, onCreated }: {
   visible: boolean;
   onClose: () => void;
   onCreated: () => void;
 }) {
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [milestones, setMilestones] = useState(['', '', '']);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setTitle('');
+      setDescription('');
+      setMilestones(['', '', '']);
+      setBusy(false);
+    }
+  }, [visible]);
 
   const create = async () => {
     if (!title.trim()) {
@@ -329,15 +406,16 @@ function GoalModal({ visible, onClose, onCreated }: {
     }
     setBusy(true);
     try {
+      const filled = milestones.map(m => m.trim()).filter(Boolean);
       await api('/mentorship/goals', {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(),
-          milestones: milestones.map(m => m.trim()).filter(Boolean),
+          description: description.trim() || undefined,
+          milestones: filled.length > 0 ? filled : undefined,
         }),
       });
-      setTitle('');
-      setMilestones(['', '', '']);
+      Alert.alert('Goal created', 'Track your progress from the Goals tab.');
       onCreated();
       onClose();
     } catch (e: any) {
@@ -359,6 +437,14 @@ function GoalModal({ visible, onClose, onCreated }: {
           </View>
           <ScrollView contentContainerStyle={{ gap: 14, paddingBottom: 20 }}>
             <Input label="Goal" value={title} onChangeText={setTitle} placeholder="e.g. Land a backend internship" />
+            <Input
+              label="Description (optional)"
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Why is this important to you?"
+              multiline
+              style={{ height: 70, textAlignVertical: 'top' }}
+            />
             <Text style={styles.inputLabel}>Milestones</Text>
             {milestones.map((milestone, index) => (
               <Input
@@ -380,7 +466,62 @@ function GoalModal({ visible, onClose, onCreated }: {
   );
 }
 
-// ─── Screen ──────────────────────────────────────────────────────
+// ─── Cancel session confirmation modal ────────────────────────
+function CancelSessionModal({ visible, session, onClose, onCancelled }: {
+  visible: boolean;
+  session: MentorshipSession | null;
+  onClose: () => void;
+  onCancelled: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  if (!session) return null;
+
+  const cancel = async () => {
+    setBusy(true);
+    try {
+      await api(`/mentorship/sessions/${session.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'cancelled' }),
+      });
+      Alert.alert('Session cancelled');
+      onCancelled();
+      onClose();
+    } catch (e: any) {
+      Alert.alert('Could not cancel', e?.message || 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.sheetBackdrop}>
+        <View style={[styles.sheet, { maxHeight: '40%' }]}>
+          <View style={styles.modalHeaderPlain}>
+            <Text style={styles.modalTitle}>Cancel session?</Text>
+            <Pressable onPress={onClose} accessibilityLabel="Close">
+              <X size={22} color={theme.colors.muted} />
+            </Pressable>
+          </View>
+          <Text style={styles.bodyText}>
+            Are you sure you want to cancel "{session.topic}"?
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+            <View style={{ flex: 1 }}>
+              <Button label="Keep it" variant="secondary" onPress={onClose} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button label={busy ? 'Cancelling...' : 'Cancel session'} loading={busy} onPress={cancel} style={{ backgroundColor: theme.colors.error }} />
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Main screen ──────────────────────────────────────────────
 export default function Mentorship() {
   const [tab, setTab] = useState('discover');
   const [sort, setSort] = useState('relevance');
@@ -388,18 +529,52 @@ export default function Mentorship() {
   const [selected, setSelected] = useState<Mentor | null>(null);
   const [showBook, setShowBook] = useState(false);
   const [showGoal, setShowGoal] = useState(false);
+  const [cancelSession, setCancelSession] = useState<MentorshipSession | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const { data: mentors, loading, error, refresh } = useFetch<Mentor[]>(`/mentorship/mentors?sort=${sort}`);
-  const { data: overview, refresh: refreshOverview } = useFetch<MentorshipOverview>('/mentorship/overview');
-  const { data: sessions, refresh: refreshSessions } = useFetch<MentorshipSession[]>('/mentorship/sessions');
-  const { data: goals, refresh: refreshGoals } = useFetch<MentorshipGoal[]>('/mentorship/goals');
+  const {
+    data: mentors, loading: mentorsLoading, error: mentorsError, refresh: refreshMentors,
+  } = useFetch<Mentor[]>(`/mentorship/mentors?sort=${sort}`);
 
-  const refreshAll = () => {
-    refresh();
+  const {
+    data: overview, loading: overviewLoading, refresh: refreshOverview,
+  } = useFetch<MentorshipOverview>('/mentorship/overview');
+
+  const {
+    data: sessions, loading: sessionsLoading, refresh: refreshSessions,
+  } = useFetch<MentorshipSession[]>('/mentorship/sessions');
+
+  const {
+    data: goals, loading: goalsLoading, refresh: refreshGoals,
+  } = useFetch<MentorshipGoal[]>('/mentorship/goals');
+
+  const refreshAll = useCallback(() => {
+    refreshMentors();
     refreshOverview();
     refreshSessions();
     refreshGoals();
-  };
+  }, [refreshMentors, refreshOverview, refreshSessions, refreshGoals]);
+
+  // Auto-refresh polling
+  usePollingRefresh(refreshMentors, refreshOverview, refreshSessions, refreshGoals);
+
+  // Real-time socket events
+  useEffect(() => {
+    const unsubs = [
+      subscribeRealtime('mentorship:request-accepted', () => refreshAll()),
+      subscribeRealtime('mentorship:session-booked', () => refreshAll()),
+    ];
+    return () => unsubs.forEach(u => u());
+  }, [refreshAll]);
+
+  // Pull-to-refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    refreshAll();
+    // Give hooks time to re-fetch
+    await new Promise(r => setTimeout(r, 600));
+    setRefreshing(false);
+  }, [refreshAll]);
 
   const visibleMentors = useMemo(() => {
     const list = mentors || [];
@@ -421,20 +596,32 @@ export default function Mentorship() {
   };
 
   const completeSession = async (session: MentorshipSession) => {
-    try {
-      await api(`/mentorship/sessions/${session.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'completed' }),
-      });
-      refreshAll();
-    } catch (e: any) {
-      Alert.alert('Could not update', e?.message || 'Please try again.');
-    }
+    Alert.alert(
+      'Mark as completed',
+      'Confirm this session has finished.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Complete',
+          onPress: async () => {
+            try {
+              await api(`/mentorship/sessions/${session.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status: 'completed' }),
+              });
+              refreshAll();
+            } catch (e: any) {
+              Alert.alert('Could not update', e?.message || 'Please try again.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const rateSession = (session: MentorshipSession) => {
     Alert.alert('Rate this session', 'How useful was it?', [
-      ...[5, 4, 3].map(rating => ({
+      ...[5, 4, 3, 2, 1].map(rating => ({
         text: `${rating} star${rating > 1 ? 's' : ''}`,
         onPress: async () => {
           try {
@@ -442,6 +629,7 @@ export default function Mentorship() {
               method: 'POST',
               body: JSON.stringify({ rating }),
             });
+            Alert.alert('Thanks for rating!');
             refreshAll();
           } catch (e: any) {
             Alert.alert('Could not rate', e?.message || 'Please try again.');
@@ -465,11 +653,35 @@ export default function Mentorship() {
     }
   };
 
+  const deleteGoal = async (goal: MentorshipGoal) => {
+    Alert.alert('Delete goal', `Delete "${goal.title}"?`, [
+      { text: 'Keep', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api(`/mentorship/goals/${goal.id}`, { method: 'DELETE' });
+            refreshGoals();
+            refreshOverview();
+          } catch (e: any) {
+            Alert.alert('Could not delete', e?.message || 'Please try again.');
+          }
+        },
+      },
+    ]);
+  };
+
   const stats = overview?.stats;
+
+  const renderRefreshControl = () => (
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.brandPrimary} />
+  );
 
   return (
     <ErrorBoundary>
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
+        {/* Hero */}
         <LinearGradient colors={['#0891B2', '#4F46E5']} style={styles.hero}>
           <View style={styles.heroRow}>
             <Pressable onPress={() => router.back()} testID="back-btn" accessibilityLabel="Go back">
@@ -498,6 +710,7 @@ export default function Mentorship() {
           </View>
         </LinearGradient>
 
+        {/* Tabs */}
         <View style={styles.tabBar}>
           {TABS.map(t => (
             <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tab, tab === t.key && styles.tabActive]}>
@@ -508,6 +721,7 @@ export default function Mentorship() {
           ))}
         </View>
 
+        {/* ── Find Mentors tab ── */}
         {tab === 'discover' && (
           <>
             <View style={styles.searchRow}>
@@ -519,6 +733,11 @@ export default function Mentorship() {
                 placeholder="Search by name, company or skill"
                 placeholderTextColor={theme.colors.muted}
               />
+              {search.length > 0 && (
+                <Pressable onPress={() => setSearch('')} hitSlop={12}>
+                  <X size={14} color={theme.colors.muted} />
+                </Pressable>
+              )}
             </View>
             <View style={styles.filterRow}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: theme.spacing.lg }}>
@@ -530,15 +749,15 @@ export default function Mentorship() {
 
             <ScrollView
               contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100, gap: 12 }}
-              refreshControl={<RefreshControl refreshing={loading} onRefresh={refreshAll} tintColor={theme.colors.brandPrimary} />}
+              refreshControl={renderRefreshControl()}
             >
               <AsyncView
-                loading={loading && !mentors}
-                error={error}
-                onRetry={refresh}
-                empty={!loading && visibleMentors.length === 0}
+                loading={mentorsLoading && !mentors}
+                error={mentorsError}
+                onRetry={refreshMentors}
+                empty={!mentorsLoading && visibleMentors.length === 0}
                 emptyTitle="No mentors found"
-                emptySub="Try a different search."
+                emptySub="Try a different search or sort option."
                 emptyIcon={<Users size={48} color={theme.colors.muted} />}
               >
                 {visibleMentors.map(mentor => (
@@ -564,6 +783,11 @@ export default function Mentorship() {
                           <Text style={styles.chipText}>{skill.name}</Text>
                         </View>
                       ))}
+                      {mentor.expertise.length > 4 && (
+                        <View style={styles.chip}>
+                          <Text style={styles.chipText}>+{mentor.expertise.length - 4}</Text>
+                        </View>
+                      )}
                     </View>
                   </Card>
                 ))}
@@ -572,19 +796,22 @@ export default function Mentorship() {
           </>
         )}
 
+        {/* ── My Mentors tab ── */}
         {tab === 'mine' && (
           <ScrollView
             contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100, gap: 12 }}
-            refreshControl={<RefreshControl refreshing={false} onRefresh={refreshAll} tintColor={theme.colors.brandPrimary} />}
+            refreshControl={renderRefreshControl()}
           >
-            {(overview?.connections || []).length === 0 ? (
-              <EmptyState
-                title="No mentors yet"
-                sub="Find a mentor whose expertise matches your skill gaps."
-                icon={<Users size={48} color={theme.colors.muted} />}
-              />
-            ) : (
-              (overview?.connections || []).map(connection => (
+            <AsyncView
+              loading={overviewLoading && !overview}
+              error={null}
+              onRetry={refreshOverview}
+              empty={!overviewLoading && (overview?.connections || []).length === 0}
+              emptyTitle="No mentors yet"
+              emptySub="Find a mentor whose expertise matches your skill gaps."
+              emptyIcon={<Users size={48} color={theme.colors.muted} />}
+            >
+              {(overview?.connections || []).map(connection => (
                 <Card key={connection.id} style={{ gap: 10 }}>
                   <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
                     <Avatar name={connection.mentor_name} size={42} />
@@ -592,44 +819,47 @@ export default function Mentorship() {
                       <Text style={styles.cardTitle} numberOfLines={1}>{connection.mentor_name}</Text>
                       <Text style={styles.cardSub} numberOfLines={1}>{connection.mentor_headline}</Text>
                     </View>
-                    <View style={[
-                      styles.statusBadge,
-                      { backgroundColor: connection.status === 'active' ? '#DCFCE7' : connection.status === 'pending' ? '#FEF3C7' : theme.colors.surfaceTertiary },
-                    ]}>
-                      <Text style={[
-                        styles.statusText,
-                        { color: connection.status === 'active' ? '#16A34A' : connection.status === 'pending' ? '#D97706' : theme.colors.muted },
-                      ]}>
-                        {connection.status.toUpperCase()}
-                      </Text>
-                    </View>
+                    <StatusBadge status={connection.status} />
                   </View>
                   <View style={styles.goalBox}>
                     <Target size={13} color={theme.colors.brandPrimary} />
                     <Text style={styles.goalBoxText}>{connection.goal}</Text>
                   </View>
-                  <Text style={styles.metaText}>{connection.sessions_count} session{connection.sessions_count === 1 ? '' : 's'} completed</Text>
+                  <Text style={styles.metaText}>
+                    {connection.sessions_count} session{connection.sessions_count === 1 ? '' : 's'} completed
+                  </Text>
                 </Card>
-              ))
-            )}
+              ))}
+            </AsyncView>
           </ScrollView>
         )}
 
+        {/* ── Sessions tab ── */}
         {tab === 'sessions' && (
           <ScrollView
             contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100, gap: 12 }}
-            refreshControl={<RefreshControl refreshing={false} onRefresh={refreshAll} tintColor={theme.colors.brandPrimary} />}
+            refreshControl={renderRefreshControl()}
           >
-            <Button label="Book a session" icon={<Plus size={16} color="#fff" />} onPress={() => setShowBook(true)} />
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label="Book a session"
+                  icon={<Plus size={16} color="#fff" />}
+                  onPress={() => setShowBook(true)}
+                />
+              </View>
+            </View>
 
-            {(sessions || []).length === 0 ? (
-              <EmptyState
-                title="No sessions booked"
-                sub="Schedule time with an active mentor."
-                icon={<Calendar size={48} color={theme.colors.muted} />}
-              />
-            ) : (
-              (sessions || []).map(session => (
+            <AsyncView
+              loading={sessionsLoading && !sessions}
+              error={null}
+              onRetry={refreshSessions}
+              empty={!sessionsLoading && (sessions || []).length === 0}
+              emptyTitle="No sessions booked"
+              emptySub="Schedule time with an active mentor."
+              emptyIcon={<Calendar size={48} color={theme.colors.muted} />}
+            >
+              {(sessions || []).map(session => (
                 <Card key={session.id} style={{ gap: 10 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
                     <View style={styles.sessionIcon}>
@@ -639,17 +869,7 @@ export default function Mentorship() {
                       <Text style={styles.cardTitle} numberOfLines={1}>{session.topic}</Text>
                       <Text style={styles.cardSub} numberOfLines={1}>with {session.mentor_name}</Text>
                     </View>
-                    <View style={[
-                      styles.statusBadge,
-                      { backgroundColor: session.status === 'completed' ? '#DCFCE7' : session.status === 'cancelled' ? '#FEE2E2' : '#DBEAFE' },
-                    ]}>
-                      <Text style={[
-                        styles.statusText,
-                        { color: session.status === 'completed' ? '#16A34A' : session.status === 'cancelled' ? '#DC2626' : '#2563EB' },
-                      ]}>
-                        {session.status.toUpperCase()}
-                      </Text>
-                    </View>
+                    <StatusBadge status={session.status} />
                   </View>
 
                   <View style={styles.metaRow}>
@@ -675,7 +895,18 @@ export default function Mentorship() {
                   )}
 
                   {session.status === 'scheduled' && (
-                    <Button label="Mark completed" variant="secondary" onPress={() => completeSession(session)} />
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <View style={{ flex: 1 }}>
+                        <Button label="Mark completed" variant="secondary" onPress={() => completeSession(session)} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Button
+                          label="Cancel"
+                          variant="ghost"
+                          onPress={() => setCancelSession(session)}
+                        />
+                      </View>
+                    </View>
                   )}
                   {session.status === 'completed' && session.rating == null && (
                     <Button label="Rate this session" variant="secondary" onPress={() => rateSession(session)} />
@@ -687,31 +918,41 @@ export default function Mentorship() {
                     </View>
                   )}
                 </Card>
-              ))
-            )}
+              ))}
+            </AsyncView>
           </ScrollView>
         )}
 
+        {/* ── Goals tab ── */}
         {tab === 'goals' && (
           <ScrollView
             contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100, gap: 12 }}
-            refreshControl={<RefreshControl refreshing={false} onRefresh={refreshAll} tintColor={theme.colors.brandPrimary} />}
+            refreshControl={renderRefreshControl()}
           >
             <Button label="New goal" icon={<Plus size={16} color="#fff" />} onPress={() => setShowGoal(true)} />
 
-            {(goals || []).length === 0 ? (
-              <EmptyState
-                title="No goals yet"
-                sub="Break a career target into milestones you can tick off."
-                icon={<Target size={48} color={theme.colors.muted} />}
-              />
-            ) : (
-              (goals || []).map(goal => (
+            <AsyncView
+              loading={goalsLoading && !goals}
+              error={null}
+              onRetry={refreshGoals}
+              empty={!goalsLoading && (goals || []).length === 0}
+              emptyTitle="No goals yet"
+              emptySub="Break a career target into milestones you can tick off."
+              emptyIcon={<Target size={48} color={theme.colors.muted} />}
+            >
+              {(goals || []).map(goal => (
                 <Card key={goal.id} style={{ gap: 10 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                     <Text style={[styles.cardTitle, { flex: 1 }]}>{goal.title}</Text>
-                    {goal.status === 'completed' && <CheckCircle2 size={18} color={theme.colors.success} />}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {goal.status === 'completed' && <CheckCircle2 size={18} color={theme.colors.success} />}
+                      <Pressable onPress={() => deleteGoal(goal)} hitSlop={8} accessibilityLabel="Delete goal">
+                        <X size={16} color={theme.colors.muted} />
+                      </Pressable>
+                    </View>
                   </View>
+
+                  {goal.description ? <Text style={styles.bodyText}>{goal.description}</Text> : null}
 
                   <ProgressBar value={goal.progress} max={100} height={7} showPct label="Progress" />
 
@@ -731,12 +972,20 @@ export default function Mentorship() {
                       </Text>
                     </Pressable>
                   ))}
+
+                  {goal.status === 'completed' && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
+                      <CheckCircle2 size={13} color={theme.colors.success} />
+                      <Text style={[styles.metaText, { color: theme.colors.success }]}>Goal completed</Text>
+                    </View>
+                  )}
                 </Card>
-              ))
-            )}
+              ))}
+            </AsyncView>
           </ScrollView>
         )}
 
+        {/* Modals */}
         <MentorModal mentor={selected} visible={!!selected} onClose={() => setSelected(null)} onRequested={refreshAll} />
         <BookSessionModal
           visible={showBook}
@@ -745,11 +994,18 @@ export default function Mentorship() {
           onBooked={refreshAll}
         />
         <GoalModal visible={showGoal} onClose={() => setShowGoal(false)} onCreated={refreshAll} />
+        <CancelSessionModal
+          visible={!!cancelSession}
+          session={cancelSession}
+          onClose={() => setCancelSession(null)}
+          onCancelled={refreshAll}
+        />
       </SafeAreaView>
     </ErrorBoundary>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────
 const styles = StyleSheet.create({
   hero: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md, paddingBottom: theme.spacing.lg, gap: theme.spacing.lg },
   heroRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

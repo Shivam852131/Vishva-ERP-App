@@ -381,6 +381,13 @@ function createAssessmentsRouter(io) {
       skill: updatedSkill,
     });
 
+    if (updatedSkill) {
+      io.to(roomForUser(req.user._id)).emit('skills:updated', {
+        skillKey: assessment.skillKey,
+        skill: updatedSkill,
+      });
+    }
+
     const final = await db.collection('assessment_attempts').findOne({ _id: attempt._id });
     res.json({ ...buildResultPayload(assessment, final), skill: updatedSkill });
   });
