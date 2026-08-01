@@ -2,15 +2,10 @@ const { MongoClient, ObjectId } = require('mongodb');
 
 const DB_NAME = process.env.MONGODB_DB || 'test';
 
-function resolveUri() {
-  if (process.env.MONGODB_URI) return process.env.MONGODB_URI;
-  const ATLAS_HOSTS = 'ac-xzethlm-shard-00-00.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-01.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-02.uevx1zw.mongodb.net:27017';
-  const ATLAS_USER = 'shivam32880_db_user';
-  const ATLAS_PASS = 'pT1L0nBwvGLaNRcV';
-  return `mongodb://${ATLAS_USER}:${ATLAS_PASS}@${ATLAS_HOSTS}/${DB_NAME}?authSource=admin&replicaSet=atlas-gbwt42-shard-0&ssl=true`;
-}
-
-const PRIMARY_URI = resolveUri();
+const ATLAS_HOSTS = 'ac-xzethlm-shard-00-00.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-01.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-02.uevx1zw.mongodb.net:27017';
+const ATLAS_USER = 'shivam32880_db_user';
+const ATLAS_PASS = 'pT1L0nBwvGLaNRcV';
+const PRIMARY_URI = `mongodb://${ATLAS_USER}:${ATLAS_PASS}@${ATLAS_HOSTS}/${DB_NAME}?authSource=admin&replicaSet=atlas-gbwt42-shard-0&ssl=true`;
 
 let client = null;
 let db = null;
@@ -19,8 +14,7 @@ let connectedVia = null;
 async function connectDB(retries = 3, delay = 2000) {
   if (db) return db;
 
-  const uriSource = process.env.MONGODB_URI ? 'MONGODB_URI env var' : 'hardcoded fallback';
-  console.log(`[MongoDB] Using ${uriSource}`);
+  console.log(`[MongoDB] Connecting to Atlas cluster...`);
 
   const attempts = [
     { label: 'Atlas', uri: PRIMARY_URI },
