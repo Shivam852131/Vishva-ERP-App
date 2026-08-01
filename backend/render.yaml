@@ -3,7 +3,7 @@ services:
     name: vishva-erp-backend
     runtime: node
     plan: free
-    buildCommand: yum install -y cairo-devel pango-devel libjpeg-turbo-devel giflib-devel librsvg2-devel && npm install
+    buildCommand: npm install --ignore-optional
     startCommand: node src/server.js
     healthCheckPath: /health
     autoDeploy: false

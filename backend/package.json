@@ -15,10 +15,7 @@
     "test": "node test-api.js"
   },
   "dependencies": {
-    "@tensorflow/tfjs": "^4.22.0",
-    "@vladmandic/face-api": "^1.7.15",
     "bcrypt": "^5.1.1",
-    "canvas": "^3.2.3",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -33,6 +30,11 @@
     "socket.io": "^4.8.1",
     "twilio": "^6.0.2",
     "zod": "^3.24.1"
+  },
+  "optionalDependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
+    "@vladmandic/face-api": "^1.7.15",
+    "canvas": "^3.2.3"
   },
   "overrides": {
     "tar": "^7.5.21",
