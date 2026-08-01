@@ -68,8 +68,8 @@ export default function Academics() {
         credits: parseInt(cf.credits, 10) || 3,
         faculty_id: cf.faculty_id || null,
       });
-      if (cEdit) await saveCourseApi(`/admin/courses/${cEdit.id}`, { method: 'PUT', body });
-      else await saveCourseApi('/admin/courses', { method: 'POST', body });
+      if (cEdit) await saveCourseApi(`/courses/${cEdit.id}`, { method: 'PUT', body });
+      else await saveCourseApi('/courses', { method: 'POST', body });
       setCModal(false);
       reloadAll();
     } catch (e: any) { setCErr(e.message); }
@@ -79,7 +79,7 @@ export default function Academics() {
     if (!cDel) { setCDel(true); return; }
     setCErr('');
     try {
-      await deleteCourseApi(`/admin/courses/${cEdit!.id}`, { method: 'DELETE' });
+      await deleteCourseApi(`/courses/${cEdit!.id}`, { method: 'DELETE' });
       setCModal(false);
       reloadAll();
     } catch (e: any) { setCErr(e.message); setCDel(false); }
@@ -96,7 +96,7 @@ export default function Academics() {
     if (!/^\d{2}:\d{2}$/.test(sf.start) || !/^\d{2}:\d{2}$/.test(sf.end)) { setSErr('Time must be HH:MM (e.g. 09:00)'); return; }
     setSErr('');
     try {
-      await saveSlotApi('/admin/timetable', { method: 'POST', body: JSON.stringify(sf) });
+      await saveSlotApi('/timetable', { method: 'POST', body: JSON.stringify(sf) });
       setSModal(false);
       reloadAll();
     } catch (e: any) { setSErr(e.message); }
@@ -104,7 +104,7 @@ export default function Academics() {
 
   const deleteSlot = async (id: string) => {
     if (confirmSlot !== id) { setConfirmSlot(id); return; }
-    try { await deleteSlotApi(`/admin/timetable/${id}`, { method: 'DELETE' }); setConfirmSlot(''); reloadAll(); }
+      try { await deleteSlotApi(`/timetable/${id}`, { method: 'DELETE' }); setConfirmSlot(''); reloadAll(); }
     catch (e) { console.log(e); }
   };
 

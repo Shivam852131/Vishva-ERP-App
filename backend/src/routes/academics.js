@@ -5,7 +5,8 @@ const { sendError, paginationParams, sendPaginated, nowIso } = require('../utils
 
 const router = express.Router();
 
-function serializeCourse(course) {
+function serializeCourse(course, facultyMap) {
+  const faculty = facultyMap && course.facultyId ? facultyMap.get(String(course.facultyId)) : null;
   return {
     id: String(course._id),
     code: course.code,
@@ -13,13 +14,15 @@ function serializeCourse(course) {
     department: course.department || undefined,
     credits: course.credits,
     faculty_id: course.facultyId ? String(course.facultyId) : undefined,
+    faculty_name: faculty ? faculty.name : undefined,
     semester: course.semester || undefined,
     college: course.college || undefined,
   };
 }
 
-function serializeTimetableSlot(slot, courseMap) {
+function serializeTimetableSlot(slot, courseMap, facultyMap) {
   const course = courseMap ? courseMap.get(String(slot.courseId)) : null;
+  const faculty = facultyMap && slot.facultyId ? facultyMap.get(String(slot.facultyId)) : null;
   return {
     id: String(slot._id),
     day: slot.dayOfWeek,
@@ -28,7 +31,7 @@ function serializeTimetableSlot(slot, courseMap) {
     course_id: String(slot.courseId),
     course_name: course ? course.name : undefined,
     course_code: course ? course.code : undefined,
-    faculty_name: course && course.facultyId ? String(course.facultyId) : undefined,
+    faculty_name: faculty ? faculty.name : undefined,
     room: slot.room,
   };
 }
@@ -117,7 +120,13 @@ router.get('/courses', async (req, res) => {
     }
 
     const courses = await db.collection('courses').find(filter).toArray();
-    res.json(courses.map(serializeCourse));
+    const facultyIds = [...new Set(courses.map(c => c.facultyId).filter(Boolean))];
+    const facultyMap = new Map();
+    if (facultyIds.length) {
+      const facultyUsers = await db.collection('users').find({ _id: { $in: facultyIds } }).toArray();
+      for (const u of facultyUsers) facultyMap.set(String(u._id), u);
+    }
+    res.json(courses.map(c => serializeCourse(c, facultyMap)));
   } catch (e) {
     sendError(res, e.message, 500);
   }
@@ -142,7 +151,12 @@ router.post('/courses', requireRole('college_admin', 'super_admin', 'faculty'), 
 
     const result = await db.collection('courses').insertOne(doc);
     doc._id = result.insertedId;
-    res.json(serializeCourse(doc));
+    const facultyMap = new Map();
+    if (doc.facultyId) {
+      const facultyUser = await db.collection('users').findOne({ _id: doc.facultyId });
+      if (facultyUser) facultyMap.set(String(doc.facultyId), facultyUser);
+    }
+    res.json(serializeCourse(doc, facultyMap));
   } catch (e) {
     sendError(res, e.message, 500);
   }
@@ -168,7 +182,12 @@ router.put('/courses/:id', requireRole('college_admin', 'super_admin'), async (r
 
     await db.collection('courses').updateOne({ _id }, { $set: update });
     const updated = await db.collection('courses').findOne({ _id });
-    res.json(serializeCourse(updated));
+    const facultyMap = new Map();
+    if (updated.facultyId) {
+      const facultyUser = await db.collection('users').findOne({ _id: updated.facultyId });
+      if (facultyUser) facultyMap.set(String(updated.facultyId), facultyUser);
+    }
+    res.json(serializeCourse(updated, facultyMap));
   } catch (e) {
     sendError(res, e.message, 500);
   }
@@ -202,7 +221,13 @@ router.get('/timetable', async (req, res) => {
     const slots = await db.collection('timetable_slots').find(filter).toArray();
     const courseIds = [...new Set(slots.map(s => s.courseId))];
     const courseMap = await getCourseMap(db, courseIds);
-    res.json(slots.map(s => serializeTimetableSlot(s, courseMap)));
+    const facultyIds = [...new Set(slots.map(s => s.facultyId).filter(Boolean))];
+    const facultyMap = new Map();
+    if (facultyIds.length) {
+      const facultyUsers = await db.collection('users').find({ _id: { $in: facultyIds } }).toArray();
+      for (const u of facultyUsers) facultyMap.set(String(u._id), u);
+    }
+    res.json(slots.map(s => serializeTimetableSlot(s, courseMap, facultyMap)));
   } catch (e) {
     sendError(res, e.message, 500);
   }
@@ -229,7 +254,12 @@ router.post('/timetable', requireRole('college_admin', 'super_admin'), async (re
     const result = await db.collection('timetable_slots').insertOne(doc);
     doc._id = result.insertedId;
     const courseMap = await getCourseMap(db, [doc.courseId]);
-    res.json(serializeTimetableSlot(doc, courseMap));
+    const facultyMap = new Map();
+    if (doc.facultyId) {
+      const facultyUser = await db.collection('users').findOne({ _id: doc.facultyId });
+      if (facultyUser) facultyMap.set(String(doc.facultyId), facultyUser);
+    }
+    res.json(serializeTimetableSlot(doc, courseMap, facultyMap));
   } catch (e) {
     sendError(res, e.message, 500);
   }
