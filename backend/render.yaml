@@ -3,7 +3,7 @@ services:
     name: vishva-erp-backend
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: yum install -y cairo-devel pango-devel libjpeg-turbo-devel giflib-devel librsvg2-devel && npm install
     startCommand: node src/server.js
     healthCheckPath: /health
     autoDeploy: false
@@ -39,4 +39,10 @@ services:
       - key: PLATFORM_RAZORPAY_WEBHOOK_SECRET
         sync: false
       - key: CORS_ORIGINS
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
         sync: false
