@@ -9,8 +9,12 @@ const ITERATIONS = 100000;
 
 function getMasterKey() {
   const key = process.env.MASTER_ENCRYPTION_KEY;
-  if (!key) throw new Error('MASTER_ENCRYPTION_KEY environment variable is required.');
+  if (!key) throw new Error('MASTER_ENCRYPTION_KEY environment variable is required. Set it in your Render dashboard.');
   return key;
+}
+
+function hasMasterKey() {
+  return !!process.env.MASTER_ENCRYPTION_KEY;
 }
 
 function deriveKey(masterKey, salt) {

@@ -28,5 +28,11 @@ services:
         sync: false
       - key: RAZORPAY_KEY_SECRET
         sync: false
+      - key: MASTER_ENCRYPTION_KEY
+        generateValue: true
+      - key: PLATFORM_RAZORPAY_KEY_ID
+        sync: false
+      - key: PLATFORM_RAZORPAY_KEY_SECRET
+        sync: false
       - key: CORS_ORIGINS
         sync: false
