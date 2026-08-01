@@ -24,7 +24,7 @@ export default function StudentDashboard() {
   const { data: d, loading: dLoading, error: dError, refresh: dRefresh } = useFetch<StudentDashboardData>('/dashboard/student');
   const { data: notifs, refresh: refreshNotifs } = useFetch<Notification[]>('/notifications');
   const { data: rems, refresh: refreshRems } = useFetch<AiReminder[]>('/reminders');
-  const { data: analytics, refresh: refreshAnalytics } = useFetch<any>('/analytics/dashboard/student');
+  const { data: analytics, refresh: refreshAnalytics } = useFetch<any>('/analytics/student');
   const [refreshing, setRefreshing] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const animDone = useRef(false);

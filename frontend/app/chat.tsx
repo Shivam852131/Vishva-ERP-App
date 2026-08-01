@@ -26,7 +26,7 @@ export default function Chat() {
   const loadMessages = useCallback(async (userId: string) => {
     setMsgsLoading(true);
     try {
-      const data = await api<ChatMessage[]>(`/chat/${userId}`);
+      const data = await api<ChatMessage[]>(`/chat/messages/${userId}`);
       setMsgs(data || []);
     } catch {
       setMsgs([]);
@@ -57,7 +57,7 @@ export default function Chat() {
     const t = input.trim();
     setInput('');
     try {
-      const doc = await sendMsg('/chat/send', { method: 'POST', body: JSON.stringify({ to_user_id: sel.id, message: t }) });
+      const doc = await sendMsg('/chat/messages', { method: 'POST', body: JSON.stringify({ receiverId: sel.id, content: t }) });
       if (doc) setMsgs(m => [...m, doc]);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e: any) {

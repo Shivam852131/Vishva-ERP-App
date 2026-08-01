@@ -224,7 +224,7 @@ export default function ChatTab() {
 
   const { mutate: sendMsg, loading } = useMutate<{ reply: string }>();
   const { data: historyData, loading: historyLoading, refresh: refreshHistory } = useFetch<HistoryEntry[]>(
-    showHistory ? `/ai/history/${sessionRef.current}` : null,
+    showHistory ? `/ai/sessions/${sessionRef.current}/messages` : null,
   );
   const { data: sessionsData, refresh: refreshSessions } = useFetch<ChatSession[]>('/ai/sessions');
 
@@ -299,7 +299,7 @@ export default function ChatTab() {
     try {
       let reply: string;
       if (persona === 'doubt' || img) {
-        const r = await sendMsg('/ai/doubt', {
+        const r = await sendMsg('/ai/doubt-solver', {
           method: 'POST',
           body: JSON.stringify({
             session_id: sessionRef.current,

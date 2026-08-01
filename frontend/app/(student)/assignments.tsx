@@ -41,9 +41,9 @@ export default function Assignments() {
   const submit = async () => {
     if (!sel || !text.trim()) return;
     try {
-      await submitAssign('/assignments/submit', {
+      await submitAssign(`/assignments/${sel.id}/submit`, {
         method: 'POST',
-        body: JSON.stringify({ assignment_id: sel.id, content: text }),
+        body: JSON.stringify({ content: text }),
       });
       setSel(null);
       setText('');

@@ -19,15 +19,15 @@ export default function AttendanceManagement() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [selectedDay, setSelectedDay] = useState(new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
 
-  const { data: classrooms, loading: classroomsLoading, refresh: refreshClassrooms } = useFetch<Classroom[]>('/admin/classrooms');
-  const { data: schedules, loading: schedulesLoading, refresh: refreshSchedules } = useFetch<ClassSchedule[]>('/admin/schedules');
-  const { data: liveData, loading: liveLoading, refresh: refreshLive } = useFetch<any>('/admin/attendance/live');
-  const { data: dailyReport, refresh: refreshDaily } = useFetch<any>('/admin/attendance/daily');
-  const { data: reports, loading: reportsLoading, refresh: refreshReports } = useFetch<AttendanceReport>('/admin/attendance/reports?days=30');
+  const { data: classrooms, loading: classroomsLoading, refresh: refreshClassrooms } = useFetch<Classroom[]>('/classrooms');
+  const { data: schedules, loading: schedulesLoading, refresh: refreshSchedules } = useFetch<ClassSchedule[]>('/schedules');
+  const { data: liveData, loading: liveLoading, refresh: refreshLive } = useFetch<any>('/attendance/live');
+  const { data: dailyReport, refresh: refreshDaily } = useFetch<any>('/attendance/daily');
+  const { data: reports, loading: reportsLoading, refresh: refreshReports } = useFetch<AttendanceReport>('/attendance/reports?days=30');
   const { data: courses } = useFetch<any[]>('/courses');
   const { data: facultyList } = useFetch<any[]>('/admin/users?role=faculty');
-  const { mutate: _createClassroom } = useMutate('/admin/classrooms');
-  const { mutate: _createSchedule } = useMutate('/admin/schedules');
+  const { mutate: _createClassroom } = useMutate('/classrooms');
+  const { mutate: _createSchedule } = useMutate('/schedules');
   const { mutate: sendAbsentNotifications } = useMutate('/admin/notifications/absentees');
 
   const createClassroom = useCallback(async (data: any) => {

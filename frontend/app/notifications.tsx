@@ -169,7 +169,7 @@ export default function NotificationsScreen() {
 
   const handleMarkRead = async (id: string) => {
     setReadState(prev => ({ ...prev, [id]: true }));
-    try { await markReadMutate(`/notifications/${id}/read`, { method: 'POST' }); } catch {}
+    try { await markReadMutate(`/notifications/read/${id}`, { method: 'POST' }); } catch {}
   };
 
   const handleMarkAllRead = async () => {

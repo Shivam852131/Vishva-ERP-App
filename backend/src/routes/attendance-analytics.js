@@ -3,6 +3,8 @@ const { getDB, oid } = require('../db');
 const { authUser, requireRole } = require('../auth');
 const { sendError, isoDate } = require('../utils');
 
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 function createAttendanceAnalyticsRouter(io) {
   const router = express.Router();
 

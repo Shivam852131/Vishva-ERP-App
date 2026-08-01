@@ -21,7 +21,7 @@ export default function ExamGeneratorScreen() {
   const [tab, setTab] = useState<'bank' | 'generate' | 'generated'>('bank');
   const { data: subjects } = useFetch<string[]>('/question-bank/subjects');
   const { data: questions, refresh: refreshQ } = useFetch<Question[]>('/question-bank');
-  const { data: exams, refresh: refreshE } = useFetch<GeneratedExam[]>('/exams/generated');
+  const { data: exams, refresh: refreshE } = useFetch<GeneratedExam[]>('/generated-exams');
   const { data: stats } = useFetch<any>('/question-bank/stats');
   const { mutate } = useMutate<any>();
 

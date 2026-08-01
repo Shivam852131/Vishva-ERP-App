@@ -44,6 +44,20 @@ function createNotificationsRouter(io) {
     }
   });
 
+  router.post('/notifications/read-all', async (req, res) => {
+    try {
+      const db = getDB();
+      const userId = oid(req.user._id);
+      await db.collection('notifications').updateMany(
+        { readBy: { $ne: userId } },
+        { $addToSet: { readBy: userId } }
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
   router.get('/announcements', async (req, res) => {
     try {
       const db = getDB();

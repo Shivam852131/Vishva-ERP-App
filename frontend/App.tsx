@@ -47,6 +47,7 @@ import CollegeAdminProfileScreen from './app/(college_admin)/profile';
 import CollegeAdminPaymentsScreen from './app/(college_admin)/payments';
 import CollegeAdminSubscriptionScreen from './app/(college_admin)/subscription';
 import CollegeAdminHostelAdminScreen from './app/(college_admin)/hostel-admin';
+import CollegeAdminPaymentSettingsScreen from './app/(college_admin)/payment-settings';
 import SuperAdminDashboardScreen from './app/(super_admin)/dashboard';
 import SuperAdminCollegesScreen from './app/(super_admin)/colleges';
 import SuperAdminUsersScreen from './app/(super_admin)/users';
@@ -328,6 +329,7 @@ export default function App() {
                   <RootStack.Screen name="/(student)/fees" component={StudentFeesScreen} />
                   <RootStack.Screen name="/(faculty)/exam-generator" component={FacultyExamGeneratorScreen} />
                   <RootStack.Screen name="/(college_admin)/payments" component={CollegeAdminPaymentsScreen} />
+                  <RootStack.Screen name="/(college_admin)/payment-settings" component={CollegeAdminPaymentSettingsScreen} />
                   <RootStack.Screen name="/(college_admin)/subscription" component={CollegeAdminSubscriptionScreen} />
                   <RootStack.Screen name="/(college_admin)/hostel-admin" component={CollegeAdminHostelAdminScreen} />
                   <RootStack.Screen name="/analytics" component={AnalyticsScreen} />

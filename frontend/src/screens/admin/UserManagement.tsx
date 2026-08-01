@@ -58,7 +58,7 @@ export default function UserManagement() {
     setMsg('');
     try {
       const next = selected.status === 'suspended' ? 'active' : 'suspended';
-      await updateStatus(`/admin/users/${selected.id}/status`, {
+      await updateStatus(`/admin/users/${selected.id}/toggle-status`, {
         method: 'POST',
         body: JSON.stringify({ status: next }),
       });

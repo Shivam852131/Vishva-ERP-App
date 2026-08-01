@@ -418,6 +418,59 @@ function createAttendanceRouter(io) {
     });
   });
 
+  router.get('/attendance/reports', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const days = parseInt(req.query.days) || 30;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const sinceStr = since.toISOString().split('T')[0];
+
+    const sessions = await db.collection('attendance_sessions')
+      .find({ date: { $gte: sinceStr } })
+      .toArray();
+
+    const sessionIds = sessions.map(s => s._id);
+    const entries = await db.collection('attendance_roll_entries')
+      .find({ sessionId: { $in: sessionIds } })
+      .toArray();
+
+    const records = await db.collection('attendance_records')
+      .find({ date: { $gte: sinceStr } })
+      .toArray();
+
+    const totalSessions = sessions.length;
+    const totalPresent = entries.filter(e => e.status !== 'absent').length;
+    const totalAbsent = entries.filter(e => e.status === 'absent').length;
+    const totalStudentRecords = records.length;
+    const totalStudentPresent = records.filter(r => r.status === 'present' || r.status === 'late').length;
+
+    const courseStats = {};
+    for (const session of sessions) {
+      const cid = String(session.courseId);
+      if (!courseStats[cid]) courseStats[cid] = { course_id: cid, sessions: 0, present: 0, absent: 0 };
+      courseStats[cid].sessions++;
+      const sessionEntries = entries.filter(e => String(e.sessionId) === String(session._id));
+      courseStats[cid].present += sessionEntries.filter(e => e.status !== 'absent').length;
+      courseStats[cid].absent += sessionEntries.filter(e => e.status === 'absent').length;
+    }
+
+    res.json({
+      period_days: days,
+      total_sessions: totalSessions,
+      overall: {
+        present: totalPresent,
+        absent: totalAbsent,
+        percentage: (totalPresent + totalAbsent) > 0 ? Math.round((totalPresent / (totalPresent + totalAbsent)) * 100) : 0,
+      },
+      student_records: {
+        total: totalStudentRecords,
+        present: totalStudentPresent,
+        percentage: totalStudentRecords > 0 ? Math.round((totalStudentPresent / totalStudentRecords) * 100) : 0,
+      },
+      by_course: Object.values(courseStats),
+    });
+  });
+
   router.get('/attendance/course-report', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
     const courseId = oid(req.query.courseId);

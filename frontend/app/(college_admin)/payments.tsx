@@ -23,7 +23,7 @@ export default function PaymentsScreen() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'college_admin' || user?.role === 'super_admin';
   const [tab, setTab] = useState<'receipts' | 'fees'>('receipts');
-  const { data: receipts, refresh: refreshReceipts } = useFetch<Receipt[]>('/payments/receipts');
+  const { data: receipts, refresh: refreshReceipts } = useFetch<Receipt[]>('/fees/receipts');
   const { data: fees, refresh: refreshF } = useFetch<Fee[]>(isAdmin ? '/fees/all' : null);
   const { mutate } = useMutate();
   const [showCreateFee, setShowCreateFee] = useState(false);
@@ -83,7 +83,11 @@ export default function PaymentsScreen() {
 
       <View style={styles.gatewayBanner}>
         <Ionicons name="shield-checkmark" size={16} color="#10b981" />
-        <Text style={styles.gatewayText}>Payments via Razorpay ({RAZORPAY_KEY_ID})</Text>
+        <Text style={styles.gatewayText}>Payments via Razorpay (College Account)</Text>
+        <TouchableOpacity onPress={() => router.push('/(college_admin)/payment-settings' as any)} style={styles.settingsLink}>
+          <Ionicons name="settings" size={14} color="#6366f1" />
+          <Text style={styles.settingsLinkText}>Settings</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.tabBar}>
@@ -209,7 +213,9 @@ const styles = StyleSheet.create({
   summaryAmount: { color: '#10b981', fontSize: 18, fontWeight: '800', marginTop: 4 },
   summaryLabel: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
   gatewayBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(16,185,129,0.1)', marginHorizontal: 16, marginBottom: 12, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(16,185,129,0.2)' },
-  gatewayText: { color: '#10b981', fontSize: 11, fontWeight: '700' },
+  gatewayText: { color: '#10b981', fontSize: 11, fontWeight: '700', flex: 1 },
+  settingsLink: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(99,102,241,0.15)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  settingsLinkText: { color: '#6366f1', fontSize: 11, fontWeight: '700' },
   tabBar: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 8 },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: '#1e293b' },
   tabBtnActive: { backgroundColor: '#1e1b4b', borderWidth: 1, borderColor: '#6366f1' },
