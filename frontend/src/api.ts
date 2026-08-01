@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '@/src/config/env';
 
 export { BASE_URL };
-const PAYMENT_PATHS = ['/fees/pay', '/payments/verify', '/subscription/create-order'];
+const PAYMENT_PATHS = ['/fees/pay', '/college-payments/create-order', '/college-payments/verify', '/payments/verify', '/subscription/create-order'];
 
 type ApiError = Error & { status?: number };
 

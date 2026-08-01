@@ -21,6 +21,9 @@ const libraryRoutes = require('./routes/library');
 const { createCampusRouter } = require('./routes/campus');
 const adminUsersRoutes = require('./routes/admin-users');
 const collegesRoutes = require('./routes/colleges');
+const { router: paymentConfigRoutes } = require('./routes/payment-config');
+const collegePaymentsRoutes = require('./routes/college-payments');
+const { createWebhookRouter } = require('./routes/webhooks');
 const { createAiRouter } = require('./routes/ai');
 const twilioRoutes = require('./routes/twilio');
 const { createLiveClassesRouter } = require('./routes/live-classes');
@@ -28,6 +31,7 @@ const { createPlacementRouter } = require('./routes/placement');
 const { createAssessmentsRouter } = require('./routes/assessments');
 const { createMentorshipRouter } = require('./routes/mentorship');
 const { createSkillsRouter, createCareerRouter } = require('./routes/skills');
+const uploadRoutes = require('./routes/upload');
 
 function createApp(io) {
   const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -44,6 +48,8 @@ function createApp(io) {
 
   app.use(helmet());
   app.use(cors({ origin: corsOrigins.length ? corsOrigins : true, credentials: true }));
+
+  app.use('/api/webhooks/razorpay', express.raw({ type: 'application/json' }));
   app.use(express.json({ limit: '10mb' }));
   app.use(pinoHttp({ logger, autoLogging: { ignore: req => req.url === '/health' } }));
 
@@ -63,6 +69,8 @@ function createApp(io) {
   app.use('/api/auth/register', registerLimiter);
   app.use('/api', apiLimiter);
 
+  app.use('/api', createWebhookRouter(io));
+
   app.use('/api', authMiddleware);
 
   app.use('/api', authRoutes);
@@ -77,6 +85,8 @@ function createApp(io) {
   app.use('/api', createCampusRouter(io));
   app.use('/api/admin/users', adminUsersRoutes);
   app.use('/api', collegesRoutes);
+  app.use('/api', paymentConfigRoutes);
+  app.use('/api', collegePaymentsRoutes);
   app.use('/api/ai', createAiRouter(io));
   app.use('/api', twilioRoutes);
   app.use('/api/live-classes', createLiveClassesRouter(io));
@@ -86,6 +96,7 @@ function createApp(io) {
   app.use('/api/skills', createSkillsRouter(io));
   app.use('/api/career', createCareerRouter(io));
 
+  app.use('/api', uploadRoutes);
   app.use('/api', (_req, res) => {
     sendError(res, 'Route not found.', 404);
   });

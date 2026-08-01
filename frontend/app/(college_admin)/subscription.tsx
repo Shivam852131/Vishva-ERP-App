@@ -37,7 +37,7 @@ export default function SubscriptionScreen() {
       setSelectedPlan(planId);
       const order = await mutate('/subscription/create-order', {
         method: 'POST',
-        body: JSON.stringify({ plan_id: planId }),
+        body: JSON.stringify({ plan: planId }),
       }) as RazorpayOrderResponse;
 
       const plan = PLANS.find(p => p.id === planId);
@@ -56,9 +56,14 @@ export default function SubscriptionScreen() {
         return;
       }
 
-      await mutate('/payments/verify', {
+      await mutate('/subscription/verify', {
         method: 'POST',
-        body: JSON.stringify({ purpose: 'subscription', plan_id: planId, order_id: getRazorpayOrderId(order), ...payment }),
+        body: JSON.stringify({
+          plan: planId,
+          razorpayPaymentId: payment.razorpay_payment_id,
+          razorpayOrderId: getRazorpayOrderId(order),
+          razorpaySignature: payment.razorpay_signature,
+        }),
       });
 
       Alert.alert('Subscription active', `${plan?.name || planId} plan is now active!`, [{ text: 'OK', onPress: () => refresh() }]);

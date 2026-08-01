@@ -68,6 +68,15 @@ async function connectDB(retries = 3, delay = 2000) {
           db.collection('mentorship_connections').createIndex({ studentId: 1, mentorId: 1 }),
           db.collection('mentorship_sessions').createIndex({ studentId: 1, scheduledAt: 1 }),
           db.collection('mentorship_goals').createIndex({ studentId: 1 }),
+          db.collection('payment_configs').createIndex({ collegeId: 1 }, { unique: true }),
+          db.collection('payment_configs').createIndex({ collegeId: 1, status: 1 }),
+          db.collection('fee_payments').createIndex({ collegeId: 1, studentId: 1 }),
+          db.collection('fee_payments').createIndex({ collegeId: 1, status: 1 }),
+          db.collection('fee_payments').createIndex({ razorpayOrderId: 1 }),
+          db.collection('fee_payments').createIndex({ razorpayPaymentId: 1 }),
+          db.collection('fee_payments').createIndex({ orderId: 1 }),
+          db.collection('webhook_logs').createIndex({ collegeId: 1, createdAt: -1 }),
+          db.collection('colleges').createIndex({ code: 1 }, { sparse: true }),
         ]);
 
         console.log(`[MongoDB] Connected to "${DB_NAME}" via ${label}`);

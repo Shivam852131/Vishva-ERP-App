@@ -1,5 +1,28 @@
+const crypto = require('crypto');
 const { getDB, oid } = require('../db');
+const { requireRole } = require('../auth');
+const { encrypt, decrypt } = require('../encryption');
 const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated, roomForUser } = require('../utils');
+const { getCollegePaymentConfig, getCollegeId } = require('./payment-config');
+
+const PLATFORM_KEY_ID = process.env.PLATFORM_RAZORPAY_KEY_ID;
+const PLATFORM_KEY_SECRET = process.env.PLATFORM_RAZORPAY_KEY_SECRET;
+
+function verifyRazorpaySignature(orderId, paymentId, signature, secret) {
+  const body = `${orderId}|${paymentId}`;
+  const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');
+  return expected === signature;
+}
+
+async function resolveCollegeId(user) {
+  const db = getDB();
+  if (user.collegeId) return oid(user.collegeId);
+  if (user.college) {
+    const college = await db.collection('colleges').findOne({ name: user.college });
+    if (college) return college._id;
+  }
+  return null;
+}
 
 function createFeesRouter(io) {
   const { Router } = require('express');
@@ -40,6 +63,12 @@ function createFeesRouter(io) {
       const db = getDB();
       const filter = {};
       if (req.query.status) filter.status = req.query.status;
+
+      if (req.user.role === 'college_admin') {
+        const collegeId = await resolveCollegeId(req.user);
+        if (collegeId) filter.collegeId = collegeId;
+      }
+
       const fees = await db.collection('fees')
         .find(filter)
         .sort({ createdAt: -1 })
@@ -50,12 +79,17 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/fees', async (req, res) => {
+  router.post('/fees', requireRole('college_admin', 'super_admin'), async (req, res) => {
     try {
       const db = getDB();
       const { userId, type, amount, dueDate, semester } = req.body;
+
+      const collegeId = await resolveCollegeId(req.user);
+      if (!collegeId) return sendError(res, 'College not found.', 404);
+
       const fee = {
         userId: oid(userId),
+        collegeId,
         type,
         amount,
         dueDate,
@@ -77,14 +111,60 @@ function createFeesRouter(io) {
     try {
       const db = getDB();
       const { feeId } = req.body;
+
       const fee = await db.collection('fees').findOne({ _id: oid(feeId) });
       if (!fee) return sendError(res, 'Fee not found', 404);
-      const orderId = makeCode('order');
-      res.json({
-        orderId,
+
+      const studentCollegeId = fee.collegeId || await resolveCollegeId(req.user);
+      if (!studentCollegeId) return sendError(res, 'College not configured for payments.', 400);
+
+      const config = await getCollegePaymentConfig(studentCollegeId);
+      if (!config) {
+        return sendError(res, 'College payment not configured. Please contact your administrator.', 400);
+      }
+
+      const auth = Buffer.from(`${config.keyId}:${config.keySecret}`).toString('base64');
+      const baseUrl = config.mode === 'live' ? 'https://api.razorpay.com' : 'https://api.razorpay.com';
+
+      const receipt = `fee_${String(fee._id).slice(-8)}_${Date.now()}`;
+      const orderBody = {
         amount: fee.amount,
         currency: 'INR',
-        key: process.env.RAZORPAY_KEY_ID,
+        receipt,
+        notes: {
+          feeId: String(fee._id),
+          collegeId: String(studentCollegeId),
+          feeType: fee.type || 'fee',
+        },
+      };
+
+      const response = await fetch(`${baseUrl}/v1/orders`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${auth}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(orderBody),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        console.error('[Razorpay] Order creation failed:', err);
+        return sendError(res, `Payment gateway error: ${err.error?.description || 'Failed to create order'}`);
+      }
+
+      const order = await response.json();
+
+      await db.collection('fees').updateOne(
+        { _id: fee._id },
+        { $set: { razorpayOrderId: order.id, updatedAt: nowIso() } }
+      );
+
+      res.json({
+        orderId: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        keyId: config.keyId,
       });
     } catch (e) {
       sendError(res, e);
@@ -95,8 +175,44 @@ function createFeesRouter(io) {
     try {
       const db = getDB();
       const { feeId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
+
+      if (!feeId || !razorpayPaymentId || !razorpayOrderId || !razorpaySignature) {
+        return sendError(res, 'Missing required payment verification fields.');
+      }
+
       const fee = await db.collection('fees').findOne({ _id: oid(feeId) });
       if (!fee) return sendError(res, 'Fee not found', 404);
+
+      const studentCollegeId = fee.collegeId || await resolveCollegeId(req.user);
+      if (!studentCollegeId) return sendError(res, 'College not found.', 404);
+
+      const config = await getCollegePaymentConfig(studentCollegeId);
+      if (!config) {
+        return sendError(res, 'College payment configuration not found.', 400);
+      }
+
+      const isValid = verifyRazorpaySignature(razorpayOrderId, razorpayPaymentId, razorpaySignature, config.keySecret);
+      if (!isValid) {
+        return sendError(res, 'Payment signature verification failed. Payment may be tampered with.', 403);
+      }
+
+      const paymentRecord = {
+        collegeId: studentCollegeId,
+        studentId: fee.userId,
+        feeId: fee._id,
+        amount: fee.amount,
+        currency: 'INR',
+        feeType: fee.type,
+        academicYear: fee.semester || null,
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature,
+        status: 'captured',
+        receipt: `fee_${String(fee._id).slice(-8)}_${Date.now()}`,
+        paidAt: nowIso(),
+        createdAt: nowIso(),
+      };
+      await db.collection('fee_payments').insertOne(paymentRecord);
 
       await db.collection('fees').updateOne(
         { _id: oid(feeId) },
@@ -106,6 +222,7 @@ function createFeesRouter(io) {
       const receipt = {
         feeId: oid(feeId),
         userId: fee.userId,
+        collegeId: studentCollegeId,
         amount: fee.amount,
         razorpayPaymentId,
         date: nowIso(),
@@ -142,11 +259,18 @@ function createFeesRouter(io) {
     }
   });
 
-  router.get('/fees/all', async (req, res) => {
+  router.get('/fees/all', requireRole('college_admin', 'super_admin'), async (req, res) => {
     try {
       const db = getDB();
+      const filter = {};
+
+      if (req.user.role === 'college_admin') {
+        const collegeId = await resolveCollegeId(req.user);
+        if (collegeId) filter.collegeId = collegeId;
+      }
+
       const fees = await db.collection('fees')
-        .find({})
+        .find(filter)
         .sort({ createdAt: -1 })
         .toArray();
       res.json(fees);
@@ -155,12 +279,17 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/fees/create', async (req, res) => {
+  router.post('/fees/create', requireRole('college_admin', 'super_admin'), async (req, res) => {
     try {
       const db = getDB();
       const { student_id, type, amount, due_date, semester } = req.body;
+
+      const collegeId = await resolveCollegeId(req.user);
+      if (!collegeId) return sendError(res, 'College not found.', 404);
+
       const fee = {
         userId: oid(student_id),
+        collegeId,
         type,
         amount,
         dueDate: due_date,
@@ -178,7 +307,7 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/fees/:id/remind', async (req, res) => {
+  router.post('/fees/:id/remind', requireRole('college_admin', 'super_admin'), async (req, res) => {
     try {
       const db = getDB();
       const fee = await db.collection('fees').findOne({ _id: oid(req.params.id) });
@@ -238,6 +367,26 @@ function createFeesRouter(io) {
     }
   });
 
+  router.get('/fees/payments/all', requireRole('college_admin', 'super_admin'), async (req, res) => {
+    try {
+      const db = getDB();
+      const filter = {};
+
+      if (req.user.role === 'college_admin') {
+        const collegeId = await resolveCollegeId(req.user);
+        if (collegeId) filter.collegeId = collegeId;
+      }
+
+      const payments = await db.collection('fee_payments')
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(payments);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
   router.get('/subscription/current', async (req, res) => {
     try {
       const db = getDB();
@@ -256,15 +405,47 @@ function createFeesRouter(io) {
     try {
       const db = getDB();
       const { plan } = req.body;
-      const amounts = { basic: 999, pro: 2999, enterprise: 9999 };
+      const amounts = { basic: 99900, pro: 299900, enterprise: 999900 };
       const amount = amounts[plan];
       if (!amount) return sendError(res, 'Invalid plan', 400);
-      const orderId = makeCode('sub_order');
+
+      if (!PLATFORM_KEY_ID || !PLATFORM_KEY_SECRET) {
+        return sendError(res, 'Platform payment not configured.', 500);
+      }
+
+      const auth = Buffer.from(`${PLATFORM_KEY_ID}:${PLATFORM_KEY_SECRET}`).toString('base64');
+      const receipt = `sub_${String(req.user._id).slice(-8)}_${Date.now()}`;
+
+      const response = await fetch('https://api.razorpay.com/v1/orders', {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${auth}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount,
+          currency: 'INR',
+          receipt,
+          notes: {
+            plan,
+            userId: String(req.user._id),
+            purpose: 'erp_subscription',
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        return sendError(res, `Payment gateway error: ${err.error?.description || 'Failed to create order'}`);
+      }
+
+      const order = await response.json();
+
       res.json({
-        orderId,
-        amount,
-        currency: 'INR',
-        key: process.env.RAZORPAY_KEY_ID,
+        orderId: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        keyId: PLATFORM_KEY_ID,
       });
     } catch (e) {
       sendError(res, e);
@@ -275,9 +456,18 @@ function createFeesRouter(io) {
     try {
       const db = getDB();
       const { plan, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
-      const amounts = { basic: 999, pro: 2999, enterprise: 9999 };
+      const amounts = { basic: 99900, pro: 299900, enterprise: 999900 };
       const amount = amounts[plan];
       if (!amount) return sendError(res, 'Invalid plan', 400);
+
+      if (!PLATFORM_KEY_SECRET) {
+        return sendError(res, 'Platform payment not configured.', 500);
+      }
+
+      const isValid = verifyRazorpaySignature(razorpayOrderId, razorpayPaymentId, razorpaySignature, PLATFORM_KEY_SECRET);
+      if (!isValid) {
+        return sendError(res, 'Payment signature verification failed.', 403);
+      }
 
       const now = new Date();
       const end = new Date(now);
@@ -291,6 +481,7 @@ function createFeesRouter(io) {
         endDate: end.toISOString(),
         amount,
         razorpayOrderId,
+        razorpayPaymentId,
         createdAt: nowIso(),
       };
 

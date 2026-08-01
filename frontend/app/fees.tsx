@@ -54,7 +54,7 @@ export default function Fees() {
     try {
       const order = await doPay('/fees/pay', {
         method: 'POST',
-        body: JSON.stringify({ fee_id: pay.id }),
+        body: JSON.stringify({ feeId: pay.id }),
       }) as RazorpayOrderResponse;
 
       const payment = await openRazorpayCheckout({
@@ -75,13 +75,13 @@ export default function Fees() {
         return;
       }
 
-      await doPay('/payments/verify', {
+      await doPay('/fees/verify', {
         method: 'POST',
         body: JSON.stringify({
-          purpose: 'fee',
-          fee_id: pay.id,
-          order_id: getRazorpayOrderId(order),
-          ...payment,
+          feeId: pay.id,
+          razorpayOrderId: getRazorpayOrderId(order),
+          razorpayPaymentId: payment.razorpay_payment_id,
+          razorpaySignature: payment.razorpay_signature,
         }),
       });
 

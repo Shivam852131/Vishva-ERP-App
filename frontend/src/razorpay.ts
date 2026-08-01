@@ -7,10 +7,12 @@ export type RazorpayOrderResponse = {
   id?: string;
   order_id?: string;
   razorpay_order_id?: string;
+  orderId?: string;
   amount?: number;
   currency?: string;
   key?: string;
   key_id?: string;
+  keyId?: string;
   name?: string;
   description?: string;
   receipt?: string;
@@ -48,7 +50,7 @@ declare global {
 }
 
 export function getRazorpayOrderId(order?: RazorpayOrderResponse | null) {
-  return order?.razorpay_order_id || order?.order_id || order?.id || '';
+  return order?.razorpay_order_id || order?.order_id || order?.orderId || order?.id || '';
 }
 
 function getPaymentUrl(order: RazorpayOrderResponse) {
@@ -128,7 +130,7 @@ export async function openRazorpayCheckout({
     }
 
     const checkout = new window.Razorpay({
-      key: order.key_id || order.key || RAZORPAY_KEY_ID,
+      key: order.key_id || order.keyId || order.key || RAZORPAY_KEY_ID,
       amount: order.amount,
       currency: order.currency || 'INR',
       name,
