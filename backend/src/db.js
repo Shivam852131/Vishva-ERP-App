@@ -1,10 +1,7 @@
 const { MongoClient, ObjectId } = require('mongodb');
 
 const DB_NAME = process.env.MONGODB_DB || 'test';
-const LOCAL_URI = process.env.MONGODB_LOCAL_URI || 'mongodb://127.0.0.1:27017';
 
-// Production: use MONGODB_URI env var
-// Fallback: hardcoded Atlas direct connection for local dev
 function resolveUri() {
   if (process.env.MONGODB_URI) return process.env.MONGODB_URI;
   const ATLAS_HOSTS = 'ac-xzethlm-shard-00-00.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-01.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-02.uevx1zw.mongodb.net:27017';
@@ -26,8 +23,7 @@ async function connectDB(retries = 3, delay = 2000) {
   console.log(`[MongoDB] Using ${uriSource}`);
 
   const attempts = [
-    { label: 'Primary', uri: PRIMARY_URI },
-    { label: 'Local', uri: LOCAL_URI },
+    { label: 'Atlas', uri: PRIMARY_URI },
   ];
 
   for (const { label, uri } of attempts) {
@@ -79,7 +75,7 @@ async function connectDB(retries = 3, delay = 2000) {
           db.collection('fee_payments').createIndex({ razorpayPaymentId: 1 }),
           db.collection('fee_payments').createIndex({ orderId: 1 }),
           db.collection('webhook_logs').createIndex({ collegeId: 1, createdAt: -1 }),
-          db.collection('colleges').createIndex({ code: 1 }, { sparse: true }),
+          db.collection('colleges').createIndex({ code: 1 }, { unique: true }),
         ]);
 
         console.log(`[MongoDB] Connected to "${DB_NAME}" via ${label}`);
