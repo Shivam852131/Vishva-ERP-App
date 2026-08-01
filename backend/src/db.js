@@ -4,13 +4,10 @@ const DB_NAME = process.env.MONGODB_DB || 'test';
 const LOCAL_URI = process.env.MONGODB_LOCAL_URI || 'mongodb://127.0.0.1:27017';
 
 // Production: use MONGODB_URI env var (Render sets this to Atlas SRV string)
-// Fallback: hardcoded direct connection for local development
+// Fallback: hardcoded SRV connection for local development
 function resolveUri() {
   if (process.env.MONGODB_URI) return process.env.MONGODB_URI;
-  const ATLAS_HOSTS = 'ac-xzethlm-shard-00-00.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-01.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-02.uevx1zw.mongodb.net:27017';
-  const ATLAS_USER = 'shivam32880_db_user';
-  const ATLAS_PASS = 'pT1L0nBwvGLaNRcV';
-  return `mongodb://${ATLAS_USER}:${ATLAS_PASS}@${ATLAS_HOSTS}/${DB_NAME}?authSource=admin&replicaSet=atlas-gbwt42-shard-0&ssl=true&compressors=zlib`;
+  return `mongodb+srv://shivam32880_db_user:pT1L0nBwvGLaNRcV@atlas-gbwt42.mongodb.net/${DB_NAME}?retryWrites=true&w=majority`;
 }
 
 const PRIMARY_URI = resolveUri();
