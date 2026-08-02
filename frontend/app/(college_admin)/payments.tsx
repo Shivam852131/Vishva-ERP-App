@@ -164,7 +164,7 @@ export default function PaymentsScreen() {
         {/* Gateway Banner */}
         <View style={styles.gatewayBanner}>
           <CheckCircle size={14} color="#10B981" />
-          <Text style={styles.gatewayText}>Payments via Razorpay (College Account)</Text>
+          <Text style={styles.gatewayText} numberOfLines={1}>Payments via Razorpay (College Account)</Text>
           <TouchableOpacity onPress={() => router.push('/(college_admin)/payment-settings' as any)}>
             <Text style={styles.gatewayLink}>Settings</Text>
           </TouchableOpacity>
@@ -244,7 +244,7 @@ export default function PaymentsScreen() {
                 <View style={styles.receiptRow}>
                   <View style={[styles.statusDot, { backgroundColor: r.status === 'paid' ? '#10B981' : '#F59E0B' }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.receiptType}>{r.type === 'subscription' ? 'Subscription' : 'Fee Payment'}</Text>
+                    <Text style={styles.receiptType} numberOfLines={1}>{r.type === 'subscription' ? 'Subscription' : 'Fee Payment'}</Text>
                     <Text style={styles.receiptDate}>{new Date(r.created_at).toLocaleDateString()}</Text>
                   </View>
                   <Text style={styles.receiptAmount}>₹{(r.amount / 100).toLocaleString()}</Text>
@@ -263,7 +263,7 @@ export default function PaymentsScreen() {
                 <View style={styles.receiptRow}>
                   <View style={[styles.statusDot, { backgroundColor: r.status === 'paid' ? '#10B981' : '#F59E0B' }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.receiptType}>{r.type === 'subscription' ? 'Subscription' : 'Fee Payment'}</Text>
+                    <Text style={styles.receiptType} numberOfLines={1}>{r.type === 'subscription' ? 'Subscription' : 'Fee Payment'}</Text>
                     <Text style={styles.receiptDate}>{new Date(r.created_at).toLocaleDateString()}</Text>
                   </View>
                   <Text style={styles.receiptAmount}>₹{(r.amount / 100).toLocaleString()}</Text>
@@ -329,7 +329,7 @@ export default function PaymentsScreen() {
                   <Text style={styles.feeAmount}>₹{(f.amount / 100).toLocaleString()}</Text>
                 </View>
                 <View style={styles.feeMeta}>
-                  <Text style={styles.feeMetaText}>Student: {f.student_id.slice(0, 12)}...</Text>
+                  <Text style={styles.feeMetaText} numberOfLines={1}>Student: {f.student_id.slice(0, 12)}...</Text>
                   <Text style={styles.feeMetaText}>Due: {f.due_date || 'N/A'}</Text>
                   <Text style={styles.feeMetaText}>Sem: {f.semester || 'N/A'}</Text>
                 </View>
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
   feeTypeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   feeTypeText: { fontSize: 11, fontWeight: '700' },
   feeAmount: { color: theme.colors.onSurface, fontSize: 16, fontWeight: '700' },
-  feeMeta: { flexDirection: 'row', gap: 12, marginTop: 10 },
+  feeMeta: { flexDirection: 'row', gap: 12, marginTop: 10, flexWrap: 'wrap' },
   feeMetaText: { color: theme.colors.muted, fontSize: 11 },
   feeFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.colors.border },
   feeStatus: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },

@@ -318,7 +318,7 @@ export default function Academics() {
                   <View style={[styles.courseBar, { backgroundColor: c.color || theme.colors.brandPrimary }]} />
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={styles.courseName}>{c.name}</Text>
+                      <Text style={styles.courseName} numberOfLines={1}>{c.name}</Text>
                       <View style={[styles.slotBadge, { backgroundColor: (c.color || theme.colors.brandPrimary) + '15' }]}>
                         <Text style={[styles.slotBadgeTxt, { color: c.color || theme.colors.brandPrimary }]}>{c.slotCount} slots</Text>
                       </View>
@@ -369,8 +369,8 @@ export default function Academics() {
                         <Text style={[styles.timeTxt, { color: theme.colors.muted, fontSize: 10 }]}>{s.end}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.courseName}>{s.course_name}</Text>
-                        <Text style={styles.meta}>
+                        <Text style={styles.courseName} numberOfLines={1}>{s.course_name}</Text>
+                        <Text style={styles.meta} numberOfLines={1}>
                           {s.course_code} · {s.room || 'TBA'}{s.faculty_name ? ` · ${s.faculty_name}` : ''}
                         </Text>
                       </View>
@@ -398,8 +398,8 @@ export default function Academics() {
               <Card key={c.id} style={{ marginBottom: 8 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.courseName}>{c.name}</Text>
-                    <Text style={styles.meta}>{c.code} · {c.credits} credits</Text>
+                    <Text style={styles.courseName} numberOfLines={1}>{c.name}</Text>
+                    <Text style={styles.meta} numberOfLines={1}>{c.code} · {c.credits} credits</Text>
                   </View>
                   <View style={[styles.slotBadge, { backgroundColor: (c.color || theme.colors.brandPrimary) + '15' }]}>
                     <Text style={[styles.slotBadgeTxt, { color: c.color || theme.colors.brandPrimary }]}>{c.slotCount} slots</Text>
@@ -644,7 +644,7 @@ const styles = StyleSheet.create({
   slotDel: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: theme.colors.error, alignItems: 'center', justifyContent: 'center' },
   weekRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   weekDay: { width: 30, fontSize: 12, fontWeight: '700', color: theme.colors.onSurface },
-  weekCount: { width: 24, fontSize: 12, fontWeight: '700', color: theme.colors.onSurface, textAlign: 'right' },
+  weekCount: { minWidth: 24, fontSize: 12, fontWeight: '700', color: theme.colors.onSurface, textAlign: 'right' },
   fab: { position: 'absolute', bottom: 24, right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: theme.colors.brandPrimary, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: theme.colors.surfaceSecondary, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: theme.spacing.xl, maxHeight: '85%' },

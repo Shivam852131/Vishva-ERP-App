@@ -148,8 +148,8 @@ export default function AssessmentsAdmin() {
                     <Card style={{ marginBottom: 8 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.assessTitle}>{a.title}</Text>
-                          <Text style={styles.assessMeta}>{a.skill_name} · {a.total_questions} questions</Text>
+                          <Text style={styles.assessTitle} numberOfLines={1}>{a.title}</Text>
+                          <Text style={styles.assessMeta} numberOfLines={1}>{a.skill_name} · {a.total_questions} questions</Text>
                           <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
                             <View style={[styles.diffBadge, { backgroundColor: (DIFF_COLORS[a.difficulty] || '#6B7280') + '15' }]}>
                               <Text style={[styles.diffBadgeTxt, { color: DIFF_COLORS[a.difficulty] || '#6B7280' }]}>{a.difficulty}</Text>
@@ -419,8 +419,8 @@ const styles = StyleSheet.create({
   statsGridLabel: { fontSize: 11, color: theme.colors.muted, marginTop: 4 },
   diffRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   diffDot: { width: 10, height: 10, borderRadius: 5 },
-  diffLabel: { width: 70, fontSize: 12, fontWeight: '600', color: theme.colors.onSurface },
-  diffCount: { width: 30, fontSize: 13, fontWeight: '800', textAlign: 'right' },
+  diffLabel: { minWidth: 60, fontSize: 12, fontWeight: '600', color: theme.colors.onSurface },
+  diffCount: { minWidth: 30, fontSize: 13, fontWeight: '800', textAlign: 'right' },
   fab: { position: 'absolute', bottom: 24, right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: theme.colors.brandPrimary, alignItems: 'center', justifyContent: 'center', elevation: 6 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: theme.colors.surfaceSecondary, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: theme.spacing.xl, maxHeight: '88%' },

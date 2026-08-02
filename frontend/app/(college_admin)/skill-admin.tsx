@@ -190,7 +190,7 @@ export default function SkillAdmin() {
                         <Text style={[styles.levelBadgeTxt, { color: LEVEL_COLORS[s.level] || '#6B7280' }]}>{s.level}</Text>
                       </View>
                     </View>
-                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
                       <View style={styles.skillMetric}>
                         <Text style={styles.skillMetricVal}>{s.score}%</Text>
                         <Text style={styles.skillMetricLabel}>Score</Text>
@@ -222,7 +222,7 @@ export default function SkillAdmin() {
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.matchTitle}>{m.title}</Text>
-                        <Text style={styles.matchCat}>{m.category} · {m.salary_range}</Text>
+                        <Text style={styles.matchCat} numberOfLines={1}>{m.category} · {m.salary_range}</Text>
                       </View>
                       <View style={styles.matchBadge}>
                         <Text style={styles.matchBadgeTxt}>{m.match}%</Text>
@@ -320,6 +320,7 @@ export default function SkillAdmin() {
                 <Text style={styles.sheetTitle}>Endorse Skill</Text>
                 <Pressable onPress={() => setEndorseModal(false)}><X color={theme.colors.muted} size={22} /></Pressable>
               </View>
+              <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.label}>Skill</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 8 }}>
                 {(catalog as any[]).slice(0, 15).map((s: any) => (
@@ -341,6 +342,7 @@ export default function SkillAdmin() {
               <Pressable onPress={doEndorse} style={styles.cta}>
                 <Text style={styles.ctaTxt}>Endorse</Text>
               </Pressable>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -353,6 +355,7 @@ export default function SkillAdmin() {
                 <Text style={styles.sheetTitle}>Add Certification</Text>
                 <Pressable onPress={() => setCertModal(false)}><X color={theme.colors.muted} size={22} /></Pressable>
               </View>
+              <ScrollView keyboardShouldPersistTaps="handled">
               {[
                 ['Title *', 'title', 'e.g. AWS Solutions Architect'],
                 ['Issuer', 'issuer', 'e.g. Amazon'],
@@ -369,6 +372,7 @@ export default function SkillAdmin() {
               <Pressable onPress={doAddCert} style={styles.cta}>
                 <Text style={styles.ctaTxt}>Add Certification</Text>
               </Pressable>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -381,6 +385,7 @@ export default function SkillAdmin() {
                 <Text style={styles.sheetTitle}>Add Project</Text>
                 <Pressable onPress={() => setProjectModal(false)}><X color={theme.colors.muted} size={22} /></Pressable>
               </View>
+              <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.label}>Title *</Text>
               <TextInput value={projectForm.title} onChangeText={v => setProjectForm(p => ({ ...p, title: v }))} placeholder="Project name" placeholderTextColor={theme.colors.muted} style={styles.input} />
               <Text style={styles.label}>Description</Text>
@@ -394,6 +399,7 @@ export default function SkillAdmin() {
               <Pressable onPress={doAddProject} style={styles.cta}>
                 <Text style={styles.ctaTxt}>Add Project</Text>
               </Pressable>
+              </ScrollView>
             </View>
           </View>
         </Modal>

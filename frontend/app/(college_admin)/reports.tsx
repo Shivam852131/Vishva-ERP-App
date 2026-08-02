@@ -305,7 +305,7 @@ export default function Reports() {
                     <Card key={c.course_id} style={{ marginBottom: 8 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.courseName}>{c.course_name}</Text>
+                          <Text style={styles.courseName} numberOfLines={1}>{c.course_name}</Text>
                           <Text style={styles.courseCode}>{c.course_code}</Text>
                         </View>
                         <View style={[styles.attBadge, { backgroundColor: c.percentage >= 75 ? '#DCFCE7' : c.percentage >= 50 ? '#FEF3C7' : '#FEE2E2' }]}>
@@ -332,7 +332,7 @@ export default function Reports() {
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.alertName}>{s.student_name}</Text>
-                          <Text style={styles.alertMeta}>{s.student_code} · {s.email}</Text>
+                          <Text style={styles.alertMeta} numberOfLines={1}>{s.student_code} · {s.email}</Text>
                         </View>
                         <Text style={[styles.alertPct, { color: s.percentage < 50 ? '#EF4444' : '#F59E0B' }]}>{s.percentage}%</Text>
                       </View>
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
   dateOptionTxt: { fontSize: 11, fontWeight: '600', color: theme.colors.muted },
   dateOptionTxtActive: { color: '#fff' },
   tabBar: { flexDirection: 'row', gap: 8, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm },
-  tabBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
   tabBtnActive: { backgroundColor: theme.colors.brandPrimary, borderColor: theme.colors.brandPrimary },
   tabTxt: { fontSize: 12, fontWeight: '600', color: theme.colors.muted },
   tabTxtActive: { color: '#fff' },
@@ -485,6 +485,6 @@ const styles = StyleSheet.create({
   feeBreakVal: { fontSize: 12, fontWeight: '700', color: theme.colors.onSurface },
   userBreakRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   userBreakIcon: { fontSize: 16, width: 24 },
-  userBreakLabel: { fontSize: 13, fontWeight: '600', color: theme.colors.onSurface, width: 60 },
-  userBreakVal: { fontSize: 14, fontWeight: '800', color: theme.colors.onSurface, width: 40, textAlign: 'right' },
+  userBreakLabel: { fontSize: 13, fontWeight: '600', color: theme.colors.onSurface, minWidth: 60, flex: 1 },
+  userBreakVal: { fontSize: 14, fontWeight: '800', color: theme.colors.onSurface, minWidth: 40, textAlign: 'right' },
 });

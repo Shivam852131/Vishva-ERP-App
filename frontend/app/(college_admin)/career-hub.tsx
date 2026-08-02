@@ -69,7 +69,7 @@ export default function CareerHubAdmin() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <View>
                 <Text style={styles.h1}>Career Hub</Text>
-                <Text style={styles.sub}>Manage career readiness & placement activities</Text>
+                <Text style={styles.sub} numberOfLines={1}>Manage career readiness & placement activities</Text>
               </View>
               <Pressable onPress={() => router.push('/placement' as any)} style={styles.iconBtn}>
                 <Briefcase color={theme.colors.brand} size={18} />
@@ -122,7 +122,7 @@ export default function CareerHubAdmin() {
                   <Card style={{ marginBottom: 12, alignItems: 'center' }}>
                     <Text style={styles.cardTitle}>Overall Readiness</Text>
                     <ProgressRing percentage={stats.readinessScore} size={100} label="Readiness Score" />
-                    <Text style={styles.cardSub}>Based on skills, assessments, applications, portfolio & mentorship</Text>
+                    <Text style={styles.cardSub} numberOfLines={2}>Based on skills, assessments, applications, portfolio & mentorship</Text>
                   </Card>
 
                   {/* Pillars */}
@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
   pillarScore: { fontSize: 20, fontWeight: '800' },
   pillarWeight: { fontSize: 10, color: theme.colors.muted, marginTop: 4 },
   pipelineRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  pipelineStage: { width: 80, fontSize: 11, fontWeight: '600', color: theme.colors.onSurface, textTransform: 'capitalize' },
+  pipelineStage: { minWidth: 70, fontSize: 11, fontWeight: '600', color: theme.colors.onSurface, textTransform: 'capitalize' },
   pipelineCount: { width: 30, fontSize: 13, fontWeight: '800', color: theme.colors.onSurface, textAlign: 'right' },
   recBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: theme.radius.pill, alignSelf: 'flex-start' },
   recBadgeTxt: { fontSize: 9, fontWeight: '800' },
@@ -359,8 +359,8 @@ const styles = StyleSheet.create({
   actionIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   actionTitle: { fontSize: 14, fontWeight: '700', color: theme.colors.onSurface },
   actionSub: { fontSize: 11, color: theme.colors.muted, marginTop: 2 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  statsGridItem: { width: '47%', alignItems: 'center', paddingVertical: theme.spacing.md },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  statsGridItem: { width: '48%', alignItems: 'center', paddingVertical: theme.spacing.md },
   statsGridVal: { fontSize: 24, fontWeight: '800', color: theme.colors.brandPrimary },
   statsGridLabel: { fontSize: 11, color: theme.colors.muted, marginTop: 4 },
 });

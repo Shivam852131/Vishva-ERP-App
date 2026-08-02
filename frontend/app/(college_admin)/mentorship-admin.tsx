@@ -173,7 +173,7 @@ export default function MentorshipAdmin() {
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.mentorName}>{m.name}</Text>
-                          <Text style={styles.mentorHeadline}>{m.headline} · {m.company}</Text>
+                          <Text style={styles.mentorHeadline} numberOfLines={1}>{m.headline} · {m.company}</Text>
                           <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
                             <View style={styles.ratingRow}>
                               <Star size={12} color="#F59E0B" fill="#F59E0B" />
@@ -219,7 +219,7 @@ export default function MentorshipAdmin() {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.connTitle}>{c.mentor_name}</Text>
                         <Text style={styles.connMeta}>Student: {c.student_name}</Text>
-                        <Text style={styles.connMeta}>Goal: {c.goal}</Text>
+                        <Text style={styles.connMeta} numberOfLines={1}>Goal: {c.goal}</Text>
                         <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
                           <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[c.status] || '#6B7280') + '15' }]}>
                             <Text style={[styles.statusBadgeTxt, { color: STATUS_COLORS[c.status] || '#6B7280' }]}>{c.status}</Text>
@@ -257,7 +257,7 @@ export default function MentorshipAdmin() {
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.sessionTitle}>{s.topic}</Text>
-                        <Text style={styles.sessionMeta}>{s.mentor_name} → {s.student_name}</Text>
+                        <Text style={styles.sessionMeta} numberOfLines={1}>{s.mentor_name} → {s.student_name}</Text>
                         <Text style={styles.sessionMeta}>{new Date(s.scheduled_at).toLocaleString()}</Text>
                         <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
                           <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[s.status] || '#6B7280') + '15' }]}>
@@ -298,7 +298,7 @@ export default function MentorshipAdmin() {
                     <Pressable onPress={() => setSelected(null)}><X color={theme.colors.muted} size={22} /></Pressable>
                   </View>
                   <Text style={styles.mentorHeadline}>{selected.headline} · {selected.company}</Text>
-                  <Text style={styles.mentorBio}>{selected.bio}</Text>
+                  <Text style={styles.mentorBio} numberOfLines={4}>{selected.bio}</Text>
 
                   <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
                     <View style={styles.ratingRow}>
@@ -334,7 +334,7 @@ export default function MentorshipAdmin() {
                               <Text style={styles.ratingTxt}>{r.rating}</Text>
                             </View>
                           </View>
-                          <Text style={styles.reviewFeedback}>{r.feedback}</Text>
+                          <Text style={styles.reviewFeedback} numberOfLines={3}>{r.feedback}</Text>
                         </Card>
                       ))}
                     </>

@@ -234,7 +234,7 @@ export default function PlacementsAdmin() {
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <View style={{ flex: 1 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <Text style={styles.driveCompany}>{d.company}</Text>
+                            <Text style={styles.driveCompany} numberOfLines={1}>{d.company}</Text>
                             <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[d.status] || '#6B7280') + '15' }]}>
                               <Text style={[styles.statusBadgeTxt, { color: STATUS_COLORS[d.status] || '#6B7280' }]}>{d.status}</Text>
                             </View>
@@ -287,7 +287,7 @@ export default function PlacementsAdmin() {
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.appName}>{a.student_name || a.student_id}</Text>
-                          <Text style={styles.appMeta}>{a.company} · {a.role}</Text>
+                          <Text style={styles.appMeta} numberOfLines={1}>{a.company} · {a.role}</Text>
                         </View>
                         <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[a.status] || '#6B7280') + '15' }]}>
                           <Text style={[styles.statusBadgeTxt, { color: STATUS_COLORS[a.status] || '#6B7280' }]}>{a.status?.replace(/_/g, ' ')}</Text>
@@ -414,7 +414,7 @@ export default function PlacementsAdmin() {
           <View style={styles.backdrop}>
             <View style={styles.sheet}>
               {selectedApp && (
-                <ScrollView>
+                <ScrollView keyboardShouldPersistTaps="handled">
                   <View style={styles.sheetHeader}>
                     <Text style={styles.sheetTitle}>Application Detail</Text>
                     <Pressable onPress={() => setSelectedApp(null)}><X color={theme.colors.muted} size={22} /></Pressable>
@@ -431,7 +431,7 @@ export default function PlacementsAdmin() {
                       {selectedApp.rounds.map((r: any, i: number) => (
                         <View key={i} style={styles.roundRow}>
                           <View style={[styles.roundDot, { backgroundColor: r.status === 'completed' ? '#10B981' : r.status === 'current' ? '#3B82F6' : '#D1D5DB' }]} />
-                          <Text style={styles.roundName}>{r.name}</Text>
+                          <Text style={styles.roundName} numberOfLines={1}>{r.name}</Text>
                           <Text style={[styles.roundStatus, { color: r.status === 'completed' ? '#10B981' : r.status === 'current' ? '#3B82F6' : '#9CA3AF' }]}>{r.status}</Text>
                         </View>
                       ))}
@@ -487,8 +487,8 @@ const styles = StyleSheet.create({
   appMeta: { fontSize: 12, color: theme.colors.muted, marginTop: 2 },
   appDate: { fontSize: 11, color: theme.colors.muted, marginTop: 6 },
   funnelRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  funnelStage: { width: 100, fontSize: 11, fontWeight: '600', color: theme.colors.onSurface, textTransform: 'capitalize' },
-  funnelCount: { width: 30, fontSize: 13, fontWeight: '800', color: theme.colors.onSurface, textAlign: 'right' },
+  funnelStage: { minWidth: 80, flexShrink: 0, fontSize: 11, fontWeight: '600', color: theme.colors.onSurface, textTransform: 'capitalize' },
+  funnelCount: { minWidth: 30, fontSize: 13, fontWeight: '800', color: theme.colors.onSurface, textAlign: 'right' },
   recruiterName: { fontSize: 14, fontWeight: '700', color: theme.colors.onSurface },
   recruiterCount: { fontSize: 12, fontWeight: '600', color: theme.colors.brandPrimary },
   statsGrid: { flexDirection: 'row', gap: 12 },

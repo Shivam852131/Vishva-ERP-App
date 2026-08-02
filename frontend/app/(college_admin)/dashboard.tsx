@@ -307,7 +307,7 @@ export default function AdminDashboard() {
                 style={styles.linkCard}
               >
                 <LinearGradient colors={[l.color, l.color + 'aa']} style={styles.linkIcon}>{l.icon}</LinearGradient>
-                <Text style={styles.linkLabel}>{l.label}</Text>
+                <Text style={styles.linkLabel} numberOfLines={1}>{l.label}</Text>
               </Pressable>
             ))}
           </View>
@@ -440,7 +440,7 @@ export default function AdminDashboard() {
                     <View key={n.id} style={[styles.notifItem, !n.read && styles.notifItemUnread]}>
                       <View style={[styles.notifDot, { backgroundColor: n.read ? theme.colors.border : theme.colors.brandPrimary }]} />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.notifTitle}>{n.title}</Text>
+                        <Text style={styles.notifTitle} numberOfLines={1}>{n.title}</Text>
                         <Text style={styles.notifBody} numberOfLines={2}>{n.body}</Text>
                         <Text style={styles.notifTime}>{new Date(n.created_at).toLocaleDateString()}</Text>
                       </View>
@@ -474,16 +474,16 @@ const styles = StyleSheet.create({
   quickStatLabel: { fontSize: 9, color: theme.colors.muted, fontWeight: '600' },
   announceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.colors.brandPrimary, marginHorizontal: theme.spacing.lg, paddingVertical: 14, borderRadius: theme.radius.md, ...theme.shadow.md },
   announceTxt: { color: '#fff', fontWeight: '700', fontSize: 14, flex: 1, textAlign: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: theme.spacing.lg, gap: 10 },
-  metricCard: { width: '31%', backgroundColor: theme.colors.surfaceSecondary, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'flex-start', ...theme.shadow.sm },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: theme.spacing.lg, gap: 8 },
+  metricCard: { width: '30%', backgroundColor: theme.colors.surfaceSecondary, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'flex-start', ...theme.shadow.sm },
   metricIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   metricVal: { fontSize: 22, fontWeight: '800', color: theme.colors.onSurface, marginTop: 8 },
   metricLbl: { fontSize: 11, color: theme.colors.muted, fontWeight: '600', marginTop: 2 },
   perfRow: { flexDirection: 'row', gap: 12, paddingHorizontal: theme.spacing.lg },
   perfCard: { flex: 1, alignItems: 'center', paddingVertical: theme.spacing.lg },
   perfNote: { fontSize: 11, color: theme.colors.muted, marginTop: 8, fontWeight: '600' },
-  linkGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: theme.spacing.lg, gap: 10 },
-  linkCard: { width: '23%', alignItems: 'center', gap: 6 },
+  linkGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: theme.spacing.lg, gap: 8 },
+  linkCard: { width: '22%', alignItems: 'center', gap: 6 },
   linkIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', ...theme.shadow.sm },
   linkLabel: { fontSize: 10, fontWeight: '600', color: theme.colors.onSurface, textAlign: 'center' },
   annTitle: { fontSize: 14, fontWeight: '700', color: theme.colors.onSurface },
@@ -499,12 +499,12 @@ const styles = StyleSheet.create({
   healthLabel: { fontSize: 10, color: theme.colors.muted, fontWeight: '600' },
   healthVal: { fontSize: 12, fontWeight: '700' },
   mBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  mSheet: { backgroundColor: theme.colors.surfaceSecondary, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: theme.spacing.xl, paddingBottom: 40 },
+  mSheet: { backgroundColor: theme.colors.surfaceSecondary, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: theme.spacing.xl, paddingBottom: 40, maxHeight: '85%' },
   mHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.md },
   mTitle: { fontSize: 18, fontWeight: '800', color: theme.colors.onSurface },
   mInput: { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: 14, fontSize: 15, color: theme.colors.onSurface, marginTop: 10 },
   mLabel: { color: theme.colors.onSurfaceTertiary, fontSize: 13, fontWeight: '600', marginTop: 12, marginBottom: 6 },
-  audienceRow: { flexDirection: 'row', gap: 8 },
+  audienceRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   audienceBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
   audienceBtnActive: { backgroundColor: theme.colors.brandTertiary, borderColor: theme.colors.brandPrimary },
   audienceBtnTxt: { fontSize: 12, fontWeight: '600', color: theme.colors.muted },
