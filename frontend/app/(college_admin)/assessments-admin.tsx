@@ -2,14 +2,13 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Modal, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  BookOpen, Plus, X, Search, Filter, Eye, Clock, Users, Award, BarChart3,
-  CheckCircle, AlertTriangle, Trophy, Target, TrendingUp, Trash2, Play,
-  ChevronRight, Star, Zap,
+  BookOpen, Plus, X, Search, Clock, BarChart3,
+  CheckCircle, Trophy, Target, TrendingUp, Trash2,
 } from 'lucide-react-native';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
-import { Card, StatCard, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn } from '@/src/ui';
+import { Card, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn } from '@/src/ui';
 
 const DIFF_COLORS: Record<string, string> = { easy: '#10B981', medium: '#F59E0B', hard: '#EF4444' };
 
@@ -19,7 +18,6 @@ export default function AssessmentsAdmin() {
   const { data: leaderboard = [] } = useFetch<any[]>('/assessments/leaderboard');
   const { data: catalog = [] } = useFetch<any[]>('/skills/catalog');
   const { mutate: createAssessment } = useMutate();
-  const { mutate: deleteAssessment } = useMutate();
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'catalog' | 'results' | 'leaderboard' | 'analytics'>('catalog');
   const [filter, setFilter] = useState('all');

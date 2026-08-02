@@ -2,14 +2,13 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Zap, Plus, X, Search, Award, BookOpen, Star, Users, ChevronRight,
-  CheckCircle, TrendingUp, BarChart3, Target, Trash2, Pencil,
-  Shield, Briefcase, GraduationCap, Eye,
+  Zap, Plus, X, Search, Award, BookOpen, ChevronRight,
+  CheckCircle, Shield, Briefcase, Trash2, Pencil,
 } from 'lucide-react-native';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
-import { Card, StatCard, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn } from '@/src/ui';
+import { Card, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn } from '@/src/ui';
 
 const LEVEL_COLORS: Record<string, string> = {
   beginner: '#6B7280', intermediate: '#3B82F6', advanced: '#8B5CF6', expert: '#10B981',
@@ -21,7 +20,6 @@ export default function SkillAdmin() {
   const { data: careerMatches = [] } = useFetch<any[]>('/skills/career-matches');
   const { data: users = [] } = useFetch<any[]>('/admin/users?role=student');
   const { mutate: endorseSkill } = useMutate();
-  const { mutate: updateRating } = useMutate();
   const { mutate: addCert } = useMutate();
   const { mutate: addProject } = useMutate();
   const [refreshing, setRefreshing] = useState(false);

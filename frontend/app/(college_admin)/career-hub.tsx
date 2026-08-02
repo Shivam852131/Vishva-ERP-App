@@ -1,15 +1,14 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Zap, TrendingUp, Users, Target, BookOpen, Award, ChevronRight,
-  Search, Filter, Eye, ArrowUpRight, BarChart3, Briefcase, GraduationCap,
-  Star, AlertTriangle, CheckCircle, Clock, X,
+  BarChart3, Briefcase, X,
 } from 'lucide-react-native';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
-import { useFetch, useMutate } from '@/src/hooks/useFetch';
+import { useFetch } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
-import { Card, StatCard, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn } from '@/src/ui';
+import { Card, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn } from '@/src/ui';
 import { useRouter } from '@/src/navigation/router';
 
 const PILLAR_COLORS: Record<string, string> = {
@@ -29,14 +28,10 @@ export default function CareerHubAdmin() {
   const { data: mentors = [] } = useFetch<any[]>('/mentorship/mentors');
   const { data: skillProfile } = useFetch<any>('/skills/profile');
   const { data: placementStats } = useFetch<any>('/placement/stats');
-  const { mutate: updateSkill } = useMutate();
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'overview' | 'readiness' | 'skills' | 'actions'>('overview');
   const [searchQ, setSearchQ] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
-  const [endorseModal, setEndorseModal] = useState(false);
-  const [endorseSkill, setEndorseSkill] = useState('');
-  const [endorseNote, setEndorseNote] = useState('');
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

@@ -3,13 +3,13 @@ import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Activity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Briefcase, Plus, X, Search, Filter, Eye, ChevronRight, Users, TrendingUp,
-  CheckCircle, Clock, AlertTriangle, Award, ArrowUpRight, Building2, Calendar,
-  Target, BarChart3, Trash2, Pencil, Send, ExternalLink,
+  CheckCircle, Clock, AlertTriangle, Award, Building2, Calendar,
+  Target, BarChart3, Trash2, Pencil, Send,
 } from 'lucide-react-native';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
-import { Card, StatCard, SectionTitle, ProgressBar, EmptyState, ChipBtn } from '@/src/ui';
+import { Card, SectionTitle, ProgressBar, EmptyState, ChipBtn } from '@/src/ui';
 
 const STATUS_COLORS: Record<string, string> = {
   active: '#10B981', open: '#10B981', upcoming: '#3B82F6', closed: '#6B7280',

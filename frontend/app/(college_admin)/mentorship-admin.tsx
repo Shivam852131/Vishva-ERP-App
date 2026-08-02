@@ -3,13 +3,13 @@ import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Activity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Users, Plus, X, Search, Star, Clock, Calendar, Target, Award,
-  ChevronRight, CheckCircle, AlertTriangle, MessageSquare, TrendingUp,
-  BarChart3, Eye, Pencil, Trash2, UserCheck,
+  ChevronRight, CheckCircle, AlertTriangle, MessageSquare,
+  BarChart3, Eye, UserCheck,
 } from 'lucide-react-native';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
-import { Card, StatCard, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn } from '@/src/ui';
+import { Card, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn } from '@/src/ui';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: '#F59E0B', active: '#10B981', completed: '#3B82F6', cancelled: '#EF4444',
@@ -23,7 +23,6 @@ export default function MentorshipAdmin() {
   const { data: overview } = useFetch<any>('/mentorship/overview');
   const { mutate: acceptConn } = useMutate();
   const { mutate: completeConn } = useMutate();
-  const { mutate: updateSession } = useMutate();
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'overview' | 'mentors' | 'connections' | 'sessions'>('overview');
   const [filter, setFilter] = useState('all');
