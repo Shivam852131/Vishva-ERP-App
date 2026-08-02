@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, Pressable, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView,
@@ -11,15 +11,19 @@ import { router } from '@/src/navigation/router';
 import {
   LogIn, UserPlus, Sparkles,
   Mail, Lock, User, ChevronRight, Shield, Eye, EyeOff,
-  BookOpen, Users, Building2, Crown, Smartphone,
+  BookOpen, Users, Building2, Crown, Smartphone, AlertCircle,
 } from 'lucide-react-native';
 import { theme } from '@/src/theme';
 import { useAuth } from '@/src/providers/AuthContext';
 import type { UserRole } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { ViLogo } from '@/src/components/ViLogo';
+import { LOGIN, REGISTER } from '@/constants/testIds';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_MIN = 8;
 
 const DEMO: { role: UserRole; email: string; label: string; icon: React.ReactNode; color: string }[] = [
   { role: 'student', email: 'aarav@campus.edu', label: 'Student', icon: <BookOpen size={14} />, color: '#059669' },
@@ -36,14 +40,34 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState<UserRole>('student');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string; password?: string; confirmPassword?: string }>({});
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const logoScale = useRef(new Animated.Value(0.8)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  const validate = useCallback((): boolean => {
+    const errors: typeof fieldErrors = {};
+    if (mode === 'register') {
+      if (!name.trim()) errors.name = 'Name is required';
+      else if (name.trim().length < 2) errors.name = 'Name must be at least 2 characters';
+    }
+    if (!email.trim()) errors.email = 'Email is required';
+    else if (!EMAIL_RE.test(email.trim())) errors.email = 'Enter a valid email address';
+    if (!password) errors.password = 'Password is required';
+    else if (password.length < PASSWORD_MIN) errors.password = `Password must be at least ${PASSWORD_MIN} characters`;
+    if (mode === 'register') {
+      if (!confirmPassword) errors.confirmPassword = 'Please confirm your password';
+      else if (confirmPassword !== password) errors.confirmPassword = 'Passwords do not match';
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  }, [mode, name, email, password, confirmPassword]);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -75,21 +99,22 @@ export default function Login() {
     return () => pulse.stop();
   }, []);
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
+    if (!validate()) return;
     setLoading(true);
     setErr('');
     try {
       if (mode === 'login') {
-        await login(email, password);
+        await login(email.trim(), password);
       } else {
-        await register(name, email, password, role);
+        await register(name.trim(), email.trim(), password, role);
       }
     } catch (e: any) {
       setErr(e.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
-  };
+  }, [mode, email, password, name, role, login, register, validate]);
 
   return (
     <ErrorBoundary>
@@ -170,9 +195,9 @@ export default function Login() {
               {/* Mode Tabs */}
               <View style={styles.tabBar}>
                 <Pressable
-                  onPress={() => { setMode('login'); setErr(''); }}
+                  onPress={() => { setMode('login'); setErr(''); setFieldErrors({}); }}
                   style={[styles.tab, mode === 'login' && styles.tabActive]}
-                  testID="tab-login"
+                  testID={LOGIN.registerLink}
                   accessibilityLabel="Sign In tab"
                 >
                   <LogIn size={16} color={mode === 'login' ? '#fff' : '#64748B'} />
@@ -181,9 +206,9 @@ export default function Login() {
                   </Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => { setMode('register'); setErr(''); }}
+                  onPress={() => { setMode('register'); setErr(''); setFieldErrors({}); }}
                   style={[styles.tab, mode === 'register' && styles.tabActive]}
-                  testID="tab-register"
+                  testID={REGISTER.loginLink}
                   accessibilityLabel="Register tab"
                 >
                   <UserPlus size={16} color={mode === 'register' ? '#fff' : '#64748B'} />
@@ -199,17 +224,23 @@ export default function Login() {
                   <>
                     <View style={styles.fieldGroup}>
                       <Text style={styles.fieldLabel}>Full Name</Text>
-                      <View style={styles.inputRow}>
-                        <User size={18} color="#64748B" style={styles.inputIcon} />
+                      <View style={[styles.inputRow, fieldErrors.name && styles.inputRowError]}>
+                        <User size={18} color={fieldErrors.name ? '#EF4444' : '#64748B'} style={styles.inputIcon} />
                         <TextInput
                           value={name}
-                          onChangeText={setName}
+                          onChangeText={(t) => { setName(t); if (fieldErrors.name) setFieldErrors((p) => ({ ...p, name: undefined })); }}
                           placeholder="Enter your full name"
                           style={styles.input}
                           placeholderTextColor="#475569"
-                          testID="input-name"
+                          testID={REGISTER.nameInput}
                         />
                       </View>
+                      {fieldErrors.name ? (
+                        <View style={styles.fieldError}>
+                          <AlertCircle size={12} color="#EF4444" />
+                          <Text style={styles.fieldErrorText}>{fieldErrors.name}</Text>
+                        </View>
+                      ) : null}
                     </View>
 
                     <View style={styles.fieldGroup}>
@@ -235,33 +266,39 @@ export default function Login() {
 
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>Email Address</Text>
-                  <View style={styles.inputRow}>
-                    <Mail size={18} color="#64748B" style={styles.inputIcon} />
+                  <View style={[styles.inputRow, fieldErrors.email && styles.inputRowError]}>
+                    <Mail size={18} color={fieldErrors.email ? '#EF4444' : '#64748B'} style={styles.inputIcon} />
                     <TextInput
                       value={email}
-                      onChangeText={setEmail}
+                      onChangeText={(t) => { setEmail(t); if (fieldErrors.email) setFieldErrors((p) => ({ ...p, email: undefined })); }}
                       placeholder="you@campus.edu"
                       autoCapitalize="none"
                       keyboardType="email-address"
                       style={styles.input}
                       placeholderTextColor="#475569"
-                      testID="input-email"
+                      testID={mode === 'login' ? LOGIN.emailInput : REGISTER.emailInput}
                     />
                   </View>
+                  {fieldErrors.email ? (
+                    <View style={styles.fieldError}>
+                      <AlertCircle size={12} color="#EF4444" />
+                      <Text style={styles.fieldErrorText}>{fieldErrors.email}</Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>Password</Text>
-                  <View style={styles.inputRow}>
-                    <Lock size={18} color="#64748B" style={styles.inputIcon} />
+                  <View style={[styles.inputRow, fieldErrors.password && styles.inputRowError]}>
+                    <Lock size={18} color={fieldErrors.password ? '#EF4444' : '#64748B'} style={styles.inputIcon} />
                     <TextInput
                       value={password}
-                      onChangeText={setPassword}
-                      placeholder="Enter your password"
+                      onChangeText={(t) => { setPassword(t); if (fieldErrors.password) setFieldErrors((p) => ({ ...p, password: undefined })); }}
+                      placeholder={mode === 'login' ? 'Enter your password' : `Min ${PASSWORD_MIN} characters`}
                       secureTextEntry={!showPassword}
                       style={[styles.input, { flex: 1 }]}
                       placeholderTextColor="#475569"
-                      testID="input-password"
+                      testID={mode === 'login' ? LOGIN.passwordInput : REGISTER.passwordInput}
                     />
                     <Pressable
                       onPress={() => setShowPassword(!showPassword)}
@@ -275,7 +312,37 @@ export default function Login() {
                       )}
                     </Pressable>
                   </View>
+                  {fieldErrors.password ? (
+                    <View style={styles.fieldError}>
+                      <AlertCircle size={12} color="#EF4444" />
+                      <Text style={styles.fieldErrorText}>{fieldErrors.password}</Text>
+                    </View>
+                  ) : null}
                 </View>
+
+                {mode === 'register' && (
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>Confirm Password</Text>
+                    <View style={[styles.inputRow, fieldErrors.confirmPassword && styles.inputRowError]}>
+                      <Lock size={18} color={fieldErrors.confirmPassword ? '#EF4444' : '#64748B'} style={styles.inputIcon} />
+                      <TextInput
+                        value={confirmPassword}
+                        onChangeText={(t) => { setConfirmPassword(t); if (fieldErrors.confirmPassword) setFieldErrors((p) => ({ ...p, confirmPassword: undefined })); }}
+                        placeholder="Re-enter your password"
+                        secureTextEntry={!showPassword}
+                        style={[styles.input, { flex: 1 }]}
+                        placeholderTextColor="#475569"
+                        testID={REGISTER.passwordConfirmInput}
+                      />
+                    </View>
+                    {fieldErrors.confirmPassword ? (
+                      <View style={styles.fieldError}>
+                        <AlertCircle size={12} color="#EF4444" />
+                        <Text style={styles.fieldErrorText}>{fieldErrors.confirmPassword}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
 
                 {err ? (
                   <View style={styles.errorBox}>
@@ -283,6 +350,18 @@ export default function Login() {
                     <Text style={styles.errorText} testID="error-text">{err}</Text>
                   </View>
                 ) : null}
+
+                {/* Forgot Password (login only) */}
+                {mode === 'login' && (
+                  <Pressable
+                    onPress={() => {}}
+                    style={styles.forgotRow}
+                    testID={LOGIN.forgotPasswordLink}
+                    accessibilityLabel="Forgot password"
+                  >
+                    <Text style={styles.forgotText}>Forgot password?</Text>
+                  </Pressable>
+                )}
 
                 {/* Submit Button */}
                 <Pressable
@@ -292,7 +371,7 @@ export default function Login() {
                     styles.submitBtn,
                     pressed && styles.submitBtnPressed,
                   ]}
-                  testID="submit-btn"
+                  testID={mode === 'login' ? LOGIN.submitButton : REGISTER.submitButton}
                   accessibilityLabel={mode === 'login' ? 'Sign In' : 'Create Account'}
                 >
                   <LinearGradient
@@ -514,8 +593,33 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#F8FAFC',
   },
+  inputRowError: {
+    borderColor: 'rgba(239,68,68,0.5)',
+    backgroundColor: 'rgba(239,68,68,0.05)',
+  },
+  fieldError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+    paddingHorizontal: 4,
+  },
+  fieldErrorText: {
+    color: '#FCA5A5',
+    fontSize: 12,
+    fontWeight: '500',
+  },
   eyeBtn: {
     padding: 4,
+  },
+  forgotRow: {
+    alignItems: 'flex-end',
+    marginTop: 4,
+  },
+  forgotText: {
+    color: '#0EA5E9',
+    fontSize: 13,
+    fontWeight: '600',
   },
   roleGrid: {
     flexDirection: 'row',

@@ -87,4 +87,22 @@ router.get('/auth/me', async (req, res) => {
   res.json(serializeUser(user));
 });
 
+router.put('/auth/profile', async (req, res) => {
+  const user = await authUser(req);
+  if (!user) return sendError(res, 'Authentication required.', 401);
+
+  const db = getDB();
+  const update = {};
+  if (req.body.name !== undefined) update.name = req.body.name;
+  if (req.body.phone !== undefined) update.phone = req.body.phone || null;
+  if (req.body.avatar !== undefined) update.avatar = req.body.avatar || null;
+  if (req.body.department !== undefined) update.department = req.body.department || null;
+  if (req.body.year !== undefined) update.year = req.body.year;
+  update.updatedAt = new Date().toISOString();
+
+  await db.collection('users').updateOne({ _id: user._id }, { $set: update });
+  const updated = await db.collection('users').findOne({ _id: user._id });
+  res.json(serializeUser(updated));
+});
+
 module.exports = router;

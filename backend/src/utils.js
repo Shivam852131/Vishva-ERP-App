@@ -49,6 +49,7 @@ function serializeUser(user) {
     student_id: user.studentCode || user.studentId || undefined,
     year: user.year ?? undefined,
     cgpa: user.cgpa ?? undefined,
+    avatar: user.avatar || undefined,
     status: user.isActive !== undefined ? (user.isActive ? 'active' : 'suspended') : (user.status || 'active'),
   };
 }

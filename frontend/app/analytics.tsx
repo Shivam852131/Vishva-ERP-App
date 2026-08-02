@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { router } from '@/src/navigation/router';
 import {
@@ -46,7 +47,7 @@ export default function AnalyticsScreen() {
 
   return (
     <ErrorBoundary>
-      <View style={styles.screen}>
+      <SafeAreaView edges={['top']} style={styles.screen}>
         {/* Header */}
         <LinearGradient
           colors={['#022C22', '#064E3B']}
@@ -209,7 +210,7 @@ export default function AnalyticsScreen() {
           )}
           </AsyncView>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </ErrorBoundary>
   );
 }
@@ -220,7 +221,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 48,
     paddingBottom: 14,
     paddingHorizontal: 16,
   },

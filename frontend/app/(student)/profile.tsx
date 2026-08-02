@@ -1,12 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { router } from '@/src/navigation/router';
 import {
   LogOut, Award, Calendar, Bell, Users, BookOpen,
   Library, Bus, Home, MessageSquare, ChevronRight, IdCard,
-  ScanFace, FileText,
+  ScanFace, FileText, Pencil,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { theme } from '@/src/theme';
@@ -40,8 +40,23 @@ export default function Profile() {
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
         <ScrollView>
           <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.hero}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarTxt}>{u?.name?.[0] || 'U'}</Text>
+            <View style={styles.avatarWrap}>
+              {u?.avatar ? (
+                <Image source={{ uri: u.avatar }} style={styles.avatarImg} />
+              ) : (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarTxt}>{u?.name?.[0] || 'U'}</Text>
+                </View>
+              )}
+              <Pressable
+                testID="edit-profile-btn"
+                accessibilityLabel="Edit your profile"
+                accessibilityRole="button"
+                onPress={() => router.push('/edit-profile')}
+                style={styles.editBadge}
+              >
+                <Pencil size={14} color="#fff" />
+              </Pressable>
             </View>
             <Text style={styles.name}>{u?.name}</Text>
             <Text style={styles.email}>{u?.email}</Text>
@@ -123,6 +138,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: theme.spacing.xxl,
   },
+  avatarWrap: {
+    position: 'relative',
+  },
+  avatarImg: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.35)',
+    ...theme.shadow.lg,
+  },
   avatar: {
     width: 90,
     height: 90,
@@ -135,6 +161,19 @@ const styles = StyleSheet.create({
     ...theme.shadow.lg,
   },
   avatarTxt: { fontSize: 40, fontWeight: '800', color: '#fff' },
+  editBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: -4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: theme.colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
   name: { color: '#fff', fontSize: 22, fontWeight: '800', marginTop: 12 },
   email: { color: 'rgba(255,255,255,0.85)', marginTop: 4, fontSize: 13 },
   idBadge: {

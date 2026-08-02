@@ -226,7 +226,7 @@ export default function WhatsAppIntegration() {
 
 const styles = StyleSheet.create({
   hero: { marginBottom: 0 },
-  heroGrad: { paddingHorizontal: 16, paddingVertical: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, gap: 10 },
+  heroGrad: { paddingHorizontal: 16, paddingVertical: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 10 },
   heroIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
   heroSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   msgSystem: { backgroundColor: theme.colors.brandTertiary, alignSelf: 'center', alignItems: 'center', borderWidth: 1, borderColor: theme.colors.brand + '20' },
   msgText: { fontSize: 13, lineHeight: 18 },
   msgTime: { fontSize: 9, color: theme.colors.muted, marginTop: 4 },
-  priorityBadge: { position: 'absolute', top: -6, right: 8, backgroundColor: '#EF4444', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
+  priorityBadge: { position: 'absolute', top: -2, right: 8, backgroundColor: '#EF4444', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
   quickReplyRow: { paddingHorizontal: 16, paddingVertical: 8, borderTopWidth: 1, borderTopColor: theme.colors.border },
   quickReplyChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#25D36630' },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, backgroundColor: theme.colors.surfaceSecondary, borderTopWidth: 1, borderTopColor: theme.colors.border },

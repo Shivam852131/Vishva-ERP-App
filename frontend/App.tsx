@@ -101,6 +101,7 @@ import MentorshipScreen from './app/mentorship';
 import SkillProfileScreen from './app/skill-profile';
 import CareerDashboardScreen from './app/career-dashboard';
 import FaceEnrollScreen from './app/face-enroll';
+import EditProfileScreen from './app/edit-profile';
 import { ErrorBoundary } from './src/ErrorBoundary';
 import { navigationRef } from './src/navigation/navigation-ref';
 import { AuthProvider } from './src/providers/AuthContext';
@@ -379,6 +380,7 @@ export default function App() {
                   <RootStack.Screen name="/skill-profile" component={SkillProfileScreen} />
                   <RootStack.Screen name="/career-dashboard" component={CareerDashboardScreen} />
                   <RootStack.Screen name="/face-enroll" component={FaceEnrollScreen} />
+                  <RootStack.Screen name="/edit-profile" component={EditProfileScreen} />
                 </RootStack.Navigator>
               </NavigationContainer>
             </BottomSheetModalProvider>

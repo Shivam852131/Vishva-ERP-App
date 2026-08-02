@@ -158,7 +158,7 @@ export default function ExamGeneratorScreen() {
               <Ionicons name="add-circle" size={32} color="#6366f1" />
             </TouchableOpacity>
           </View>
-          <ScrollView style={{ flex: 1 }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }}>
             {filteredQuestions.map((q) => (
               <View key={q.id} style={styles.qCard}>
                 <View style={styles.qHeader}>
@@ -195,7 +195,7 @@ export default function ExamGeneratorScreen() {
       )}
 
       {tab === 'generate' && (
-        <ScrollView style={{ flex: 1, padding: 16 }}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
           <Text style={styles.sectionTitle}>Generate Exam Paper</Text>
           <Text style={styles.sectionSub}>Select parameters and generate a PDF-ready exam</Text>
 
@@ -251,7 +251,7 @@ export default function ExamGeneratorScreen() {
       )}
 
       {tab === 'generated' && (
-        <ScrollView style={{ flex: 1, padding: 16 }}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
           {(exams || []).map((exam) => (
             <View key={exam.id} style={styles.examCard}>
               <View style={styles.examHeader}>
