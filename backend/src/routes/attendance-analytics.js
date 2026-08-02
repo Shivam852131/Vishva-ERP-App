@@ -616,10 +616,12 @@ function createAttendanceAnalyticsRouter(io) {
         student_id: String(s._id),
         student_code: s.studentCode || '',
         name: s.name || '',
+        student_name: s.name || '',
         email: s.email || '',
         status,
         method: entry?.method || null,
         check_in: checkIn ? checkIn.toISOString() : null,
+        check_in_time: checkIn ? checkIn.toISOString() : null,
         verified: entry?.verified ?? false,
       };
     });

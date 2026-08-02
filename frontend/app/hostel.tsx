@@ -28,7 +28,7 @@ const MESS_MENU: Record<string, { label: string; time: string; items: string[]; 
 const COMPLAINT_CATEGORIES = ['Plumbing', 'Electrical', 'Furniture', 'Cleanliness', 'Network/WiFi', 'Security', 'Mess', 'Other'];
 const PRIORITIES = ['low', 'medium', 'high'] as const;
 
-type Tab = 'overview' | 'myroom' | 'mess' | 'complaints' | 'notices';
+type Tab = 'overview' | 'myroom' | 'mess' | 'complaints' | 'notices' | 'gatepass';
 
 export default function HostelManagementScreen() {
   const { user } = useAuth();
@@ -41,6 +41,11 @@ export default function HostelManagementScreen() {
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedHostel, setExpandedHostel] = useState<string | null>(null);
+  const [gateReason, setGateReason] = useState('');
+  const [gateDestination, setGateDestination] = useState('');
+  const [gateOutTime, setGateOutTime] = useState('');
+  const [gateReturn, setGateReturn] = useState('');
+  const [selectedHostelId, setSelectedHostelId] = useState('');
 
   const { data: hostels, loading, refresh: refreshHostels } = useFetch<Hostel[]>('/hostels');
   const { data: grievancesRaw, loading: grievancesLoading, refresh: refreshGrievances } = useFetch<Grievance[]>('/grievances');
@@ -50,10 +55,13 @@ export default function HostelManagementScreen() {
   );
   const { mutate: allocateApi, loading: allocating } = useMutate();
   const { mutate: complaintApi, loading: submittingComplaint } = useMutate();
+  const { data: gatePassesRaw, refresh: refreshGatePasses } = useFetch<any[]>('/gate-passes');
+  const { mutate: gatePassApi, loading: submittingGatePass } = useMutate();
 
   const hostelsSafe = hostels || [];
   const grievances = grievancesRaw || [];
   const notices = noticesRaw || [];
+  const gatePasses = gatePassesRaw || [];
   const myAlloc = myAllocation && Array.isArray(myAllocation) ? myAllocation.find((a: HostelAllocation) => a.active) : null;
 
   const filteredHostels = hostelsSafe.filter(h => {
@@ -72,8 +80,9 @@ export default function HostelManagementScreen() {
     refreshGrievances();
     refreshNotices();
     refreshMyAlloc();
+    refreshGatePasses();
     setTimeout(() => setRefreshing(false), 800);
-  }, [refreshHostels, refreshGrievances, refreshNotices, refreshMyAlloc]);
+  }, [refreshHostels, refreshGrievances, refreshNotices, refreshMyAlloc, refreshGatePasses]);
 
   const handleSubmitComplaint = async () => {
     if (!complaintTitle.trim() || !complaintDesc.trim() || !complaintCategory) {
@@ -115,6 +124,37 @@ export default function HostelManagementScreen() {
     }
   };
 
+  const handleSubmitGatePass = async () => {
+    if (!gateReason.trim()) {
+      Alert.alert('Missing fields', 'Please enter a reason for the gate pass');
+      return;
+    }
+    if (!gateOutTime.trim()) {
+      Alert.alert('Missing fields', 'Please enter your expected out time');
+      return;
+    }
+    try {
+      await gatePassApi('/gate-passes', {
+        method: 'POST',
+        body: JSON.stringify({
+          hostel_id: selectedHostelId || (myAlloc?.hostel_id) || '',
+          reason: gateReason.trim(),
+          destination: gateDestination.trim(),
+          out_time: gateOutTime.trim(),
+          expected_return: gateReturn.trim(),
+        }),
+      });
+      Alert.alert('Submitted', 'Your gate pass request has been submitted');
+      setGateReason('');
+      setGateDestination('');
+      setGateOutTime('');
+      setGateReturn('');
+      refreshGatePasses();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not submit gate pass request');
+    }
+  };
+
   const totalRooms = hostelsSafe.reduce((s, h) => s + (h.total_rooms || 0), 0);
   const openComplaints = grievances.filter(g => g.status !== 'resolved').length;
 
@@ -153,6 +193,7 @@ export default function HostelManagementScreen() {
             { key: 'myroom', label: 'My Room' },
             { key: 'mess', label: 'Mess' },
             { key: 'complaints', label: `Complaints${openComplaints > 0 ? ` (${openComplaints})` : ''}` },
+            { key: 'gatepass', label: `Gate Pass${gatePasses.length > 0 ? ` (${gatePasses.length})` : ''}` },
             { key: 'notices', label: `Notices (${notices.length})` },
           ] as const).map(t => (
             <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tabBtn, tab === t.key && styles.tabActive]}>
@@ -262,7 +303,7 @@ export default function HostelManagementScreen() {
                   {[
                     { icon: <Wrench size={20} color="#F59E0B" />, label: 'Report Issue', color: '#F59E0B', onPress: () => setTab('complaints') },
                     { icon: <MessageSquare size={20} color="#6366F1" />, label: 'Message Warden', color: '#6366F1', onPress: () => Alert.alert('Warden', 'Messaging feature coming soon') },
-                    { icon: <Clock size={20} color="#10B981" />, label: 'Gate Pass', color: '#10B981', onPress: () => Alert.alert('Gate Pass', 'Gate pass request feature coming soon') },
+                    { icon: <Clock size={20} color="#10B981" />, label: 'Gate Pass', color: '#10B981', onPress: () => setTab('gatepass') },
                     { icon: <Bell size={20} color="#EC4899" />, label: 'Notices', color: '#EC4899', onPress: () => setTab('notices') },
                   ].map((action, i) => (
                     <Pressable key={i} style={[styles.quickActionCard, { borderColor: action.color + '30' }]} onPress={action.onPress}>
@@ -502,6 +543,101 @@ export default function HostelManagementScreen() {
                           <View style={styles.wardenNotes}>
                             <Text style={styles.wardenNotesLabel}>Response:</Text>
                             <Text style={styles.wardenNotesTxt} numberOfLines={2} ellipsizeMode="tail">{g.response}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </Animated.View>
+                  );
+                })
+              )}
+            </Animated.View>
+          ) : tab === 'gatepass' ? (
+            <Animated.View entering={FadeInDown}>
+              <View style={styles.newComplaintCard}>
+                <Text style={styles.newComplaintTitle}>Request Gate Pass</Text>
+
+                <TextInput
+                  style={styles.complaintInput}
+                  placeholder="Reason for leaving (e.g., Home visit, Medical)"
+                  placeholderTextColor={theme.colors.muted}
+                  value={gateReason}
+                  onChangeText={setGateReason}
+                />
+
+                <TextInput
+                  style={styles.complaintInput}
+                  placeholder="Destination"
+                  placeholderTextColor={theme.colors.muted}
+                  value={gateDestination}
+                  onChangeText={setGateDestination}
+                />
+
+                <TextInput
+                  style={styles.complaintInput}
+                  placeholder="Expected out time (e.g., 5:00 PM)"
+                  placeholderTextColor={theme.colors.muted}
+                  value={gateOutTime}
+                  onChangeText={setGateOutTime}
+                />
+
+                <TextInput
+                  style={styles.complaintInput}
+                  placeholder="Expected return time (optional)"
+                  placeholderTextColor={theme.colors.muted}
+                  value={gateReturn}
+                  onChangeText={setGateReturn}
+                />
+
+                <Pressable style={[styles.submitBtn, submittingGatePass && { opacity: 0.6 }]} onPress={handleSubmitGatePass} disabled={submittingGatePass}>
+                  {submittingGatePass ? <ActivityIndicator color="#FFF" size={14} /> : <Send size={14} color="#FFF" />}
+                  <Text style={styles.submitBtnTxt}>{submittingGatePass ? 'Submitting...' : 'Submit Request'}</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.sectionTitle}>My Gate Pass Requests ({gatePasses.length})</Text>
+              {gatePasses.length === 0 ? (
+                <View style={styles.emptyWrap}>
+                  <View style={styles.emptyIconWrap}><Clock size={40} color={theme.colors.muted} /></View>
+                  <Text style={styles.emptyTitle}>No gate pass requests</Text>
+                  <Text style={styles.emptySub}>Submit a request using the form above</Text>
+                </View>
+              ) : (
+                gatePasses.map((p: any, idx: number) => {
+                  const statusColor = p.status === 'approved' ? '#10B981' : p.status === 'rejected' ? '#EF4444' : '#F59E0B';
+                  return (
+                    <Animated.View key={p.id} entering={SlideInRight.delay(idx * 30)}>
+                      <View style={[styles.complaintCard, p.status === 'approved' && { borderLeftWidth: 3, borderLeftColor: '#10B981' }, p.status === 'rejected' && { borderLeftWidth: 3, borderLeftColor: '#EF4444' }]}>
+                        <View style={styles.complaintHeader}>
+                          <Text style={styles.complaintCardTitle} numberOfLines={1} ellipsizeMode="tail">{p.reason}</Text>
+                          <View style={[styles.statusBadge, { backgroundColor: statusColor + '15' }]}>
+                            <Text style={[styles.statusTxt, { color: statusColor }]}>
+                              {p.status.charAt(0).toUpperCase() + p.status.slice(1)}
+                            </Text>
+                          </View>
+                        </View>
+                        {p.destination ? (
+                          <Text style={styles.complaintDesc}>To: {p.destination}</Text>
+                        ) : null}
+                        <View style={styles.complaintMeta}>
+                          <View style={styles.complaintMetaItem}>
+                            <Clock size={10} color={theme.colors.muted} />
+                            <Text style={styles.complaintMetaTxt}>Out: {p.out_time}</Text>
+                          </View>
+                          {p.expected_return ? (
+                            <View style={styles.complaintMetaItem}>
+                              <Clock size={10} color={theme.colors.muted} />
+                              <Text style={styles.complaintMetaTxt}>Return: {p.expected_return}</Text>
+                            </View>
+                          ) : null}
+                          <View style={styles.complaintMetaItem}>
+                            <Calendar size={10} color={theme.colors.muted} />
+                            <Text style={styles.complaintMetaTxt}>{new Date(p.created_at).toLocaleDateString()}</Text>
+                          </View>
+                        </View>
+                        {p.review_note ? (
+                          <View style={styles.wardenNotes}>
+                            <Text style={styles.wardenNotesLabel}>Warden Note:</Text>
+                            <Text style={styles.wardenNotesTxt} numberOfLines={2} ellipsizeMode="tail">{p.review_note}</Text>
                           </View>
                         ) : null}
                       </View>

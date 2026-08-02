@@ -360,6 +360,7 @@ export default function Attendance() {
   );
   const { mutate: checkin, loading: checkinLoading } = useMutate<any>();
   const { mutate: checkinAuto } = useMutate<any>();
+  const { mutate: submitLeave } = useMutate<any>();
 
   const [refreshing, setRefreshing] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -838,9 +839,17 @@ export default function Attendance() {
                 multiline
                 numberOfLines={3}
               />
-              <Pressable style={styles.submitButton} onPress={() => {
+              <Pressable style={styles.submitButton} onPress={async () => {
+                try {
+                  await submitLeave('/attendance/leave-request', {
+                    method: 'POST',
+                    body: JSON.stringify({ date: leaveDate, reason: leaveReason }),
+                  });
+                  flash(true, 'Leave request submitted successfully');
+                } catch {
+                  flash(false, 'Failed to submit leave request');
+                }
                 setShowLeaveModal(false);
-                flash(true, 'Leave request submitted successfully');
                 setLeaveDate('');
                 setLeaveReason('');
               }}>

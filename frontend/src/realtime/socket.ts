@@ -12,7 +12,9 @@ async function createSocket(): Promise<Socket | null> {
     const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       auth: { token: token || '' },
-      reconnection: false,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
       timeout: 5000,
     });
     socket.on('connect_error', () => {});

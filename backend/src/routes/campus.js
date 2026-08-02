@@ -494,6 +494,138 @@ function createCampusRouter(io) {
     }
   });
 
+  // ── Gate Pass ─────────────────────────────────────────
+
+  router.get('/gate-passes', async (req, res) => {
+    try {
+      const db = getDB();
+      let filter = {};
+      if (req.user.role === 'student') {
+        filter.userId = oid(req.user._id);
+      }
+      const passes = await db.collection('gate_passes')
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      const userIds = [...new Set(passes.map(p => String(p.userId)).filter(Boolean))];
+      const hostelIds = [...new Set(passes.map(p => String(p.hostelId)).filter(Boolean))];
+
+      let userMap = {};
+      let hostelMap = {};
+
+      if (userIds.length) {
+        const users = await db.collection('users').find({ _id: { $in: userIds.map(id => oid(id)) } }).toArray();
+        for (const u of users) userMap[String(u._id)] = u;
+      }
+      if (hostelIds.length) {
+        const hostels = await db.collection('hostels').find({ _id: { $in: hostelIds.map(id => oid(id)) } }).toArray();
+        for (const h of hostels) hostelMap[String(h._id)] = h;
+      }
+
+      const mapped = passes.map(p => ({
+        id: String(p._id),
+        student_id: String(p.userId),
+        student_name: userMap[String(p.userId)]?.name || p.student_name || '',
+        hostel_id: String(p.hostelId || ''),
+        hostel_name: hostelMap[String(p.hostelId)]?.name || p.hostel_name || '',
+        reason: p.reason || '',
+        destination: p.destination || '',
+        out_time: p.out_time || '',
+        expected_return: p.expected_return || '',
+        status: p.status || 'pending',
+        reviewed_by: p.reviewed_by || null,
+        review_note: p.review_note || '',
+        created_at: p.createdAt || '',
+        reviewed_at: p.reviewed_at || '',
+      }));
+
+      res.json(mapped);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/gate-passes', async (req, res) => {
+    try {
+      const db = getDB();
+      const { hostel_id, reason, destination, out_time, expected_return } = req.body;
+
+      if (!reason || !reason.trim()) return sendError(res, 'Reason is required.');
+      if (!out_time) return sendError(res, 'Out time is required.');
+
+      let hostel_name = '';
+      if (hostel_id) {
+        const hostel = await db.collection('hostels').findOne({ _id: oid(hostel_id) });
+        if (hostel) hostel_name = hostel.name;
+      }
+
+      const pass = {
+        userId: oid(req.user._id),
+        student_name: req.user.name || '',
+        hostelId: hostel_id ? oid(hostel_id) : null,
+        hostel_name,
+        reason: reason.trim(),
+        destination: (destination || '').trim(),
+        out_time,
+        expected_return: expected_return || '',
+        status: 'pending',
+        reviewed_by: null,
+        review_note: '',
+        createdAt: nowIso(),
+      };
+
+      const result = await db.collection('gate_passes').insertOne(pass);
+
+      if (io) io.emit('gate_pass:created', { student_id: String(req.user._id), id: String(result.insertedId) });
+
+      res.json({
+        id: String(result.insertedId),
+        ...pass,
+        student_id: String(req.user._id),
+        hostel_id: hostel_id || '',
+      });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/gate-passes/:id/approve', requireRole('college_admin', 'super_admin'), async (req, res) => {
+    try {
+      const db = getDB();
+      const { review_note } = req.body;
+      const result = await db.collection('gate_passes').updateOne(
+        { _id: oid(req.params.id) },
+        { $set: { status: 'approved', reviewed_by: oid(req.user._id), review_note: review_note || '', reviewed_at: nowIso() } }
+      );
+      if (result.matchedCount === 0) return sendError(res, 'Gate pass not found', 404);
+
+      const updated = await db.collection('gate_passes').findOne({ _id: oid(req.params.id) });
+      if (io) io.emit('gate_pass:updated', { id: req.params.id, status: 'approved' });
+      res.json({ id: String(updated._id), status: updated.status, reviewed_at: updated.reviewed_at });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/gate-passes/:id/reject', requireRole('college_admin', 'super_admin'), async (req, res) => {
+    try {
+      const db = getDB();
+      const { review_note } = req.body;
+      const result = await db.collection('gate_passes').updateOne(
+        { _id: oid(req.params.id) },
+        { $set: { status: 'rejected', reviewed_by: oid(req.user._id), review_note: review_note || '', reviewed_at: nowIso() } }
+      );
+      if (result.matchedCount === 0) return sendError(res, 'Gate pass not found', 404);
+
+      const updated = await db.collection('gate_passes').findOne({ _id: oid(req.params.id) });
+      if (io) io.emit('gate_pass:updated', { id: req.params.id, status: 'rejected' });
+      res.json({ id: String(updated._id), status: updated.status, reviewed_at: updated.reviewed_at });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
   return router;
 }
 

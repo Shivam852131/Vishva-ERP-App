@@ -91,15 +91,34 @@ function createAttendanceRouter(io) {
       ? await db.collection('courses').find({ $or: [{ _id: { $in: courseOids } }, { _id: { $in: courseIdsRaw } }] }).toArray()
       : [];
     const courseMap = Object.fromEntries(courses.map((c) => [String(c._id), c]));
-    res.json(
-      records.map((r) => ({
-        id: String(r._id),
-        courseId: String(r.courseId),
-        date: r.date,
-        status: r.status,
-        courseName: courseMap[String(r.courseId)]?.name || '',
-      }))
-    );
+    const mappedRecords = records.map((r) => ({
+      id: String(r._id),
+      courseId: String(r.courseId),
+      course_id: String(r.courseId),
+      date: r.date,
+      status: r.status,
+      present: r.status === 'present' || r.status === 'late',
+      courseName: courseMap[String(r.courseId)]?.name || '',
+      course_name: courseMap[String(r.courseId)]?.name || '',
+    }));
+
+    // Aggregate by course
+    const courseStats = {};
+    for (const r of records) {
+      const cid = String(r.courseId);
+      if (!courseStats[cid]) courseStats[cid] = { total: 0, present: 0 };
+      courseStats[cid].total++;
+      if (r.status === 'present' || r.status === 'late') courseStats[cid].present++;
+    }
+    const byCourse = Object.entries(courseStats).map(([cid, stats]) => ({
+      course_id: cid,
+      course_name: courseMap[cid]?.name || '',
+      total: stats.total,
+      present: stats.present,
+      percentage: stats.total ? Math.round((stats.present / stats.total) * 100) : 0,
+    }));
+
+    res.json({ records: mappedRecords, by_course: byCourse });
   });
 
   router.get('/attendance/sessions/active', async (req, res) => {
@@ -127,7 +146,8 @@ function createAttendanceRouter(io) {
         };
       })
     );
-    const faceProfile = await db.collection('face_profiles').findOne({ userId: uid });
+    const userId = String(user._id);
+    const faceProfile = await db.collection('face_profiles').findOne({ userId: userId });
     res.json({ sessions: enriched, face_enrolled: !!faceProfile });
   });
 
