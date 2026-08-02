@@ -400,6 +400,38 @@ export async function demoApi<T = any>(path: string, opts: DemoRequest = {}): Pr
 
   if (pathname === '/auth/me') return ok(userForRole('student') as T);
 
+  // Data for new admin pages
+  const placementDrives = [
+    { id: 'drv-1', company: 'TCS', role: 'Software Engineer', sector: 'IT', package_lpa: 7.2, location: 'Bangalore', job_type: 'Full-time', status: 'active', openings: 50, drive_date: daysFromNow(15), min_cgpa: 6.5, min_attendance: 75 },
+    { id: 'drv-2', company: 'Infosys', role: 'Systems Engineer', sector: 'IT', package_lpa: 6.5, location: 'Pune', job_type: 'Full-time', status: 'active', openings: 80, drive_date: daysFromNow(20), min_cgpa: 6.0, min_attendance: 75 },
+    { id: 'drv-3', company: 'Wipro', role: 'Project Engineer', sector: 'IT', package_lpa: 5.8, location: 'Hyderabad', job_type: 'Full-time', status: 'upcoming', openings: 40, drive_date: daysFromNow(30), min_cgpa: 5.5, min_attendance: 70 },
+  ];
+  const placementApps = [
+    { id: 'app-1', drive_id: 'drv-1', student_id: 'stu-001', student_name: 'Aarav Sharma', company: 'TCS', role: 'Software Engineer', status: 'shortlisted', applied_at: daysFromNow(-5) },
+    { id: 'app-2', drive_id: 'drv-1', student_id: 'stu-002', student_name: 'Diya Patel', company: 'TCS', role: 'Software Engineer', status: 'in_process', applied_at: daysFromNow(-3) },
+    { id: 'app-3', drive_id: 'drv-2', student_id: 'stu-001', student_name: 'Aarav Sharma', company: 'Infosys', role: 'Systems Engineer', status: 'offered', applied_at: daysFromNow(-10) },
+  ];
+  const assessmentCatalog = [
+    { id: 'assess-1', title: 'Data Structures Mid-Term', description: 'Covers arrays, linked lists, trees', skill_key: 'data_structures', category: 'CS Core', duration_minutes: 60, total_questions: 25, pass_score: 60, difficulty: 'medium', created_at: daysFromNow(-30) },
+    { id: 'assess-2', title: 'System Design Challenge', description: 'Design a scalable chat system', skill_key: 'system_design', category: 'Advanced', duration_minutes: 120, total_questions: 10, pass_score: 70, difficulty: 'hard', created_at: daysFromNow(-15) },
+    { id: 'assess-3', title: 'Python Basics Quiz', description: 'Fundamentals of Python programming', skill_key: 'python', category: 'Programming', duration_minutes: 30, total_questions: 20, pass_score: 50, difficulty: 'easy', created_at: daysFromNow(-7) },
+  ];
+  const mentorshipMentors = [
+    { id: 'mnt-1', name: 'Dr. Priya Sharma', department: 'Computer Science', expertise: 'AI/ML, Deep Learning', rating: 4.8, mentees_count: 12, max_mentees: 20, bio: '15 years industry + research experience' },
+    { id: 'mnt-2', name: 'Prof. Rajesh Kumar', department: 'Electronics', expertise: 'VLSI, Embedded Systems', rating: 4.5, mentees_count: 8, max_mentees: 15, bio: 'Former Qualcomm engineer' },
+    { id: 'mnt-3', name: 'Ms. Anita Desai', department: 'Career Services', expertise: 'Placement Prep, Resume', rating: 4.9, mentees_count: 25, max_mentees: 30, bio: 'Helped 500+ students get placed' },
+  ];
+  const skillsCatalog = [
+    { id: 'sk-1', key: 'javascript', name: 'JavaScript', category: 'Programming', description: 'Modern JS/ES6+' },
+    { id: 'sk-2', key: 'python', name: 'Python', category: 'Programming', description: 'Python 3.x' },
+    { id: 'sk-3', key: 'react', name: 'React', category: 'Frontend', description: 'React + Hooks' },
+    { id: 'sk-4', key: 'nodejs', name: 'Node.js', category: 'Backend', description: 'Server-side JS' },
+    { id: 'sk-5', key: 'data_structures', name: 'Data Structures', category: 'CS Core', description: 'Arrays, Trees, Graphs' },
+    { id: 'sk-6', key: 'system_design', name: 'System Design', category: 'Advanced', description: 'Distributed systems' },
+    { id: 'sk-7', key: 'sql', name: 'SQL', category: 'Database', description: 'PostgreSQL/MySQL' },
+    { id: 'sk-8', key: 'aws', name: 'AWS', category: 'Cloud', description: 'AWS cloud services' },
+  ];
+
   if (method !== 'GET') {
     if (pathname === '/notes') {
       const note: Note = {
@@ -583,6 +615,44 @@ export async function demoApi<T = any>(path: string, opts: DemoRequest = {}): Pr
     if (pathname.includes('/notifications/absentees')) return ok({ notifications_sent: 18, date: isoToday } as T);
     if (pathname.includes('/checkin')) return ok({ ok: true, status: 'present', checked_in_at: new Date().toISOString() } as T);
     if (pathname.includes('/close')) return ok({ ok: true, closed_at: new Date().toISOString() } as T);
+
+    // Placement write handlers
+    if (pathname.startsWith('/placement/applications/') && pathname.endsWith('/status')) {
+      const appId = pathname.split('/')[3];
+      const app = placementApps.find(a => a.id === appId);
+      if (app) app.status = body.status || app.status;
+      return ok(app as T);
+    }
+    if (pathname.startsWith('/placement/drives/') && method === 'DELETE') return ok({ success: true } as T);
+    if (pathname === '/placement/drives' && method === 'POST') {
+      const newDrive = { id: 'drv-' + Date.now(), status: 'upcoming', ...body };
+      placementDrives.push(newDrive);
+      return ok(newDrive as T);
+    }
+    if (pathname.startsWith('/placement/drives/')) {
+      const driveId = pathname.split('/').pop();
+      const drive = placementDrives.find(d => d.id === driveId);
+      return ok(drive as T);
+    }
+
+    // Assessment write handlers
+    if (pathname === '/assessments' && method === 'POST') {
+      const newAssess = { id: 'assess-' + Date.now(), created_at: new Date().toISOString(), ...body };
+      assessmentCatalog.push(newAssess);
+      return ok(newAssess as T);
+    }
+
+    // Mentorship write handlers
+    if (pathname.startsWith('/mentorship/connections/') && method === 'PATCH') {
+      const connId = pathname.split('/')[3];
+      return ok({ id: connId, status: 'active' } as T);
+    }
+
+    // Skills write handlers
+    if (pathname === '/skills/endorse' && method === 'POST') return ok({ id: 'end-' + Date.now(), ...body } as T);
+    if (pathname === '/skills/certifications' && method === 'POST') return ok({ id: 'cert-' + Date.now(), ...body } as T);
+    if (pathname === '/skills/projects' && method === 'POST') return ok({ id: 'proj-' + Date.now(), ...body } as T);
+
     return ok({ ok: true, id: `demo-${Date.now()}` } as T);
   }
 
@@ -658,6 +728,72 @@ export async function demoApi<T = any>(path: string, opts: DemoRequest = {}): Pr
     const otherId = pathname.split('/').pop();
     return ok(chatMessages.filter(m => m.from_id === otherId || m.to_id === otherId) as T);
   }
+
+  // Career Hub
+  if (pathname === '/career/dashboard') return ok({
+    readiness: { skills: 72, assessments: 65, applications: 45, portfolio: 55, mentorship: 80 },
+    skill_gaps: [{ skill: 'System Design', gap: 35, priority: 'high' }, { skill: 'Cloud Computing', gap: 25, priority: 'medium' }],
+    top_mentors: [{ id: 'mnt-1', name: 'Dr. Priya Sharma', expertise: 'AI/ML', rating: 4.8 }],
+    recommendations: ['Complete System Design assessment', 'Apply to 2 open drives', 'Connect with a mentor'],
+  } as T);
+
+  if (pathname === '/placement/drives') return ok(placementDrives as T);
+  if (pathname === '/placement/applications') return ok(placementApps as T);
+  if (pathname === '/placement/stats') return ok({
+    total_drives: 3, active_drives: 2, total_applications: 3, selected: 1, offered: 1, avg_package: 6.5,
+    top_companies: [{ name: 'TCS', count: 2 }, { name: 'Infosys', count: 1 }],
+    by_status: { applied: 1, shortlisted: 1, in_process: 1, offered: 1, rejected: 0 },
+  } as T);
+
+  // Assessments (data declared above)
+  if (pathname === '/assessments') return ok(assessmentCatalog as T);
+  if (pathname === '/assessments/history') return ok([
+    { id: 'h-1', assessment_id: 'assess-1', student_id: 'stu-001', score: 82, total: 100, passed: true, taken_at: daysFromNow(-5) },
+    { id: 'h-2', assessment_id: 'assess-3', student_id: 'stu-001', score: 45, total: 100, passed: true, taken_at: daysFromNow(-2) },
+  ] as T);
+  if (pathname === '/assessments/leaderboard') return ok([
+    { student_id: 'stu-001', name: 'Aarav Sharma', total_score: 227, assessments_taken: 2, avg_score: 82 },
+    { student_id: 'stu-002', name: 'Diya Patel', total_score: 195, assessments_taken: 2, avg_score: 78 },
+    { student_id: 'stu-003', name: 'Rohan Gupta', total_score: 180, assessments_taken: 1, avg_score: 75 },
+  ] as T);
+
+  // Mentorship (data declared above)
+  if (pathname === '/mentorship/mentors') return ok(mentorshipMentors as T);
+  if (pathname === '/mentorship/connections') return ok([
+    { id: 'conn-1', mentor_id: 'mnt-1', student_id: 'stu-001', student_name: 'Aarav Sharma', mentor_name: 'Dr. Priya Sharma', status: 'active', connected_at: daysFromNow(-20), goal: 'Prepare for ML roles' },
+    { id: 'conn-2', mentor_id: 'mnt-3', student_id: 'stu-002', student_name: 'Diya Patel', mentor_name: 'Ms. Anita Desai', status: 'pending', connected_at: daysFromNow(-3), goal: 'Resume review' },
+  ] as T);
+  if (pathname === '/mentorship/sessions') return ok([
+    { id: 'sess-m1', connection_id: 'conn-1', mentor_id: 'mnt-1', student_id: 'stu-001', title: 'ML Project Review', scheduled_at: daysFromNow(2), duration_minutes: 60, status: 'scheduled' },
+    { id: 'sess-m2', connection_id: 'conn-1', mentor_id: 'mnt-1', student_id: 'stu-001', title: 'Intro Meeting', scheduled_at: daysFromNow(-10), duration_minutes: 30, status: 'completed', notes: 'Discussed career goals' },
+  ] as T);
+  if (pathname === '/mentorship/goals') return ok([
+    { id: 'goal-1', connection_id: 'conn-1', title: 'Complete ML certification', target_date: daysFromNow(60), progress: 35, status: 'in_progress' },
+    { id: 'goal-2', connection_id: 'conn-1', title: 'Build 2 portfolio projects', target_date: daysFromNow(90), progress: 10, status: 'in_progress' },
+  ] as T);
+  if (pathname === '/mentorship/overview') return ok({
+    total_mentors: 3, active_connections: 1, pending_connections: 1, completed_sessions: 1,
+    avg_rating: 4.7, goals_in_progress: 2, goals_completed: 0,
+  } as T);
+
+  // Skills (data declared above)
+  if (pathname === '/skills/catalog') return ok(skillsCatalog as T);
+  if (pathname === '/skills/profile') return ok({
+    student_id: 'stu-001', skills: [
+      { skill_key: 'javascript', level: 'advanced', score: 85, endorsements: 3 },
+      { skill_key: 'python', level: 'intermediate', score: 70, endorsements: 1 },
+      { skill_key: 'react', level: 'advanced', score: 80, endorsements: 2 },
+      { skill_key: 'data_structures', level: 'intermediate', score: 65, endorsements: 0 },
+    ],
+    certifications: [{ id: 'cert-1', title: 'AWS Cloud Practitioner', issuer: 'Amazon', credential_id: 'AWS-CP-123', issued_at: daysFromNow(-90) }],
+    projects: [{ id: 'proj-1', title: 'E-Commerce App', description: 'Full-stack React + Node.js', url: 'https://github.com/demo/ecommerce', skills_used: ['javascript', 'react', 'nodejs', 'sql'] }],
+    endorsements: [{ id: 'end-1', skill_key: 'javascript', endorsed_by: 'Dr. Priya Sharma', note: 'Strong JS fundamentals', created_at: daysFromNow(-10) }],
+  } as T);
+  if (pathname === '/skills/career-matches') return ok([
+    { role: 'Full Stack Developer', match_pct: 78, matching_skills: ['javascript', 'react', 'nodejs', 'sql'], missing_skills: ['aws', 'system_design'] },
+    { role: 'Frontend Developer', match_pct: 85, matching_skills: ['javascript', 'react'], missing_skills: ['typescript'] },
+    { role: 'Backend Developer', match_pct: 62, matching_skills: ['nodejs', 'sql'], missing_skills: ['aws', 'system_design', 'python'] },
+  ] as T);
 
   return ok([] as T);
 }
