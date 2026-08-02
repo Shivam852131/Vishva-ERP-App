@@ -37,7 +37,17 @@ export default function AttendanceManagement() {
   }, [_createClassroom, refreshClassrooms]);
 
   const createSchedule = useCallback(async (data: any) => {
-    const res = await _createSchedule(data);
+    const res = await _createSchedule({
+      courseId: data.course_id,
+      classroomId: data.classroom_id,
+      facultyId: data.faculty_id,
+      dayOfWeek: data.day,
+      startTime: data.start_time,
+      endTime: data.end_time,
+      attendanceMethod: data.attendance_method,
+      gracePeriodMinutes: data.grace_period_minutes,
+      autoNotifyAbsent: data.auto_notify_absent,
+    });
     refreshSchedules();
     return res;
   }, [_createSchedule, refreshSchedules]);

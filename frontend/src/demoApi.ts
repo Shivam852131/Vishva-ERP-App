@@ -523,6 +523,63 @@ export async function demoApi<T = any>(path: string, opts: DemoRequest = {}): Pr
       });
       return ok({ verified: true, receipt_id: paymentReceipts[0].id } as T);
     }
+    if (pathname.startsWith('/fees/') && pathname.endsWith('/remind')) {
+      return ok({ ok: true, message: 'Reminder sent' } as T);
+    }
+    if (pathname === '/fees/create') {
+      const newFee: Fee = {
+        id: `fee-${Date.now()}`,
+        student_id: body.student_id || 'stu-001',
+        type: body.type || 'Tuition Fee',
+        amount: body.amount || 0,
+        currency: 'INR',
+        due_date: body.due_date || daysFromNow(30),
+        status: 'pending',
+        semester: body.semester || 'Semester 5',
+      };
+      fees.push(newFee);
+      return ok(newFee as T);
+    }
+    if (pathname.startsWith('/timetable/') && method === 'PUT') {
+      const id = pathname.split('/').pop();
+      const idx = timetable.findIndex(t => t.id === id);
+      if (idx >= 0) {
+        const course = courses.find(c => c.id === body.courseId);
+        timetable[idx] = {
+          ...timetable[idx],
+          day: body.dayOfWeek || timetable[idx].day,
+          start: body.startTime || timetable[idx].start,
+          end: body.endTime || timetable[idx].end,
+          course_id: body.courseId || timetable[idx].course_id,
+          course_name: course?.name || timetable[idx].course_name,
+          course_code: course?.code || timetable[idx].course_code,
+          room: body.room || timetable[idx].room,
+        };
+        return ok(timetable[idx] as T);
+      }
+    }
+    if (pathname === '/timetable' && method === 'POST') {
+      const course = courses.find(c => c.id === body.courseId);
+      const slot: TimetableSlot = {
+        id: `tt-${Date.now()}`,
+        day: body.dayOfWeek || 'Mon',
+        start: body.startTime || '09:00',
+        end: body.endTime || '10:00',
+        course_id: body.courseId || '',
+        course_name: course?.name || '',
+        course_code: course?.code || '',
+        faculty_name: course?.faculty_name || '',
+        room: body.room || '',
+      };
+      timetable.push(slot);
+      return ok(slot as T);
+    }
+    if (pathname.startsWith('/timetable/') && method === 'DELETE') {
+      const id = pathname.split('/').pop();
+      const idx = timetable.findIndex(t => t.id === id);
+      if (idx >= 0) timetable.splice(idx, 1);
+      return ok({ ok: true } as T);
+    }
     if (pathname.includes('/notifications/absentees')) return ok({ notifications_sent: 18, date: isoToday } as T);
     if (pathname.includes('/checkin')) return ok({ ok: true, status: 'present', checked_in_at: new Date().toISOString() } as T);
     if (pathname.includes('/close')) return ok({ ok: true, closed_at: new Date().toISOString() } as T);
@@ -566,6 +623,9 @@ export async function demoApi<T = any>(path: string, opts: DemoRequest = {}): Pr
   if (pathname === '/admin/schedules') return ok(schedules as T);
 
   if (pathname === '/fees/me' || pathname === '/fees/my') return ok(fees as T);
+  if (pathname === '/fees/all') return ok(fees as T);
+  if (pathname === '/attendance/daily') return ok({ date: isoToday, total_sessions: 6, present: 418, absent: 72, percentage: 85 } as T);
+  if (pathname === '/attendance/reports') return ok(attendanceReport() as T);
   if (pathname === '/payments/receipts') return ok(paymentReceipts as T);
   if (pathname === '/results/me') return ok(examResults as T);
 
