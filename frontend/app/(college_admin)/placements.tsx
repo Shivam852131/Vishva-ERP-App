@@ -26,7 +26,7 @@ export default function PlacementsAdmin() {
   const { mutate: createDrive } = useMutate();
   const { mutate: updateDrive } = useMutate();
   const { mutate: deleteDrive } = useMutate();
-  const { mutate: updateAppStatus } = useMutate();
+  const { mutate: mutateAppStatus } = useMutate();
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'drives' | 'applications' | 'analytics'>('drives');
   const [filter, setFilter] = useState('all');
@@ -142,9 +142,9 @@ export default function PlacementsAdmin() {
     } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
-  const updateAppStatus = async (appId: string, status: string) => {
+  const handleAppStatus = async (appId: string, status: string) => {
     try {
-      await updateAppStatus(`/placement/applications/${appId}/status`, {
+      await mutateAppStatus(`/placement/applications/${appId}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       });
@@ -441,7 +441,7 @@ export default function PlacementsAdmin() {
                   <Text style={[styles.label, { marginTop: 16 }]}>Actions</Text>
                   <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                     {['shortlisted', 'in_process', 'offered', 'rejected'].map(s => (
-                      <Pressable key={s} onPress={() => updateAppStatus(selectedApp.id, s)} style={[styles.actionChip, { borderColor: STATUS_COLORS[s] || '#6B7280' }]}>
+                      <Pressable key={s} onPress={() => handleAppStatus(selectedApp.id, s)} style={[styles.actionChip, { borderColor: STATUS_COLORS[s] || '#6B7280' }]}>
                         <Text style={[styles.actionChipTxt, { color: STATUS_COLORS[s] || '#6B7280' }]}>{s.replace(/_/g, ' ')}</Text>
                       </Pressable>
                     ))}
