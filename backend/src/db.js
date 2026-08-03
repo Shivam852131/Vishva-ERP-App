@@ -2,8 +2,9 @@ const { MongoClient, ObjectId } = require('mongodb');
 
 const DB_NAME = process.env.MONGODB_DB || 'test';
 
-const MONGODB_URI = process.env.MONGODB_URI ||
-  'mongodb://shivam32880_db_user:pT1L0nBwvGLaNRcV@ac-xzethlm-shard-00-00.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-01.uevx1zw.mongodb.net:27017,ac-xzethlm-shard-00-02.uevx1zw.mongodb.net:27017/test?authSource=admin&replicaSet=atlas-gbwt42-shard-0&ssl=true';
+  const MONGODB_URI = process.env.MONGODB_URI ||
+  'mongodb+srv://shivam32880_db_user:pT1L0nBwvGLaNRcV@ac-xzethlm.uevx1zw.mongodb.net/test?authSource=admin&retryWrites=true&w=majority';
+  console.log('[MongoDB] URI starts with:', MONGODB_URI?.substring(0, 14));
 
 const POOL_OPTIONS = {
   maxPoolSize: 10,
