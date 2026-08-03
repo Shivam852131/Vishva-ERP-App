@@ -12,6 +12,11 @@ const {
   buildCareerMatches,
   clamp,
 } = require('../skillProfile');
+const {
+  getCareerRecommendations,
+  getPersonalizedSkillPath,
+  getSkillAnalytics,
+} = require('../ml/careerRecommender');
 
 function roomForLive(sessionId) {
   return `live:${String(sessionId)}`;
@@ -220,6 +225,37 @@ function createSkillsRouter(io) {
 
   router.get('/career-matches', async (req, res) => {
     res.json(await buildCareerMatches(req.user._id));
+  });
+
+  // ML-powered career recommendations
+  router.get('/career-recommendations', async (req, res) => {
+    try {
+      const recommendations = await getCareerRecommendations(req.user._id);
+      res.json(recommendations);
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Personalized skill learning path
+  router.get('/learning-path/:careerKey', async (req, res) => {
+    try {
+      const path = await getPersonalizedSkillPath(req.user._id, req.params.careerKey);
+      if (path.error) return sendError(res, path.error, 404);
+      res.json(path);
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Skill analytics
+  router.get('/analytics', async (req, res) => {
+    try {
+      const analytics = await getSkillAnalytics(req.user._id);
+      res.json(analytics);
+    } catch (err) {
+      sendError(res, err);
+    }
   });
 
   return router;

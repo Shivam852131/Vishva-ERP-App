@@ -2,13 +2,15 @@ require('dotenv').config();
 const http = require('http');
 const pino = require('pino');
 
-const { connectDB } = require('./db');
+const { connectDB, closeDB } = require('./db');
 const { createApp } = require('./app');
 const { createSocketServer } = require('./socket');
 const { loadModels } = require('./faceVerify');
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const PORT = Number(process.env.PORT || 8000);
+
+let server = null;
 
 async function main() {
   await connectDB();
@@ -24,7 +26,7 @@ async function main() {
 
   const io = createSocketServer();
   const app = createApp(io);
-  const server = http.createServer(app);
+  server = http.createServer(app);
   io.attach(server);
 
   server.listen(PORT, '0.0.0.0', () => {
@@ -36,6 +38,20 @@ async function main() {
       logger.info('Running in DEVELOPMENT mode');
     }
   });
+
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
+}
+
+async function gracefulShutdown() {
+  logger.info('Shutting down gracefully...');
+  if (server) {
+    server.close(() => {
+      logger.info('HTTP server closed.');
+    });
+  }
+  await closeDB();
+  process.exit(0);
 }
 
 function startKeepAlive() {

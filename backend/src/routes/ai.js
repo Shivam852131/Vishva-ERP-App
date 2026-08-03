@@ -1,58 +1,8 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { serializeUser, sendError, makeCode, nowIso, roomForUser } = require('../utils');
-
-function generateMockResponse(type, message) {
-  const topic = message.substring(0, 80).replace(/[?!.]+$/, '').trim();
-
-  switch (type) {
-    case 'doubt_solver':
-      return `Based on your question about "${topic}", here's a detailed explanation: The concept involves understanding the fundamental principles and applying them step by step. First, identify the core components of the problem. Then, analyze how they relate to each other. The key insight is that this topic builds on previously learned concepts, so reviewing foundational material can be helpful. Consider working through practice examples to solidify your understanding.`;
-
-    case 'academic_advisor':
-      return `For your academic progress, I recommend: Focus on maintaining a consistent study schedule. Break down complex subjects into manageable chunks. Regular revision is more effective than cramming before exams. Consider forming study groups for collaborative learning. Pay attention to subjects where you feel less confident and allocate extra time for them. Track your progress weekly to stay on top of your goals.`;
-
-    case 'study_coach':
-      return `Here's a study tip: Try the Pomodoro Technique — study for 25 minutes, then take a 5-minute break. After four cycles, take a longer 15-30 minute break. This helps maintain focus and prevents burnout. Active recall and spaced repetition are proven techniques for long-term retention. Quiz yourself regularly rather than passively re-reading material.`;
-
-    case 'code_helper':
-      return `Here's how to approach this coding problem: Break the problem into smaller sub-problems. Identify the inputs and expected outputs clearly. Consider edge cases early. Start with a brute-force approach to get a working solution, then optimize. Use meaningful variable names and add comments for complex logic. Test your solution with different inputs including edge cases before finalizing.`;
-
-    default:
-      return `Thank you for your question about "${topic}". Here's what I can help with: This is an interesting topic that touches on several key concepts. To give you the best guidance, I'd recommend exploring the subject from both theoretical and practical perspectives. Feel free to ask follow-up questions for more specific information.`;
-  }
-}
-
-function generateStudyPlan(subjects, hoursPerDay, days, examDate) {
-  const plan = [];
-  const subjectsList = Array.isArray(subjects) ? subjects : subjects.split(',').map(s => s.trim());
-  const totalDays = parseInt(days) || 7;
-  const hours = parseInt(hoursPerDay) || 4;
-  const hoursPerSubjectPerDay = Math.floor(hours / subjectsList.length) || 1;
-
-  for (let day = 1; day <= totalDays; day++) {
-    const date = new Date();
-    date.setDate(date.getDate() + day);
-    const dateStr = date.toISOString().split('T')[0];
-
-    subjectsList.forEach((subject) => {
-      plan.push({
-        subject,
-        topic: `Review and practice ${subject} - Day ${day}`,
-        date: dateStr,
-        duration: `${hoursPerSubjectPerDay}h`,
-        completed: false,
-      });
-    });
-  }
-
-  return {
-    title: `Study Plan - ${subjectsList.join(', ')}`,
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: examDate || new Date(Date.now() + totalDays * 86400000).toISOString().split('T')[0],
-    tasks: plan,
-  };
-}
+const { generateAIResponse, generateStudyPlanWithAI } = require('../ml/llmService');
+const { getPerformanceInsights } = require('../ml/performancePredictor');
 
 function createAiRouter(io) {
   const router = express.Router();
@@ -113,11 +63,25 @@ function createAiRouter(io) {
       };
       await db.collection('ai_messages').insertOne(userMessage);
 
-      const assistantContent = generateMockResponse(aiType, message);
+      // Get conversation history for context
+      const history = await db.collection('ai_messages')
+        .find({ sessionId: oid(sid) })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .toArray()
+        .then(msgs => msgs.reverse().map(m => ({ role: m.role, content: m.content })));
+
+      // Generate AI response using LLM service
+      const aiResult = await generateAIResponse(aiType, message, currentUserId, history);
+
       const assistantMessage = {
         sessionId: oid(sid),
         role: 'assistant',
-        content: assistantContent,
+        content: aiResult.response,
+        metadata: {
+          source: aiResult.source,
+          model: aiResult.model,
+        },
         createdAt: nowIso(),
       };
       await db.collection('ai_messages').insertOne(assistantMessage);
@@ -128,7 +92,11 @@ function createAiRouter(io) {
         assistantMessage,
       });
 
-      res.status(201).json({ sessionId: sid, message: assistantMessage });
+      res.status(201).json({ 
+        sessionId: sid, 
+        message: assistantMessage,
+        source: aiResult.source,
+      });
     } catch (err) {
       sendError(res, err);
     }
@@ -139,8 +107,12 @@ function createAiRouter(io) {
       const { question } = req.body;
       if (!question) return sendError(res, 'Question is required', 400);
 
-      const answer = generateMockResponse('doubt_solver', question);
-      res.json({ question, answer });
+      const result = await generateAIResponse('doubt_solver', question, req.user._id);
+      res.json({ 
+        question, 
+        answer: result.response,
+        source: result.source,
+      });
     } catch (err) {
       sendError(res, err);
     }
@@ -151,8 +123,12 @@ function createAiRouter(io) {
       const { question } = req.body;
       if (!question) return sendError(res, 'Question is required', 400);
 
-      const advice = generateMockResponse('academic_advisor', question);
-      res.json({ question, advice });
+      const result = await generateAIResponse('academic_advisor', question, req.user._id);
+      res.json({ 
+        question, 
+        advice: result.response,
+        source: result.source,
+      });
     } catch (err) {
       sendError(res, err);
     }
@@ -165,7 +141,52 @@ function createAiRouter(io) {
 
       if (!subjects) return sendError(res, 'Subjects are required', 400);
 
-      const planData = generateStudyPlan(subjects, hoursPerDay, days, examDate);
+      // Generate study plan using AI
+      const aiResult = await generateStudyPlanWithAI(
+        subjects, hoursPerDay, days, examDate, req.user._id
+      );
+
+      let planData;
+      if (aiResult.success && aiResult.plan) {
+        planData = {
+          title: `AI Study Plan - ${Array.isArray(subjects) ? subjects.join(', ') : subjects}`,
+          startDate: new Date().toISOString().split('T')[0],
+          endDate: examDate || new Date(Date.now() + (parseInt(days) || 7) * 86400000).toISOString().split('T')[0],
+          tasks: aiResult.plan,
+          aiGenerated: true,
+          aiSource: aiResult.source,
+        };
+      } else {
+        // Fallback to basic plan generation
+        const subjectsList = Array.isArray(subjects) ? subjects : subjects.split(',').map(s => s.trim());
+        const totalDays = parseInt(days) || 7;
+        const hours = parseInt(hoursPerDay) || 4;
+        
+        const tasks = [];
+        for (let day = 1; day <= totalDays; day++) {
+          const date = new Date();
+          date.setDate(date.getDate() + day);
+          const dateStr = date.toISOString().split('T')[0];
+          
+          subjectsList.forEach((subject) => {
+            tasks.push({
+              subject,
+              topic: `Study ${subject} - Day ${day}`,
+              date: dateStr,
+              duration: `${Math.floor(hours / subjectsList.length)}h`,
+              completed: false,
+            });
+          });
+        }
+        
+        planData = {
+          title: `Study Plan - ${subjectsList.join(', ')}`,
+          startDate: new Date().toISOString().split('T')[0],
+          endDate: examDate || new Date(Date.now() + totalDays * 86400000).toISOString().split('T')[0],
+          tasks,
+          aiGenerated: false,
+        };
+      }
 
       const plan = {
         userId: oid(req.user._id),
@@ -236,6 +257,39 @@ function createAiRouter(io) {
       if (result.deletedCount === 0) return sendError(res, 'Plan not found', 404);
 
       res.json({ message: 'Plan deleted' });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // New endpoint: Get performance insights
+  router.get('/performance-insights', async (req, res) => {
+    try {
+      const insights = await getPerformanceInsights(req.user._id);
+      res.json(insights);
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // New endpoint: Get AI-powered study recommendations
+  router.post('/study-recommendations', async (req, res) => {
+    try {
+      const { weakAreas } = req.body;
+      
+      const prompt = `Based on these weak areas: ${JSON.stringify(weakAreas)}, 
+Provide specific study recommendations. Include:
+1. Which topics to focus on first
+2. Suggested study techniques for each
+3. Time allocation recommendations
+4. Practice resources`;
+      
+      const result = await generateAIResponse('study_coach', prompt, req.user._id);
+      
+      res.json({
+        recommendations: result.response,
+        source: result.source,
+      });
     } catch (err) {
       sendError(res, err);
     }
