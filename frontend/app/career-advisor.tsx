@@ -1,41 +1,28 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
-import { Card, SectionTitle, GradientButton } from '@/src/ui';
+import { Card, SectionTitle, GradientButton, EmptyState } from '@/src/ui';
 import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
+import { useFetch } from '@/src/hooks/useFetch';
 import {
   Sparkles, Compass, Briefcase, GraduationCap, TrendingUp,
   Code, FlaskConical, Palette, BookOpen, ChevronRight, Star,
-  ArrowRight, Check, Globe,
+  ArrowRight, Check, Globe, AlertTriangle,
 } from 'lucide-react-native';
-
-const CAREER_PATHS = [
-  { id: '1', title: 'Software Engineer', icon: Code, match: 94, salary: '₹8-25 LPA', growth: '+25%', skills: ['Programming', 'Problem Solving', 'System Design'], education: 'B.Tech CS/IT', desc: 'Design, develop, and maintain software systems. High demand across all industries.' },
-  { id: '2', title: 'Data Scientist', icon: TrendingUp, match: 87, salary: '₹10-30 LPA', growth: '+35%', skills: ['Statistics', 'Python', 'Machine Learning'], education: 'B.Tech/BCA + Data Science', desc: 'Analyze complex data to help organizations make data-driven decisions.' },
-  { id: '3', title: 'Research Scientist', icon: FlaskConical, match: 78, salary: '₹8-20 LPA', growth: '+18%', skills: ['Research', 'Analytical Thinking', 'Writing'], education: 'M.Sc./PhD', desc: 'Conduct research in universities, labs, or R&D departments of companies.' },
-  { id: '4', title: 'UI/UX Designer', icon: Palette, match: 72, salary: '₹6-18 LPA', growth: '+20%', skills: ['Design Thinking', 'Prototyping', 'User Research'], education: 'B.Des/BCA', desc: 'Create intuitive and beautiful digital experiences for users.' },
-  { id: '5', title: 'Management Consultant', icon: Briefcase, match: 68, salary: '₹10-35 LPA', growth: '+15%', skills: ['Strategy', 'Communication', 'Analytics'], education: 'MBA/B.Tech + MBA', desc: 'Help organizations solve complex business problems and improve performance.' },
-  { id: '6', title: 'Professor / Academic', icon: GraduationCap, match: 65, salary: '₹6-15 LPA', growth: '+12%', skills: ['Teaching', 'Research', 'Mentoring'], education: 'PhD', desc: 'Teach and conduct research at universities. Shape future generations.' },
-];
-
-const SKILLS_ASSESSMENT = [
-  { name: 'Programming', level: 85 },
-  { name: 'Mathematics', level: 72 },
-  { name: 'Communication', level: 68 },
-  { name: 'Leadership', level: 60 },
-  { name: 'Problem Solving', level: 78 },
-  { name: 'Creativity', level: 55 },
-];
 
 export default function CareerAdvisor() {
   const [step, setStep] = useState<'assess' | 'results'>('assess');
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [selectedCareer, setSelectedCareer] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [recommendations, setRecommendations] = useState<any[]>([]);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const { data: profile } = useFetch<any>('/skills/profile');
+  const { data: careerMatches = [] } = useFetch<any[]>('/skills/career-matches');
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
@@ -51,14 +38,32 @@ export default function CareerAdvisor() {
     setAnswers(prev => ({ ...prev, [qKey]: val }));
   };
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (Object.keys(answers).length < QUESTIONS.length) return;
     setAnalyzing(true);
-    setTimeout(() => {
-      setStep('results');
-      setAnalyzing(false);
-    }, 2000);
+    try {
+      const res = await fetch('/api/skills/career-recommendations', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRecommendations(data.recommendations || data || []);
+      }
+    } catch {}
+    setStep('results');
+    setAnalyzing(false);
   };
+
+  const skills = profile?.skills || [];
+  const skillSnapshot = skills.length > 0 ? skills.slice(0, 6).map((s: any) => ({
+    name: s.name,
+    level: s.score || 0,
+  })) : [
+    { name: 'No skills added yet', level: 0 },
+  ];
+
+  const careerResults = recommendations.length > 0 ? recommendations : careerMatches;
 
   return (
     <ErrorBoundary>
@@ -83,7 +88,7 @@ export default function CareerAdvisor() {
             {step === 'assess' ? (
               <>
                 <SectionTitle>Skills Snapshot</SectionTitle>
-                {SKILLS_ASSESSMENT.map((s, i) => (
+                {skillSnapshot.map((s: any, i: number) => (
                   <Card key={i} style={{ padding: 12, gap: 6 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                       <Text style={{ fontSize: 13, fontWeight: '600', color: theme.colors.text }}>{s.name}</Text>
@@ -96,7 +101,7 @@ export default function CareerAdvisor() {
                 ))}
 
                 <SectionTitle>Quick Assessment</SectionTitle>
-                {QUESTIONS.map((q, qi) => (
+                {QUESTIONS.map((q) => (
                   <Card key={q.key} style={{ padding: 16, gap: 10 }}>
                     <Text style={{ fontWeight: '700', color: theme.colors.text }}>{q.q}</Text>
                     {q.options.map((opt, oi) => (
@@ -119,56 +124,72 @@ export default function CareerAdvisor() {
                   <Text style={{ fontSize: 12, color: theme.colors.muted }}>Based on your skills, interests & preferences</Text>
                 </Card>
 
-                {CAREER_PATHS.map((career) => {
-                  const Icon = career.icon;
-                  return (
-                    <Pressable key={career.id} onPress={() => setSelectedCareer(selectedCareer === career.id ? null : career.id)}>
-                      <Card style={{ padding: 16, gap: 10 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <View style={styles.careerIcon}>
-                            <Icon size={22} color={theme.colors.brand} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontWeight: '700', color: theme.colors.text }}>{career.title}</Text>
-                            <Text style={{ fontSize: 12, color: theme.colors.muted }}>{career.education}</Text>
-                          </View>
-                          <View style={styles.matchBadge}>
-                            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>{career.match}%</Text>
-                          </View>
-                        </View>
+                {careerResults.length === 0 ? (
+                  <EmptyState title="No recommendations yet" sub="Complete your skill profile to get personalized career recommendations" />
+                ) : (
+                  careerResults.map((career: any, i: number) => {
+                    const matchPct = career.match || career.match_percentage || Math.max(90 - i * 8, 50);
+                    const title = career.title || career.name || career.career || `Career ${i + 1}`;
+                    const salary = career.salary || career.salary_range || '';
+                    const growth = career.growth || career.growth_rate || '';
+                    const requiredSkills = career.skills || career.required_skills || [];
+                    const education = career.education || '';
 
-                        {selectedCareer === career.id && (
-                          <View style={{ gap: 10, marginTop: 8 }}>
-                            <Text style={{ fontSize: 13, color: theme.colors.muted, lineHeight: 18 }}>{career.desc}</Text>
-                            <View style={{ flexDirection: 'row', gap: 12 }}>
-                              <View style={styles.metaItem}>
-                                <Briefcase size={12} color={theme.colors.brand} />
-                                <Text style={styles.metaText}>{career.salary}</Text>
-                              </View>
-                              <View style={styles.metaItem}>
-                                <TrendingUp size={12} color="#10B981" />
-                                <Text style={styles.metaText}>{career.growth} growth</Text>
-                              </View>
+                    return (
+                      <Pressable key={career.id || career.key || i} onPress={() => setSelectedCareer(selectedCareer === title ? null : title)}>
+                        <Card style={{ padding: 16, gap: 10 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <View style={styles.careerIcon}>
+                              <Briefcase size={22} color={theme.colors.brand} />
                             </View>
-                            <View>
-                              <Text style={{ fontSize: 11, fontWeight: '700', color: theme.colors.muted, marginBottom: 4 }}>Key Skills Needed:</Text>
-                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                                {career.skills.map((sk, si) => (
-                                  <View key={si} style={styles.skillChip}>
-                                    <Text style={{ fontSize: 11, color: theme.colors.brand, fontWeight: '600' }}>{sk}</Text>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontWeight: '700', color: theme.colors.text }}>{title}</Text>
+                              {education ? <Text style={{ fontSize: 12, color: theme.colors.muted }}>{education}</Text> : null}
+                            </View>
+                            <View style={styles.matchBadge}>
+                              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>{matchPct}%</Text>
+                            </View>
+                          </View>
+
+                          {selectedCareer === title && (
+                            <View style={{ gap: 10, marginTop: 8 }}>
+                              {career.desc && <Text style={{ fontSize: 13, color: theme.colors.muted, lineHeight: 18 }}>{career.desc}</Text>}
+                              <View style={{ flexDirection: 'row', gap: 12 }}>
+                                {salary && (
+                                  <View style={styles.metaItem}>
+                                    <Briefcase size={12} color={theme.colors.brand} />
+                                    <Text style={styles.metaText}>{salary}</Text>
                                   </View>
-                                ))}
+                                )}
+                                {growth && (
+                                  <View style={styles.metaItem}>
+                                    <TrendingUp size={12} color="#10B981" />
+                                    <Text style={styles.metaText}>{growth} growth</Text>
+                                  </View>
+                                )}
                               </View>
+                              {requiredSkills.length > 0 && (
+                                <View>
+                                  <Text style={{ fontSize: 11, fontWeight: '700', color: theme.colors.muted, marginBottom: 4 }}>Key Skills Needed:</Text>
+                                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                                    {requiredSkills.map((sk: string, si: number) => (
+                                      <View key={si} style={styles.skillChip}>
+                                        <Text style={{ fontSize: 11, color: theme.colors.brand, fontWeight: '600' }}>{sk}</Text>
+                                      </View>
+                                    ))}
+                                  </View>
+                                </View>
+                              )}
                             </View>
-                          </View>
-                        )}
-                        <ChevronRight size={14} color={theme.colors.muted} style={{ alignSelf: 'flex-end' }} />
-                      </Card>
-                    </Pressable>
-                  );
-                })}
+                          )}
+                          <ChevronRight size={14} color={theme.colors.muted} style={{ alignSelf: 'flex-end' }} />
+                        </Card>
+                      </Pressable>
+                    );
+                  })
+                )}
 
-                <GradientButton label="Retake Assessment" onPress={() => { setStep('assess'); setAnswers({}); setSelectedCareer(null); }} />
+                <GradientButton label="Retake Assessment" onPress={() => { setStep('assess'); setAnswers({}); setSelectedCareer(null); setRecommendations([]); }} />
               </>
             )}
           </ScrollView>

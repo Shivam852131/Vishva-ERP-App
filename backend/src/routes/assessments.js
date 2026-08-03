@@ -83,6 +83,23 @@ function createAssessmentsRouter(io) {
     }));
   });
 
+  router.delete('/:id', async (req, res) => {
+    const db = getDB();
+    const user = req.user;
+    if (user.role !== 'college_admin' && user.role !== 'super_admin' && user.role !== 'faculty') {
+      return sendError(res, 'Permission denied.', 403);
+    }
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid assessment id.', 400);
+
+    const existing = await db.collection('assessments').findOne({ _id });
+    if (!existing) return sendError(res, 'Assessment not found.', 404);
+
+    await db.collection('assessments').deleteOne({ _id });
+    await db.collection('assessment_attempts').deleteMany({ assessmentId: _id });
+    res.json({ ok: true });
+  });
+
   router.get('/history', async (req, res) => {
     const db = getDB();
     const attempts = await db.collection('assessment_attempts')

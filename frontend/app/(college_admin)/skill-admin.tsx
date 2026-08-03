@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Activity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Zap, Plus, X, Search, Award, BookOpen, ChevronRight,
-  CheckCircle, Shield, Briefcase, Trash2, Pencil,
+  CheckCircle, Shield, Briefcase, Trash2, Pencil, Users,
 } from 'lucide-react-native';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
@@ -16,7 +16,8 @@ const LEVEL_COLORS: Record<string, string> = {
 
 export default function SkillAdmin() {
   const { data: catalog = [], loading: catLoading, refresh: refreshCatalog } = useFetch<any[]>('/skills/catalog');
-  const { data: profile, refresh: refreshProfile } = useFetch<any>('/skills/profile');
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const { data: profile, refresh: refreshProfile } = useFetch<any>(selectedStudentId ? `/skills/profile?studentId=${selectedStudentId}` : '/skills/profile');
   const { data: careerMatches = [] } = useFetch<any[]>('/skills/career-matches');
   const { data: users = [] } = useFetch<any[]>('/admin/users?role=student');
   const { mutate: endorseSkill } = useMutate();
@@ -33,6 +34,8 @@ export default function SkillAdmin() {
   const [certForm, setCertForm] = useState({ title: '', issuer: '', credential_id: '', credential_url: '', issued_at: '', expires_at: '' });
   const [projectModal, setProjectModal] = useState(false);
   const [projectForm, setProjectForm] = useState({ title: '', description: '', skills: '', repo_url: '', demo_url: '' });
+  const [studentSearchQ, setStudentSearchQ] = useState('');
+  const [showStudentPicker, setShowStudentPicker] = useState(false);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -102,9 +105,12 @@ export default function SkillAdmin() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <View>
                 <Text style={styles.h1}>Skill Profiles</Text>
-                <Text style={styles.sub}>Manage skills, certifications & endorsements</Text>
+                <Text style={styles.sub}>{selectedStudentId ? `Viewing: ${users.find((u: any) => u.id === selectedStudentId)?.name || 'Student'}` : 'Manage skills, certifications & endorsements'}</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Pressable onPress={() => setShowStudentPicker(!showStudentPicker)} style={styles.iconBtn}>
+                  <Users color={theme.colors.brand} size={16} />
+                </Pressable>
                 <Pressable onPress={() => setCertModal(true)} style={styles.iconBtn}>
                   <Shield color={theme.colors.brand} size={16} />
                 </Pressable>
@@ -113,6 +119,28 @@ export default function SkillAdmin() {
                 </Pressable>
               </View>
             </View>
+
+            {showStudentPicker && (
+              <Card style={{ marginTop: 12, padding: 12 }}>
+                <Text style={[styles.label, { marginTop: 0 }]}>Select Student</Text>
+                <View style={styles.searchBox}>
+                  <Search size={16} color={theme.colors.muted} />
+                  <TextInput value={studentSearchQ} onChangeText={setStudentSearchQ} placeholder="Search students..." placeholderTextColor={theme.colors.muted} style={styles.searchInput} />
+                </View>
+                {selectedStudentId && (
+                  <Pressable onPress={() => { setSelectedStudentId(''); setStudentSearchQ(''); }} style={[styles.chip, styles.chipActive, { alignSelf: 'flex-start', marginBottom: 8 }]}>
+                    <Text style={[styles.chipTxt, styles.chipTxtActive]}>✕ Clear selection</Text>
+                  </Pressable>
+                )}
+                <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                  {(users as any[]).filter((u: any) => !studentSearchQ || u.name?.toLowerCase().includes(studentSearchQ.toLowerCase())).slice(0, 20).map((u: any) => (
+                    <Pressable key={u.id} onPress={() => { setSelectedStudentId(u.id); setShowStudentPicker(false); setStudentSearchQ(''); }} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.border }}>
+                      <Text style={{ fontSize: 13, fontWeight: selectedStudentId === u.id ? '700' : '500', color: selectedStudentId === u.id ? theme.colors.brand : theme.colors.onSurface }}>{u.name}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </Card>
+            )}
 
             <View style={styles.statsRow}>
               <View style={styles.statMini}>

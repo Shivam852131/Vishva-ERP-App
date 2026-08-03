@@ -43,95 +43,150 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-export const CameraView = React.forwardRef<CameraViewHandle, CameraProps>(
-  function CameraView(
-    { facing, barcodeScannerSettings, onBarcodeScanned, style, children, ...viewProps },
-    ref,
-  ) {
-    const cameraRef = useRef<CameraRef>(null);
-    const device = useCameraDevice(facing === 'front' ? 'front' : 'back');
-    const { hasPermission, requestPermission } = useCameraPermission();
+function CameraViewIOS(
+  { facing, onBarcodeScanned, style, children, ...viewProps }: CameraProps,
+  ref: React.ForwardedRef<CameraViewHandle>,
+) {
+  const cameraRef = useRef<CameraRef>(null);
+  const device = useCameraDevice(facing === 'front' ? 'front' : 'back');
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const photoOutput = usePhotoOutput();
 
-    const photoOutput = usePhotoOutput();
+  const onObjectsScannedRef = useRef(onBarcodeScanned);
+  onObjectsScannedRef.current = onBarcodeScanned;
 
-    const onObjectsScannedRef = useRef(onBarcodeScanned);
-    onObjectsScannedRef.current = onBarcodeScanned;
-
-    const objectOutput = useObjectOutput({
-      types: ['qr'],
-      onObjectsScanned: (objects) => {
-        if (objects.length > 0 && onObjectsScannedRef.current) {
-          const obj = objects[0] as any;
-          if (obj.value) {
-            onObjectsScannedRef.current({ data: obj.value });
-          }
+  const objectOutput = useObjectOutput({
+    types: ['qr'],
+    onObjectsScanned: (objects) => {
+      if (objects.length > 0 && onObjectsScannedRef.current) {
+        const obj = objects[0] as any;
+        if (obj.value) {
+          onObjectsScannedRef.current({ data: obj.value });
         }
-      },
-    });
-
-    useEffect(() => {
-      if (!hasPermission) {
-        requestPermission();
       }
-    }, [hasPermission, requestPermission]);
+    },
+  });
 
-    useImperativeHandle(ref, () => ({
-      async takePictureAsync(options) {
-        if (device && photoOutput) {
-          try {
-            const photo = await photoOutput.capturePhoto(
-              { flashMode: 'off' },
-              {},
-            );
-            const data = await photo.getFileDataAsync();
-            photo.dispose();
-            if (options?.base64 !== false) {
-              return { base64: arrayBufferToBase64(data) };
-            }
-            return {};
-          } catch {
-            // Fall back to image-picker
-          }
-        }
+  useEffect(() => {
+    if (!hasPermission) requestPermission();
+  }, [hasPermission, requestPermission]);
+
+  useImperativeHandle(ref, () => ({
+    async takePictureAsync(options) {
+      if (device && photoOutput) {
         try {
-          const opts: CameraOptions = {
-            mediaType: 'photo',
-            includeBase64: options?.base64 ?? true,
-            quality: (options?.quality as any) ?? 0.5,
-            saveToPhotos: false,
-            cameraType: 'front',
-          };
-          const result = await launchCamera(opts);
-          if (result.didCancel || result.errorCode || !result.assets?.length) {
-            return null;
-          }
-          const asset = result.assets[0];
-          return { base64: asset.base64 || undefined };
-        } catch {
-          return null;
-        }
-      },
-    }));
+          const photo = await photoOutput.capturePhoto({ flashMode: 'off' }, {});
+          const data = await photo.getFileDataAsync();
+          photo.dispose();
+          if (options?.base64 !== false) return { base64: arrayBufferToBase64(data) };
+          return {};
+        } catch {}
+      }
+      try {
+        const opts: CameraOptions = {
+          mediaType: 'photo',
+          includeBase64: options?.base64 ?? true,
+          quality: (options?.quality as any) ?? 0.5,
+          saveToPhotos: false,
+          cameraType: 'front',
+        };
+        const result = await launchCamera(opts);
+        if (result.didCancel || result.errorCode || !result.assets?.length) return null;
+        return { base64: result.assets[0].base64 || undefined };
+      } catch {
+        return null;
+      }
+    },
+  }));
 
-    if (!device) {
-      return (
-        <View style={[styles.camera, style]}>
-          <Text style={styles.text}>Camera preview</Text>
-        </View>
-      );
-    }
-
+  if (!device) {
     return (
-      <View style={style}>
-        <Camera
-          ref={cameraRef}
-          style={StyleSheet.absoluteFill}
-          device={device}
-          isActive={true}
-          outputs={[photoOutput, objectOutput]}
-        />
+      <View style={[styles.camera, style]}>
+        <Text style={styles.text}>Camera preview</Text>
       </View>
     );
+  }
+
+  return (
+    <View style={style}>
+      <Camera
+        ref={cameraRef}
+        style={StyleSheet.absoluteFill}
+        device={device}
+        isActive={true}
+        outputs={[photoOutput, objectOutput]}
+      />
+    </View>
+  );
+}
+
+function CameraViewAndroid(
+  { facing, onBarcodeScanned, style, children, ...viewProps }: CameraProps,
+  ref: React.ForwardedRef<CameraViewHandle>,
+) {
+  const cameraRef = useRef<CameraRef>(null);
+  const device = useCameraDevice(facing === 'front' ? 'front' : 'back');
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const photoOutput = usePhotoOutput();
+
+  useEffect(() => {
+    if (!hasPermission) requestPermission();
+  }, [hasPermission, requestPermission]);
+
+  useImperativeHandle(ref, () => ({
+    async takePictureAsync(options) {
+      if (device && photoOutput) {
+        try {
+          const photo = await photoOutput.capturePhoto({ flashMode: 'off' }, {});
+          const data = await photo.getFileDataAsync();
+          photo.dispose();
+          if (options?.base64 !== false) return { base64: arrayBufferToBase64(data) };
+          return {};
+        } catch {}
+      }
+      try {
+        const opts: CameraOptions = {
+          mediaType: 'photo',
+          includeBase64: options?.base64 ?? true,
+          quality: (options?.quality as any) ?? 0.5,
+          saveToPhotos: false,
+          cameraType: 'front',
+        };
+        const result = await launchCamera(opts);
+        if (result.didCancel || result.errorCode || !result.assets?.length) return null;
+        return { base64: result.assets[0].base64 || undefined };
+      } catch {
+        return null;
+      }
+    },
+  }));
+
+  if (!device) {
+    return (
+      <View style={[styles.camera, style]}>
+        <Text style={styles.text}>Camera preview</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={style}>
+      <Camera
+        ref={cameraRef}
+        style={StyleSheet.absoluteFill}
+        device={device}
+        isActive={true}
+        outputs={[photoOutput]}
+      />
+    </View>
+  );
+}
+
+const CameraViewComponent = Platform.OS === 'ios' ? CameraViewIOS : CameraViewAndroid;
+
+export const CameraView = React.forwardRef<CameraViewHandle, CameraProps>(
+  function CameraView(props, ref) {
+    return <CameraViewComponent {...props} ref={ref} />;
   },
 );
 

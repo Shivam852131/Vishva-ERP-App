@@ -75,8 +75,12 @@ function serializeNote(note, courseMap) {
 
 async function getCourseMap(db, courseIds) {
   if (!courseIds.length) return new Map();
-  const oids = courseIds.filter(id => oid(id)).map(id => oid(id));
-  const query = oids.length ? { $or: [{ _id: { $in: oids } }, { _id: { $in: courseIds } }] } : { _id: { $in: courseIds } };
+  const oids = courseIds.map(id => oid(id)).filter(Boolean);
+  const rawIds = courseIds.filter(id => typeof id === 'string');
+  const conditions = [];
+  if (oids.length) conditions.push({ _id: { $in: oids } });
+  if (rawIds.length) conditions.push({ _id: { $in: rawIds } });
+  const query = conditions.length === 1 ? conditions[0] : { $or: conditions };
   const courses = await db.collection('courses').find(query).toArray();
   const map = new Map();
   for (const c of courses) map.set(String(c._id), c);
@@ -162,7 +166,7 @@ router.post('/courses', requireRole('college_admin', 'super_admin', 'faculty'), 
   }
 });
 
-router.put('/courses/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+router.put('/courses/:id', requireRole('college_admin', 'super_admin', 'faculty'), async (req, res) => {
   try {
     const db = getDB();
     const _id = oid(req.params.id);
@@ -265,6 +269,41 @@ router.post('/timetable', requireRole('college_admin', 'super_admin'), async (re
   }
 });
 
+router.put('/timetable/:id', requireRole('college_admin', 'super_admin', 'faculty'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid slot id.', 404);
+
+    const existing = await db.collection('timetable_slots').findOne({ _id });
+    if (!existing) return sendError(res, 'Slot not found.', 404);
+
+    const { courseId, dayOfWeek, startTime, endTime, room } = req.body;
+    const update = {};
+    if (courseId) {
+      const course = await db.collection('courses').findOne({ _id: oid(courseId) });
+      if (!course) return sendError(res, 'Course not found.', 404);
+      update.courseId = oid(courseId);
+    }
+    if (dayOfWeek) update.dayOfWeek = dayOfWeek;
+    if (startTime) update.startTime = startTime;
+    if (endTime) update.endTime = endTime;
+    if (room !== undefined) update.room = room;
+
+    await db.collection('timetable_slots').updateOne({ _id }, { $set: update });
+    const updated = await db.collection('timetable_slots').findOne({ _id });
+    const courseMap = await getCourseMap(db, [updated.courseId]);
+    const facultyMap = new Map();
+    if (updated.facultyId) {
+      const facultyUser = await db.collection('users').findOne({ _id: updated.facultyId });
+      if (facultyUser) facultyMap.set(String(updated.facultyId), facultyUser);
+    }
+    res.json(serializeTimetableSlot(updated, courseMap, facultyMap));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
 router.delete('/timetable/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
   try {
     const db = getDB();
@@ -349,6 +388,45 @@ router.post('/assignments', requireRole('faculty', 'college_admin', 'super_admin
   }
 });
 
+router.put('/assignments/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid assignment id.', 404);
+
+    const existing = await db.collection('assignments').findOne({ _id });
+    if (!existing) return sendError(res, 'Assignment not found.', 404);
+
+    const update = {};
+    if (req.body.title) update.title = req.body.title;
+    if (req.body.description !== undefined) update.description = req.body.description;
+    if (req.body.dueDate) update.dueDate = req.body.dueDate;
+    if (req.body.maxMarks) update.maxMarks = Number(req.body.maxMarks);
+    if (req.body.courseId) update.courseId = oid(req.body.courseId);
+
+    await db.collection('assignments').updateOne({ _id }, { $set: update });
+    const updated = await db.collection('assignments').findOne({ _id });
+    const courseMap = await getCourseMap(db, [updated.courseId]);
+    res.json(serializeAssignment(updated, courseMap, null));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
+router.delete('/assignments/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid assignment id.', 404);
+
+    const result = await db.collection('assignments').deleteOne({ _id });
+    if (!result.deletedCount) return sendError(res, 'Assignment not found.', 404);
+    res.json({ ok: true });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
 router.post('/assignments/:id/submit', requireRole('student'), async (req, res) => {
   try {
     const db = getDB();
@@ -428,6 +506,27 @@ router.get('/assignments/:id/submissions', requireRole('faculty', 'college_admin
   }
 });
 
+router.put('/submissions/:id/grade', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid submission id.', 404);
+
+    const existing = await db.collection('submissions').findOne({ _id });
+    if (!existing) return sendError(res, 'Submission not found.', 404);
+
+    const update = {};
+    if (req.body.marks !== undefined) update.marks = Number(req.body.marks);
+    if (req.body.feedback !== undefined) update.feedback = req.body.feedback;
+
+    await db.collection('submissions').updateOne({ _id }, { $set: update });
+    const updated = await db.collection('submissions').findOne({ _id });
+    res.json({ ok: true, submission: updated });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
 router.get('/notes', async (req, res) => {
   try {
     const db = getDB();
@@ -471,6 +570,43 @@ router.post('/notes', requireRole('faculty', 'college_admin', 'super_admin'), as
   }
 });
 
+router.put('/notes/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid note id.', 404);
+
+    const existing = await db.collection('notes').findOne({ _id });
+    if (!existing) return sendError(res, 'Note not found.', 404);
+
+    const update = {};
+    if (req.body.title) update.title = req.body.title;
+    if (req.body.content !== undefined) update.content = req.body.content;
+    if (req.body.courseId) update.courseId = oid(req.body.courseId);
+
+    await db.collection('notes').updateOne({ _id }, { $set: update });
+    const updated = await db.collection('notes').findOne({ _id });
+    const courseMap = updated.courseId ? await getCourseMap(db, [updated.courseId]) : new Map();
+    res.json(serializeNote(updated, courseMap));
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
+router.delete('/notes/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid note id.', 404);
+
+    const result = await db.collection('notes').deleteOne({ _id });
+    if (!result.deletedCount) return sendError(res, 'Note not found.', 404);
+    res.json({ ok: true });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
 router.get('/exams', async (req, res) => {
   try {
     const db = getDB();
@@ -502,6 +638,57 @@ router.get('/exams', async (req, res) => {
         };
       })
     );
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
+router.put('/exams/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid exam id.', 404);
+
+    const existing = await db.collection('exams').findOne({ _id });
+    if (!existing) return sendError(res, 'Exam not found.', 404);
+
+    const update = {};
+    if (req.body.title) update.title = req.body.title;
+    if (req.body.type) update.type = req.body.type;
+    if (req.body.date) update.date = req.body.date;
+    if (req.body.duration) update.duration = req.body.duration;
+    if (req.body.totalMarks) update.totalMarks = Number(req.body.totalMarks);
+    if (req.body.courseId) update.courseId = oid(req.body.courseId);
+
+    await db.collection('exams').updateOne({ _id }, { $set: update });
+    const updated = await db.collection('exams').findOne({ _id });
+    const courseMap = updated.courseId ? await getCourseMap(db, [updated.courseId]) : new Map();
+    const course = courseMap.get(String(updated.courseId));
+    res.json({
+      id: String(updated._id),
+      course_id: String(updated.courseId),
+      course_name: course ? course.name : undefined,
+      course_code: course ? course.code : undefined,
+      title: updated.title,
+      type: updated.type,
+      date: updated.date,
+      duration: updated.duration,
+      total_marks: updated.totalMarks,
+    });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
+router.delete('/exams/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const _id = oid(req.params.id);
+    if (!_id) return sendError(res, 'Invalid exam id.', 404);
+
+    const result = await db.collection('exams').deleteOne({ _id });
+    if (!result.deletedCount) return sendError(res, 'Exam not found.', 404);
+    res.json({ ok: true });
   } catch (e) {
     sendError(res, e.message, 500);
   }

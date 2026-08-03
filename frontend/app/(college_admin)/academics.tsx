@@ -45,13 +45,16 @@ export default function Academics() {
     refreshFaculty();
   }, [refreshCourses, refreshSlots, refreshFaculty]);
 
+  const loading = coursesLoading || slotsLoading || facultyLoading;
+
+  React.useEffect(() => {
+    if (refreshing && !loading) setRefreshing(false);
+  }, [refreshing, loading]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     reloadAll();
-    setTimeout(() => setRefreshing(false), 1500);
   }, [reloadAll]);
-
-  const loading = coursesLoading || slotsLoading || facultyLoading;
 
   const [cModal, setCModal] = useState(false);
   const [cEdit, setCEdit] = useState<Course | null>(null);
@@ -177,7 +180,7 @@ export default function Academics() {
   const deleteSlot = async (id: string) => {
     if (confirmSlot !== id) { setConfirmSlot(id); return; }
     try { await deleteSlotApi(`/timetable/${id}`, { method: 'DELETE' }); setConfirmSlot(''); reloadAll(); }
-    catch (e) { console.log(e); }
+    catch (e: any) { Alert.alert('Delete Failed', e.message || 'Could not delete slot'); setConfirmSlot(''); }
   };
 
   const duplicateDay = () => {

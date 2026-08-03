@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform,
-  RefreshControl, Dimensions, Modal, TextInput
+  RefreshControl, Dimensions, Modal, TextInput, Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppImage as Image } from '@/src/components/AppImage';
@@ -369,6 +369,9 @@ export default function Attendance() {
   const [pendingGps, setPendingGps] = useState<any>(null);
   const [autoArmed, setAutoArmed] = useState(false);
   const [autoStatus, setAutoStatus] = useState('');
+  const [bgAutoEnabled, setBgAutoEnabled] = useState(false);
+  const [bgAutoStatus, setBgAutoStatus] = useState('');
+  const bgWatcherRef = useRef<{ remove: () => void } | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'calendar' | 'trends'>('overview');
   const [heatmapMonth, setHeatmapMonth] = useState(new Date().getMonth());
   const [heatmapYear, setHeatmapYear] = useState(new Date().getFullYear());
@@ -384,6 +387,7 @@ export default function Attendance() {
 
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current);
+    if (bgWatcherRef.current) bgWatcherRef.current.remove();
   }, []);
 
   useEffect(() => {
@@ -477,6 +481,68 @@ export default function Attendance() {
     pollRef.current = setInterval(attempt, 15000);
   };
 
+  const toggleBgAutoCheckin = async () => {
+    if (bgAutoEnabled) {
+      if (bgWatcherRef.current) { bgWatcherRef.current.remove(); bgWatcherRef.current = null; }
+      setBgAutoEnabled(false);
+      setBgAutoStatus('');
+      return;
+    }
+    if (sessions.length === 0) {
+      Alert.alert('No Active Session', 'No attendance session is currently active. Wait for your faculty to start one.');
+      return;
+    }
+    const bgPerm = await Location.requestBackgroundPermissionsAsync();
+    if (!bgPerm.granted) {
+      Alert.alert('Permission Required', 'Background location permission is needed for auto check-in. Please enable it in Settings.');
+      return;
+    }
+    const session = sessions[0];
+    setBgAutoEnabled(true);
+    setBgAutoStatus('Watching your location in the background…');
+    const RADIUS = Number(session.radius_m) || 150;
+    const sessionLat = Number(session.lat) || 0;
+    const sessionLng = Number(session.lng) || 0;
+    let lastCheckinAttempt = 0;
+
+    bgWatcherRef.current = Location.watchPositionAsync(
+      { distanceFilter: 20, interval: 15000 },
+      async (pos) => {
+        if (!bgAutoEnabled) return;
+        const dist = Location.haversineDistance(
+          pos.coords.latitude, pos.coords.longitude,
+          sessionLat, sessionLng,
+        );
+        if (dist <= RADIUS) {
+          const now = Date.now();
+          if (now - lastCheckinAttempt < 30000) return;
+          lastCheckinAttempt = now;
+          try {
+            const r = await checkinAuto('/attendance/checkin', {
+              method: 'POST',
+              body: JSON.stringify({ session_id: session.id, lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            });
+            if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            flash(true, `Auto check-in: ${r?.message || 'Done'}`);
+            setBgAutoEnabled(false);
+            setBgAutoStatus('');
+            if (bgWatcherRef.current) { bgWatcherRef.current.remove(); bgWatcherRef.current = null; }
+            await refresh();
+          } catch (e: any) {
+            if (e.message?.includes('already checked in') || e.message?.includes('ended')) {
+              setBgAutoEnabled(false);
+              setBgAutoStatus('');
+              if (bgWatcherRef.current) { bgWatcherRef.current.remove(); bgWatcherRef.current = null; }
+              await refresh();
+            }
+          }
+        } else {
+          setBgAutoStatus(`Outside campus (${Math.round(dist)}m away). Walking…`);
+        }
+      },
+    );
+  };
+
   const minutesLeft = (iso: string) => Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
 
   const streak = analyticsData?.streak || 0;
@@ -554,26 +620,38 @@ export default function Attendance() {
                 <QuickActionButton
                   icon={<QrCode size={20} color="#6366F1" />}
                   label="Scan QR"
-                  onPress={() => sessions.length > 0 && router.push(`/scan?sid=${sessions[0]?.id}`)}
+                  onPress={() => {
+                    if (sessions.length === 0) { Alert.alert('No Active Session', 'No attendance session is currently active. Wait for your faculty to start one.'); return; }
+                    router.push(`/scan?sid=${sessions[0]?.id}`);
+                  }}
                   color="#6366F1"
                   badge={sessions.filter(s => s.method === 'qr').length}
                 />
                 <QuickActionButton
                   icon={<MapPin size={20} color="#10B981" />}
                   label="GPS Check-in"
-                  onPress={() => sessions.length > 0 && setPendingGps(sessions[0])}
+                  onPress={() => {
+                    if (sessions.length === 0) { Alert.alert('No Active Session', 'No attendance session is currently active. Wait for your faculty to start one.'); return; }
+                    setPendingGps(sessions[0]);
+                  }}
                   color="#10B981"
                 />
                 <QuickActionButton
                   icon={<ScanFace size={20} color="#8B5CF6" />}
                   label="Face ID"
-                  onPress={() => sessions.length > 0 && router.push(`/selfie?sid=${sessions[0]?.id}&enrolled=${faceEnrolled ? 1 : 0}`)}
+                  onPress={() => {
+                    if (sessions.length === 0) { Alert.alert('No Active Session', 'No attendance session is currently active. Wait for your faculty to start one.'); return; }
+                    router.push(`/selfie?sid=${sessions[0]?.id}&enrolled=${faceEnrolled ? 1 : 0}`);
+                  }}
                   color="#8B5CF6"
                 />
                 <QuickActionButton
                   icon={<Radar size={20} color="#F59E0B" />}
                   label="Auto Check-in"
-                  onPress={() => sessions.length > 0 && armAuto(sessions[0])}
+                  onPress={() => {
+                    if (sessions.length === 0) { Alert.alert('No Active Session', 'No attendance session is currently active. Wait for your faculty to start one.'); return; }
+                    armAuto(sessions[0]);
+                  }}
                   color="#F59E0B"
                 />
               </View>
@@ -799,16 +877,21 @@ export default function Attendance() {
           {user?.role === 'student' && (
             <Card style={styles.bgCheckinCard}>
               <View style={styles.bgCheckinHeader}>
-                <Radar color={theme.colors.brand} size={20} />
+                <Radar color={bgAutoEnabled ? '#10B981' : theme.colors.brand} size={20} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.bgCheckinTitle} numberOfLines={1} ellipsizeMode="tail">Background auto check-in</Text>
                   <Text style={styles.bgCheckinSubtext} numberOfLines={2} ellipsizeMode="tail">
-                    Geofencing checks you in the moment you enter campus zones
+                    {bgAutoEnabled ? bgAutoStatus || 'Active — you\'ll be checked in automatically' : 'Geofencing checks you in the moment you enter campus zones'}
                   </Text>
                 </View>
               </View>
-              <Pressable style={styles.enableButton}>
-                <Text style={styles.enableButtonText}>Enable</Text>
+              <Pressable
+                onPress={toggleBgAutoCheckin}
+                style={[styles.enableButton, bgAutoEnabled && { backgroundColor: 'rgba(239,68,68,0.1)' }]}
+              >
+                <Text style={[styles.enableButtonText, bgAutoEnabled && { color: '#EF4444' }]}>
+                  {bgAutoEnabled ? 'Disable' : 'Enable'}
+                </Text>
               </Pressable>
             </Card>
           )}

@@ -23,10 +23,14 @@ export default function MentorshipAdmin() {
   const { data: overview } = useFetch<any>('/mentorship/overview');
   const { mutate: acceptConn } = useMutate();
   const { mutate: completeConn } = useMutate();
+  const { mutate: createSession } = useMutate();
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'overview' | 'mentors' | 'connections' | 'sessions'>('overview');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState<any>(null);
+  const [bookSessionModal, setBookSessionModal] = useState(false);
+  const [sessionForm, setSessionForm] = useState({ connectionId: '', topic: '', scheduledAt: '', agenda: '', durationMinutes: '30' });
+  const [sessionSaving, setSessionSaving] = useState(false);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -75,6 +79,37 @@ export default function MentorshipAdmin() {
     } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
+  const bookSession = async () => {
+    if (!sessionForm.connectionId || !sessionForm.topic || !sessionForm.scheduledAt) {
+      Alert.alert('Error', 'Connection, topic, and scheduled time are required');
+      return;
+    }
+    setSessionSaving(true);
+    try {
+      await createSession('/mentorship/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          connectionId: sessionForm.connectionId,
+          topic: sessionForm.topic,
+          scheduledAt: new Date(sessionForm.scheduledAt).toISOString(),
+          agenda: sessionForm.agenda,
+          durationMinutes: Number(sessionForm.durationMinutes) || 30,
+        }),
+      });
+      setBookSessionModal(false);
+      setSessionForm({ connectionId: '', topic: '', scheduledAt: '', agenda: '', durationMinutes: '30' });
+      refreshSessions();
+      refreshConn();
+      Alert.alert('Done', 'Session booked successfully');
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    setSessionSaving(false);
+  };
+
+  const activeConnections = useMemo(() =>
+    (connections as any[]).filter((c: any) => c.status === 'active'),
+    [connections]
+  );
+
   return (
     <ErrorBoundary>
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
@@ -87,6 +122,10 @@ export default function MentorshipAdmin() {
               <Text style={styles.h1}>Mentorship</Text>
               <Text style={styles.sub}>Manage mentors, connections & sessions</Text>
             </View>
+            <Pressable onPress={() => setBookSessionModal(true)} style={[styles.iconBtn, { marginTop: 12 }]}>
+              <Plus color="#fff" size={16} />
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Book Session</Text>
+            </Pressable>
 
             <View style={styles.statsRow}>
               <View style={styles.statMini}>
@@ -345,6 +384,41 @@ export default function MentorshipAdmin() {
             </View>
           </View>
         </Modal>
+
+        {/* Book Session Modal */}
+        <Modal visible={bookSessionModal} transparent animationType="slide" onRequestClose={() => setBookSessionModal(false)}>
+          <View style={styles.backdrop}>
+            <View style={styles.sheet}>
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle}>Book Session</Text>
+                <Pressable onPress={() => setBookSessionModal(false)}><X color={theme.colors.muted} size={22} /></Pressable>
+              </View>
+              <ScrollView keyboardShouldPersistTaps="handled">
+                <Text style={styles.label}>Connection *</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 8 }}>
+                  {activeConnections.map((c: any) => (
+                    <Pressable key={c.id} onPress={() => setSessionForm(p => ({ ...p, connectionId: c.id }))} style={[styles.chip, sessionForm.connectionId === c.id && styles.chipActive]}>
+                      <Text style={[styles.chipTxt, sessionForm.connectionId === c.id && styles.chipTxtActive]}>{c.mentor_name} → {c.student_name}</Text>
+                    </Pressable>
+                  ))}
+                  {activeConnections.length === 0 && <Text style={styles.detailMeta}>No active connections</Text>}
+                </ScrollView>
+                <Text style={styles.label}>Topic *</Text>
+                <TextInput value={sessionForm.topic} onChangeText={v => setSessionForm(p => ({ ...p, topic: v }))} placeholder="e.g. Career guidance" placeholderTextColor={theme.colors.muted} style={styles.input} />
+                <Text style={styles.label}>Scheduled At (YYYY-MM-DD HH:MM) *</Text>
+                <TextInput value={sessionForm.scheduledAt} onChangeText={v => setSessionForm(p => ({ ...p, scheduledAt: v }))} placeholder="2026-08-10 14:00" placeholderTextColor={theme.colors.muted} style={styles.input} />
+                <Text style={styles.label}>Duration (minutes)</Text>
+                <TextInput value={sessionForm.durationMinutes} onChangeText={v => setSessionForm(p => ({ ...p, durationMinutes: v }))} placeholder="30" placeholderTextColor={theme.colors.muted} style={styles.input} keyboardType="number-pad" />
+                <Text style={styles.label}>Agenda</Text>
+                <TextInput value={sessionForm.agenda} onChangeText={v => setSessionForm(p => ({ ...p, agenda: v }))} placeholder="What to discuss..." placeholderTextColor={theme.colors.muted} style={[styles.input, { height: 80, textAlignVertical: 'top' }]} multiline />
+                <Pressable onPress={bookSession} disabled={sessionSaving} style={[styles.cta, sessionSaving && { opacity: 0.6 }]}>
+                  {sessionSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaTxt}>Book Session</Text>}
+                </Pressable>
+                <View style={{ height: 20 }} />
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </ErrorBoundary>
   );
@@ -398,4 +472,13 @@ const styles = StyleSheet.create({
   detailMeta: { fontSize: 12, color: theme.colors.muted },
   reviewName: { fontSize: 12, fontWeight: '700', color: theme.colors.onSurface },
   reviewFeedback: { fontSize: 12, color: theme.colors.muted, marginTop: 4, lineHeight: 18 },
+  iconBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 40, borderRadius: 20, backgroundColor: theme.colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  chipActive: { backgroundColor: theme.colors.brandTertiary, borderColor: theme.colors.brandPrimary },
+  chipTxt: { fontSize: 12, color: theme.colors.muted, fontWeight: '600' },
+  chipTxtActive: { color: theme.colors.brand },
+  label: { color: theme.colors.onSurfaceTertiary, fontSize: 13, fontWeight: '600', marginTop: 12, marginBottom: 6 },
+  input: { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: 12, fontSize: 14, color: theme.colors.onSurface },
+  cta: { backgroundColor: theme.colors.brandPrimary, paddingVertical: 15, borderRadius: theme.radius.md, marginTop: theme.spacing.lg, alignItems: 'center' },
+  ctaTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

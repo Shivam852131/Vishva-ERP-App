@@ -18,6 +18,7 @@ export default function AssessmentsAdmin() {
   const { data: leaderboard = [] } = useFetch<any[]>('/assessments/leaderboard');
   const { data: catalog = [] } = useFetch<any[]>('/skills/catalog');
   const { mutate: createAssessment } = useMutate();
+  const { mutate: deleteAssessment } = useMutate();
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'catalog' | 'results' | 'leaderboard' | 'analytics'>('catalog');
   const [filter, setFilter] = useState('all');
@@ -27,6 +28,7 @@ export default function AssessmentsAdmin() {
   const [formErr, setFormErr] = useState('');
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<any>(null);
+  const [confirmDelId, setConfirmDelId] = useState('');
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -70,6 +72,16 @@ export default function AssessmentsAdmin() {
       refresh();
     } catch (e: any) { setFormErr(e.message); }
     finally { setSaving(false); }
+  };
+
+  const doDeleteAssessment = async (id: string) => {
+    if (confirmDelId !== id) { setConfirmDelId(id); return; }
+    try {
+      await deleteAssessment(`/assessments/${id}`, { method: 'DELETE' });
+      setConfirmDelId('');
+      refresh();
+      Alert.alert('Deleted', 'Assessment deleted successfully');
+    } catch (e: any) { Alert.alert('Error', e.message); setConfirmDelId(''); }
   };
 
   const tabs = [
@@ -168,6 +180,12 @@ export default function AssessmentsAdmin() {
                           {a.passed && <CheckCircle size={16} color="#10B981" />}
                           <Text style={styles.attemptsTxt}>{a.attempts || 0} attempts</Text>
                           {a.best_score !== null && <Text style={styles.bestTxt}>Best: {a.best_score}%</Text>}
+                          <Pressable
+                            onPress={(e) => { e.stopPropagation(); doDeleteAssessment(a.id); }}
+                            style={[styles.deleteBtn, confirmDelId === a.id && { backgroundColor: '#EF4444' }]}
+                          >
+                            <Trash2 size={12} color={confirmDelId === a.id ? '#fff' : '#EF4444'} />
+                          </Pressable>
                         </View>
                       </View>
                     </Card>
@@ -403,6 +421,7 @@ const styles = StyleSheet.create({
   metaTagTxt: { fontSize: 10, color: theme.colors.muted },
   attemptsTxt: { fontSize: 11, color: theme.colors.muted },
   bestTxt: { fontSize: 11, fontWeight: '700', color: theme.colors.brandPrimary },
+  deleteBtn: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: '#EF4444', alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   resultTitle: { fontSize: 13, fontWeight: '700', color: theme.colors.onSurface },
   resultMeta: { fontSize: 11, color: theme.colors.muted, marginTop: 2 },
   resultScore: { fontSize: 18, fontWeight: '800' },

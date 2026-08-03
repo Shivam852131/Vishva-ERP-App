@@ -32,7 +32,7 @@ export default function EditProfile() {
       if (result.canceled || !result.assets?.[0]?.base64) return;
       setUploading(true);
       const base64 = result.assets[0].base64;
-      const uploaded = await uploadImage(`data:image/jpeg;base64,${base64}`, 'avatars');
+      const uploaded = await uploadImage(base64, 'avatars');
       setAvatar(uploaded.url);
     } catch {
       Alert.alert('Error', 'Failed to upload image. Please try again.');

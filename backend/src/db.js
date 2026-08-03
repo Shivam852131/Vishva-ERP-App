@@ -119,6 +119,15 @@ async function createIndexes(database) {
     database.collection('fee_payments').createIndex({ orderId: 1 }),
     database.collection('webhook_logs').createIndex({ collegeId: 1, createdAt: -1 }),
     database.collection('colleges').createIndex({ code: 1 }, { unique: true }),
+    database.collection('courses').createIndex({ facultyId: 1 }),
+    database.collection('timetable_slots').createIndex({ courseId: 1, dayOfWeek: 1 }),
+    database.collection('timetable_slots').createIndex({ facultyId: 1 }),
+    database.collection('notes').createIndex({ courseId: 1 }),
+    database.collection('notes').createIndex({ createdAt: -1 }),
+    database.collection('exams').createIndex({ courseId: 1 }),
+    database.collection('generated_exams').createIndex({ createdById: 1 }),
+    database.collection('exam_results').createIndex({ studentId: 1, courseId: 1 }),
+    database.collection('course_enrollments').createIndex({ studentId: 1, courseId: 1 }, { unique: true }),
   ]);
 }
 

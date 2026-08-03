@@ -22,7 +22,6 @@ export default function PlacementsAdmin() {
   const { data: drives = [], loading: drivesLoading, refresh: refreshDrives } = useFetch<any[]>('/placement/drives');
   const { data: applications = [], refresh: refreshApps } = useFetch<any[]>('/placement/applications');
   const { data: stats, refresh: refreshStats } = useFetch<any>('/placement/stats');
-  const { data: courses = [] } = useFetch<any[]>('/courses');
   const { mutate: createDrive } = useMutate();
   const { mutate: updateDrive } = useMutate();
   const { mutate: deleteDrive } = useMutate();
