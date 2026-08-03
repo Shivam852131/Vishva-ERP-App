@@ -6,8 +6,6 @@ const { sendError, nowIso } = require('../utils');
 
 const router = express.Router();
 
-router.use(requireRole('college_admin', 'super_admin'));
-
 async function getCollegeId(user) {
   const db = getDB();
   if (user.role === 'super_admin' && user.collegeId) {
@@ -22,7 +20,7 @@ function maskKey(key) {
   return key.slice(0, 6) + '****' + key.slice(-4);
 }
 
-router.get('/payment-config', async (req, res) => {
+router.get('/payment-config', requireRole('college_admin', 'super_admin'), async (req, res) => {
   try {
     const db = getDB();
     const collegeId = await getCollegeId(req.user);
@@ -54,7 +52,7 @@ router.get('/payment-config', async (req, res) => {
   }
 });
 
-router.post('/payment-config', async (req, res) => {
+router.post('/payment-config', requireRole('college_admin', 'super_admin'), async (req, res) => {
   try {
     const db = getDB();
     const collegeId = await getCollegeId(req.user);
@@ -109,7 +107,7 @@ router.post('/payment-config', async (req, res) => {
   }
 });
 
-router.post('/payment-config/verify', async (req, res) => {
+router.post('/payment-config/verify', requireRole('college_admin', 'super_admin'), async (req, res) => {
   try {
     const db = getDB();
     const collegeId = await getCollegeId(req.user);
@@ -147,7 +145,7 @@ router.post('/payment-config/verify', async (req, res) => {
   }
 });
 
-router.delete('/payment-config', async (req, res) => {
+router.delete('/payment-config', requireRole('college_admin', 'super_admin'), async (req, res) => {
   try {
     const db = getDB();
     const collegeId = await getCollegeId(req.user);
