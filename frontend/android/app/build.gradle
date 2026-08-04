@@ -13,6 +13,18 @@ react {
     def realRoot = System.getenv("VISHVA_JS_ROOT")
     if (realRoot != null && !realRoot.isEmpty()) {
         root = file(realRoot)
+        cliFile = file("${realRoot}/node_modules/react-native/cli.js")
+    }
+    def shortCodegenDir = System.getenv("VISHVA_CODEGEN_DIR")
+    if (shortCodegenDir != null && !shortCodegenDir.isEmpty()) {
+        codegenDir = file(shortCodegenDir)
+    }
+    def shortReactNativeDir = System.getenv("VISHVA_REACT_NATIVE_DIR")
+    if (shortReactNativeDir != null && !shortReactNativeDir.isEmpty()) {
+        reactNativeDir = file(shortReactNativeDir)
+    }
+    if (System.getenv("VISHVA_DISABLE_SOURCE_MAPS") == "true") {
+        hermesFlags = ["-O"]
     }
 }
 

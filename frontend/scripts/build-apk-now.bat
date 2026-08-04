@@ -10,6 +10,9 @@ set "REAL=C:\Users\shiva\OneDrive\Desktop\vishva ERP app\frontend"
 set "LOG=%REAL%\build-log.txt"
 set "VISHVA_JS_ROOT=%REAL%"
 set "VISHVA_BUILD_DIR=%REAL%\android\app\build"
+set "VISHVA_CODEGEN_DIR=Z:\node_modules\@react-native\codegen"
+set "VISHVA_REACT_NATIVE_DIR=Z:\node_modules\react-native"
+set "VISHVA_DISABLE_SOURCE_MAPS=true"
 
 subst Z: /D >nul 2>&1
 subst Z: "%REAL%" || exit /b 1

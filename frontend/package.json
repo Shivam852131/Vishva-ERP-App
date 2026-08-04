@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "jest",
+    "postinstall": "node scripts/patch-nitro-gradle.js",
     "build:release": "cd android && ./gradlew assembleProductionRelease --no-daemon",
     "build:release:staging": "cd android && ./gradlew assembleStagingRelease --no-daemon",
     "build:aab": "cd android && ./gradlew bundleProductionRelease --no-daemon",

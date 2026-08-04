@@ -179,7 +179,7 @@ export default function EmailIntegration() {
                   </View>
                 </Pressable>
               );
-            })}
+              })}
           </ScrollView>
 
           <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
@@ -221,7 +221,7 @@ export default function EmailIntegration() {
                   </Card>
                 </Pressable>
               );
-            })}
+            }))}
 
             <SectionTitle>Email Preferences</SectionTitle>
             <Card style={{ padding: 16, gap: 10 }}>
