@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
-const { authUser, requireRole } = require('../auth');
+const { authUser, requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
 const { sendError, paginationParams, sendPaginated, nowIso } = require('../utils');
 
 const router = express.Router();
@@ -73,7 +73,7 @@ function serializeNote(note, courseMap) {
   };
 }
 
-async function getCourseMap(db, courseIds) {
+async function getCourseMap(db, courseIds, req) {
   if (!courseIds.length) return new Map();
   const oids = courseIds.map(id => oid(id)).filter(Boolean);
   const rawIds = courseIds.filter(id => typeof id === 'string');
@@ -81,22 +81,24 @@ async function getCourseMap(db, courseIds) {
   if (oids.length) conditions.push({ _id: { $in: oids } });
   if (rawIds.length) conditions.push({ _id: { $in: rawIds } });
   const query = conditions.length === 1 ? conditions[0] : { $or: conditions };
-  const courses = await db.collection('courses').find(query).toArray();
+  const collegeQ = req ? collegeFilter(req) : {};
+  const courses = await db.collection('courses').find({ ...query, ...collegeQ }).toArray();
   const map = new Map();
   for (const c of courses) map.set(String(c._id), c);
   return map;
 }
 
-async function getUserCourseIds(db, userId, role) {
+async function getUserCourseIds(db, userId, role, req) {
   const uid = oid(userId);
+  const collegeQ = req ? collegeFilter(req) : {};
   if (role === 'student') {
     const filter = uid ? { $or: [{ studentId: uid }, { studentId: userId }] } : { studentId: userId };
-    const enrollments = await db.collection('course_enrollments').find(filter).toArray();
+    const enrollments = await db.collection('course_enrollments').find({ ...filter, ...collegeQ }).toArray();
     return enrollments.map(e => e.courseId);
   }
   if (role === 'faculty') {
     const filter = uid ? { $or: [{ facultyId: uid }, { facultyId: userId }] } : { facultyId: userId };
-    const courses = await db.collection('courses').find(filter).toArray();
+    const courses = await db.collection('courses').find({ ...filter, ...collegeQ }).toArray();
     return courses.map(c => c._id);
   }
   return null;
@@ -112,22 +114,22 @@ router.get('/courses', async (req, res) => {
     if (deptFilter) filter.department = deptFilter;
 
     if (user.role === 'student') {
-      const courseIds = await getUserCourseIds(db, String(user._id), 'student');
+      const courseIds = await getUserCourseIds(db, String(user._id), 'student', req);
       const oids = courseIds.map(id => oid(id)).filter(Boolean);
       if (oids.length) filter._id = { $in: oids };
       else filter._id = { $in: courseIds };
     } else if (user.role === 'faculty') {
-      const courseIds = await getUserCourseIds(db, String(user._id), 'faculty');
+      const courseIds = await getUserCourseIds(db, String(user._id), 'faculty', req);
       const oids = courseIds.map(id => oid(id)).filter(Boolean);
       if (oids.length) filter._id = { $in: oids };
       else filter._id = { $in: courseIds };
     }
 
-    const courses = await db.collection('courses').find(filter).toArray();
+    const courses = await db.collection('courses').find({ ...filter, ...collegeFilter(req) }).toArray();
     const facultyIds = [...new Set(courses.map(c => c.facultyId).filter(Boolean))];
     const facultyMap = new Map();
     if (facultyIds.length) {
-      const facultyUsers = await db.collection('users').find({ _id: { $in: facultyIds } }).toArray();
+      const facultyUsers = await db.collection('users').find({ _id: { $in: facultyIds }, ...collegeFilter(req) }).toArray();
       for (const u of facultyUsers) facultyMap.set(String(u._id), u);
     }
     res.json(courses.map(c => serializeCourse(c, facultyMap)));
@@ -151,13 +153,14 @@ router.post('/courses', requireRole('college_admin', 'super_admin', 'faculty'), 
       college: college || '',
       facultyId: req.body.faculty_id ? oid(req.body.faculty_id) : null,
       createdAt: nowIso(),
+      collegeId: oid(req.userCollegeId),
     };
 
     const result = await db.collection('courses').insertOne(doc);
     doc._id = result.insertedId;
     const facultyMap = new Map();
     if (doc.facultyId) {
-      const facultyUser = await db.collection('users').findOne({ _id: doc.facultyId });
+      const facultyUser = await db.collection('users').findOne({ _id: doc.facultyId, ...collegeFilter(req) });
       if (facultyUser) facultyMap.set(String(doc.facultyId), facultyUser);
     }
     res.json(serializeCourse(doc, facultyMap));
@@ -172,7 +175,7 @@ router.put('/courses/:id', requireRole('college_admin', 'super_admin', 'faculty'
     const _id = oid(req.params.id);
     if (!_id) return sendError(res, 'Invalid course id.', 404);
 
-    const existing = await db.collection('courses').findOne({ _id });
+    const existing = await db.collection('courses').findOne({ _id, ...collegeFilter(req) });
     if (!existing) return sendError(res, 'Course not found.', 404);
 
     const update = {};
@@ -185,10 +188,10 @@ router.put('/courses/:id', requireRole('college_admin', 'super_admin', 'faculty'
     if (req.body.faculty_id) update.facultyId = oid(req.body.faculty_id);
 
     await db.collection('courses').updateOne({ _id }, { $set: update });
-    const updated = await db.collection('courses').findOne({ _id });
+    const updated = await db.collection('courses').findOne({ _id, ...collegeFilter(req) });
     const facultyMap = new Map();
     if (updated.facultyId) {
-      const facultyUser = await db.collection('users').findOne({ _id: updated.facultyId });
+      const facultyUser = await db.collection('users').findOne({ _id: updated.facultyId, ...collegeFilter(req) });
       if (facultyUser) facultyMap.set(String(updated.facultyId), facultyUser);
     }
     res.json(serializeCourse(updated, facultyMap));
@@ -218,17 +221,17 @@ router.get('/timetable', async (req, res) => {
     let filter = {};
 
     if (user.role === 'student' || user.role === 'faculty') {
-      const courseIds = await getUserCourseIds(db, String(user._id), user.role);
+      const courseIds = await getUserCourseIds(db, String(user._id), user.role, req);
       filter.courseId = { $in: courseIds.length ? courseIds : [] };
     }
 
-    const slots = await db.collection('timetable_slots').find(filter).toArray();
+    const slots = await db.collection('timetable_slots').find({ ...filter, ...collegeFilter(req) }).toArray();
     const courseIds = [...new Set(slots.map(s => s.courseId))];
-    const courseMap = await getCourseMap(db, courseIds);
+    const courseMap = await getCourseMap(db, courseIds, req);
     const facultyIds = [...new Set(slots.map(s => s.facultyId).filter(Boolean))];
     const facultyMap = new Map();
     if (facultyIds.length) {
-      const facultyUsers = await db.collection('users').find({ _id: { $in: facultyIds } }).toArray();
+      const facultyUsers = await db.collection('users').find({ _id: { $in: facultyIds }, ...collegeFilter(req) }).toArray();
       for (const u of facultyUsers) facultyMap.set(String(u._id), u);
     }
     res.json(slots.map(s => serializeTimetableSlot(s, courseMap, facultyMap)));
@@ -243,7 +246,7 @@ router.post('/timetable', requireRole('college_admin', 'super_admin'), async (re
     const { courseId, dayOfWeek, startTime, endTime, room, facultyId } = req.body;
     if (!courseId) return sendError(res, 'courseId is required.');
 
-    const course = await db.collection('courses').findOne({ _id: oid(courseId) });
+    const course = await db.collection('courses').findOne({ _id: oid(courseId), ...collegeFilter(req) });
     if (!course) return sendError(res, 'Course not found.', 404);
 
     const doc = {
@@ -253,14 +256,15 @@ router.post('/timetable', requireRole('college_admin', 'super_admin'), async (re
       endTime: endTime || '10:00',
       room: room || 'TBD',
       facultyId: facultyId ? oid(facultyId) : course.facultyId || null,
+      collegeId: oid(req.userCollegeId),
     };
 
     const result = await db.collection('timetable_slots').insertOne(doc);
     doc._id = result.insertedId;
-    const courseMap = await getCourseMap(db, [doc.courseId]);
+    const courseMap = await getCourseMap(db, [doc.courseId], req);
     const facultyMap = new Map();
     if (doc.facultyId) {
-      const facultyUser = await db.collection('users').findOne({ _id: doc.facultyId });
+      const facultyUser = await db.collection('users').findOne({ _id: doc.facultyId, ...collegeFilter(req) });
       if (facultyUser) facultyMap.set(String(doc.facultyId), facultyUser);
     }
     res.json(serializeTimetableSlot(doc, courseMap, facultyMap));
@@ -275,13 +279,13 @@ router.put('/timetable/:id', requireRole('college_admin', 'super_admin', 'facult
     const _id = oid(req.params.id);
     if (!_id) return sendError(res, 'Invalid slot id.', 404);
 
-    const existing = await db.collection('timetable_slots').findOne({ _id });
+    const existing = await db.collection('timetable_slots').findOne({ _id, ...collegeFilter(req) });
     if (!existing) return sendError(res, 'Slot not found.', 404);
 
     const { courseId, dayOfWeek, startTime, endTime, room } = req.body;
     const update = {};
     if (courseId) {
-      const course = await db.collection('courses').findOne({ _id: oid(courseId) });
+      const course = await db.collection('courses').findOne({ _id: oid(courseId), ...collegeFilter(req) });
       if (!course) return sendError(res, 'Course not found.', 404);
       update.courseId = oid(courseId);
     }
@@ -291,11 +295,11 @@ router.put('/timetable/:id', requireRole('college_admin', 'super_admin', 'facult
     if (room !== undefined) update.room = room;
 
     await db.collection('timetable_slots').updateOne({ _id }, { $set: update });
-    const updated = await db.collection('timetable_slots').findOne({ _id });
-    const courseMap = await getCourseMap(db, [updated.courseId]);
+    const updated = await db.collection('timetable_slots').findOne({ _id, ...collegeFilter(req) });
+    const courseMap = await getCourseMap(db, [updated.courseId], req);
     const facultyMap = new Map();
     if (updated.facultyId) {
-      const facultyUser = await db.collection('users').findOne({ _id: updated.facultyId });
+      const facultyUser = await db.collection('users').findOne({ _id: updated.facultyId, ...collegeFilter(req) });
       if (facultyUser) facultyMap.set(String(updated.facultyId), facultyUser);
     }
     res.json(serializeTimetableSlot(updated, courseMap, facultyMap));
@@ -325,21 +329,21 @@ router.get('/assignments', async (req, res) => {
     let filter = {};
 
     if (user.role === 'student') {
-      const courseIds = await getUserCourseIds(db, String(user._id), 'student');
+      const courseIds = await getUserCourseIds(db, String(user._id), 'student', req);
       filter.courseId = { $in: courseIds.length ? courseIds : [] };
     } else if (user.role === 'faculty') {
-      const courseIds = await getUserCourseIds(db, String(user._id), 'faculty');
+      const courseIds = await getUserCourseIds(db, String(user._id), 'faculty', req);
       filter.courseId = { $in: courseIds.length ? courseIds : [] };
     }
 
-    const assignments = await db.collection('assignments').find(filter).toArray();
+    const assignments = await db.collection('assignments').find({ ...filter, ...collegeFilter(req) }).toArray();
     const courseIds = [...new Set(assignments.map(a => a.courseId))];
-    const courseMap = await getCourseMap(db, courseIds);
+    const courseMap = await getCourseMap(db, courseIds, req);
 
     let submissions = [];
     if (user.role === 'student') {
       submissions = await db.collection('submissions')
-        .find({ studentId: oid(String(user._id)) })
+        .find({ studentId: oid(String(user._id)), ...collegeFilter(req) })
         .toArray();
     }
 
@@ -366,7 +370,7 @@ router.post('/assignments', requireRole('faculty', 'college_admin', 'super_admin
     const { courseId, title, description, dueDate, maxMarks } = req.body;
     if (!courseId || !title) return sendError(res, 'courseId and title are required.');
 
-    const course = await db.collection('courses').findOne({ _id: oid(courseId) });
+    const course = await db.collection('courses').findOne({ _id: oid(courseId), ...collegeFilter(req) });
     if (!course) return sendError(res, 'Course not found.', 404);
 
     const doc = {
@@ -377,11 +381,12 @@ router.post('/assignments', requireRole('faculty', 'college_admin', 'super_admin
       maxMarks: Number(maxMarks || 20),
       createdById: oid(String(user._id)),
       createdAt: nowIso(),
+      collegeId: oid(req.userCollegeId),
     };
 
     const result = await db.collection('assignments').insertOne(doc);
     doc._id = result.insertedId;
-    const courseMap = await getCourseMap(db, [doc.courseId]);
+    const courseMap = await getCourseMap(db, [doc.courseId], req);
     res.json(serializeAssignment(doc, courseMap, null));
   } catch (e) {
     sendError(res, e.message, 500);
@@ -394,7 +399,7 @@ router.put('/assignments/:id', requireRole('faculty', 'college_admin', 'super_ad
     const _id = oid(req.params.id);
     if (!_id) return sendError(res, 'Invalid assignment id.', 404);
 
-    const existing = await db.collection('assignments').findOne({ _id });
+    const existing = await db.collection('assignments').findOne({ _id, ...collegeFilter(req) });
     if (!existing) return sendError(res, 'Assignment not found.', 404);
 
     const update = {};
@@ -405,8 +410,8 @@ router.put('/assignments/:id', requireRole('faculty', 'college_admin', 'super_ad
     if (req.body.courseId) update.courseId = oid(req.body.courseId);
 
     await db.collection('assignments').updateOne({ _id }, { $set: update });
-    const updated = await db.collection('assignments').findOne({ _id });
-    const courseMap = await getCourseMap(db, [updated.courseId]);
+    const updated = await db.collection('assignments').findOne({ _id, ...collegeFilter(req) });
+    const courseMap = await getCourseMap(db, [updated.courseId], req);
     res.json(serializeAssignment(updated, courseMap, null));
   } catch (e) {
     sendError(res, e.message, 500);
@@ -434,13 +439,14 @@ router.post('/assignments/:id/submit', requireRole('student'), async (req, res) 
     const aid = oid(req.params.id);
     if (!aid) return sendError(res, 'Invalid assignment id.', 404);
 
-    const assignment = await db.collection('assignments').findOne({ _id: aid });
+    const assignment = await db.collection('assignments').findOne({ _id: aid, ...collegeFilter(req) });
     if (!assignment) return sendError(res, 'Assignment not found.', 404);
 
     const sid = oid(String(user._id));
     const existing = await db.collection('submissions').findOne({
       assignmentId: aid,
       studentId: sid,
+      ...collegeFilter(req),
     });
 
     const now = nowIso();
@@ -449,7 +455,7 @@ router.post('/assignments/:id/submit', requireRole('student'), async (req, res) 
         { _id: existing._id },
         { $set: { content: req.body.content || '', submittedAt: now } }
       );
-      const updated = await db.collection('submissions').findOne({ _id: existing._id });
+      const updated = await db.collection('submissions').findOne({ _id: existing._id, ...collegeFilter(req) });
       res.json({ ok: true, submission: updated });
     } else {
       const doc = {
@@ -459,6 +465,7 @@ router.post('/assignments/:id/submit', requireRole('student'), async (req, res) 
         submittedAt: now,
         marks: null,
         feedback: null,
+        collegeId: oid(req.userCollegeId),
       };
       const result = await db.collection('submissions').insertOne(doc);
       doc._id = result.insertedId;
@@ -475,16 +482,16 @@ router.get('/assignments/:id/submissions', requireRole('faculty', 'college_admin
     const aid = oid(req.params.id);
     if (!aid) return sendError(res, 'Invalid assignment id.', 404);
 
-    const assignment = await db.collection('assignments').findOne({ _id: aid });
+    const assignment = await db.collection('assignments').findOne({ _id: aid, ...collegeFilter(req) });
     if (!assignment) return sendError(res, 'Assignment not found.', 404);
 
     const submissions = await db.collection('submissions')
-      .find({ assignmentId: aid })
+      .find({ assignmentId: aid, ...collegeFilter(req) })
       .toArray();
 
     const studentIds = [...new Set(submissions.map(s => s.studentId))];
     const students = studentIds.length
-      ? await db.collection('users').find({ _id: { $in: studentIds } }).toArray()
+      ? await db.collection('users').find({ _id: { $in: studentIds }, ...collegeFilter(req) }).toArray()
       : [];
     const studentMap = new Map();
     for (const s of students) studentMap.set(String(s._id), s);
@@ -512,7 +519,7 @@ router.put('/submissions/:id/grade', requireRole('faculty', 'college_admin', 'su
     const _id = oid(req.params.id);
     if (!_id) return sendError(res, 'Invalid submission id.', 404);
 
-    const existing = await db.collection('submissions').findOne({ _id });
+    const existing = await db.collection('submissions').findOne({ _id, ...collegeFilter(req) });
     if (!existing) return sendError(res, 'Submission not found.', 404);
 
     const update = {};
@@ -520,7 +527,7 @@ router.put('/submissions/:id/grade', requireRole('faculty', 'college_admin', 'su
     if (req.body.feedback !== undefined) update.feedback = req.body.feedback;
 
     await db.collection('submissions').updateOne({ _id }, { $set: update });
-    const updated = await db.collection('submissions').findOne({ _id });
+    const updated = await db.collection('submissions').findOne({ _id, ...collegeFilter(req) });
     res.json({ ok: true, submission: updated });
   } catch (e) {
     sendError(res, e.message, 500);
@@ -534,13 +541,13 @@ router.get('/notes', async (req, res) => {
     let filter = {};
 
     if (user.role === 'student' || user.role === 'faculty') {
-      const courseIds = await getUserCourseIds(db, String(user._id), user.role);
+      const courseIds = await getUserCourseIds(db, String(user._id), user.role, req);
       filter.courseId = { $in: courseIds.length ? courseIds : [] };
     }
 
-    const notes = await db.collection('notes').find(filter).sort({ createdAt: -1 }).toArray();
+    const notes = await db.collection('notes').find({ ...filter, ...collegeFilter(req) }).sort({ createdAt: -1 }).toArray();
     const courseIds = [...new Set(notes.map(n => n.courseId).filter(Boolean))];
-    const courseMap = await getCourseMap(db, courseIds);
+    const courseMap = await getCourseMap(db, courseIds, req);
     res.json(notes.map(n => serializeNote(n, courseMap)));
   } catch (e) {
     sendError(res, e.message, 500);
@@ -559,11 +566,12 @@ router.post('/notes', requireRole('faculty', 'college_admin', 'super_admin'), as
       content: content || '',
       createdById: oid(String(user._id)),
       createdAt: nowIso(),
+      collegeId: oid(req.userCollegeId),
     };
 
     const result = await db.collection('notes').insertOne(doc);
     doc._id = result.insertedId;
-    const courseMap = doc.courseId ? await getCourseMap(db, [doc.courseId]) : new Map();
+    const courseMap = doc.courseId ? await getCourseMap(db, [doc.courseId], req) : new Map();
     res.json(serializeNote(doc, courseMap));
   } catch (e) {
     sendError(res, e.message, 500);
@@ -576,7 +584,7 @@ router.put('/notes/:id', requireRole('faculty', 'college_admin', 'super_admin'),
     const _id = oid(req.params.id);
     if (!_id) return sendError(res, 'Invalid note id.', 404);
 
-    const existing = await db.collection('notes').findOne({ _id });
+    const existing = await db.collection('notes').findOne({ _id, ...collegeFilter(req) });
     if (!existing) return sendError(res, 'Note not found.', 404);
 
     const update = {};
@@ -585,8 +593,8 @@ router.put('/notes/:id', requireRole('faculty', 'college_admin', 'super_admin'),
     if (req.body.courseId) update.courseId = oid(req.body.courseId);
 
     await db.collection('notes').updateOne({ _id }, { $set: update });
-    const updated = await db.collection('notes').findOne({ _id });
-    const courseMap = updated.courseId ? await getCourseMap(db, [updated.courseId]) : new Map();
+    const updated = await db.collection('notes').findOne({ _id, ...collegeFilter(req) });
+    const courseMap = updated.courseId ? await getCourseMap(db, [updated.courseId], req) : new Map();
     res.json(serializeNote(updated, courseMap));
   } catch (e) {
     sendError(res, e.message, 500);
@@ -614,13 +622,13 @@ router.get('/exams', async (req, res) => {
     let filter = {};
 
     if (user.role === 'student' || user.role === 'faculty') {
-      const courseIds = await getUserCourseIds(db, String(user._id), user.role);
+      const courseIds = await getUserCourseIds(db, String(user._id), user.role, req);
       filter.courseId = { $in: courseIds.length ? courseIds : [] };
     }
 
-    const exams = await db.collection('exams').find(filter).toArray();
+    const exams = await db.collection('exams').find({ ...filter, ...collegeFilter(req) }).toArray();
     const courseIds = [...new Set(exams.map(e => e.courseId))];
-    const courseMap = await getCourseMap(db, courseIds);
+    const courseMap = await getCourseMap(db, courseIds, req);
 
     res.json(
       exams.map(exam => {
@@ -649,7 +657,7 @@ router.put('/exams/:id', requireRole('faculty', 'college_admin', 'super_admin'),
     const _id = oid(req.params.id);
     if (!_id) return sendError(res, 'Invalid exam id.', 404);
 
-    const existing = await db.collection('exams').findOne({ _id });
+    const existing = await db.collection('exams').findOne({ _id, ...collegeFilter(req) });
     if (!existing) return sendError(res, 'Exam not found.', 404);
 
     const update = {};
@@ -661,8 +669,8 @@ router.put('/exams/:id', requireRole('faculty', 'college_admin', 'super_admin'),
     if (req.body.courseId) update.courseId = oid(req.body.courseId);
 
     await db.collection('exams').updateOne({ _id }, { $set: update });
-    const updated = await db.collection('exams').findOne({ _id });
-    const courseMap = updated.courseId ? await getCourseMap(db, [updated.courseId]) : new Map();
+    const updated = await db.collection('exams').findOne({ _id, ...collegeFilter(req) });
+    const courseMap = updated.courseId ? await getCourseMap(db, [updated.courseId], req) : new Map();
     const course = courseMap.get(String(updated.courseId));
     res.json({
       id: String(updated._id),
@@ -701,10 +709,10 @@ router.get('/exams/:id/hall-ticket', requireRole('student'), async (req, res) =>
     const eid = oid(req.params.id);
     if (!eid) return sendError(res, 'Invalid exam id.', 404);
 
-    const exam = await db.collection('exams').findOne({ _id: eid });
+    const exam = await db.collection('exams').findOne({ _id: eid, ...collegeFilter(req) });
     if (!exam) return sendError(res, 'Exam not found.', 404);
 
-    const course = await db.collection('courses').findOne({ _id: exam.courseId });
+    const course = await db.collection('courses').findOne({ _id: exam.courseId, ...collegeFilter(req) });
 
     res.json({
       student_name: user.name,
@@ -735,6 +743,7 @@ router.post('/exams/generate', requireRole('faculty', 'college_admin', 'super_ad
       date: nowIso(),
       duration: req.body.duration || '60 minutes',
       totalMarks: Number(totalMarks || 50),
+      collegeId: oid(req.userCollegeId),
     };
 
     const examResult = await db.collection('exams').insertOne(examDoc);
@@ -749,6 +758,7 @@ router.post('/exams/generate', requireRole('faculty', 'college_admin', 'super_ad
       totalMarks: examDoc.totalMarks,
       createdById: oid(String(user._id)),
       createdAt: nowIso(),
+      collegeId: oid(req.userCollegeId),
     };
 
     const genResult = await db.collection('generated_exams').insertOne(generatedDoc);
@@ -771,11 +781,11 @@ router.post('/exams/generate', requireRole('faculty', 'college_admin', 'super_ad
 router.get('/generated-exams', async (req, res) => {
   try {
     const db = getDB();
-    const generated = await db.collection('generated_exams').find().sort({ createdAt: -1 }).toArray();
+    const generated = await db.collection('generated_exams').find({ ...collegeFilter(req) }).sort({ createdAt: -1 }).toArray();
 
     const creatorIds = [...new Set(generated.map(g => g.createdById).filter(Boolean))];
     const creators = creatorIds.length
-      ? await db.collection('users').find({ _id: { $in: creatorIds } }).toArray()
+      ? await db.collection('users').find({ _id: { $in: creatorIds }, ...collegeFilter(req) }).toArray()
       : [];
     const creatorMap = new Map();
     for (const c of creators) creatorMap.set(String(c._id), c);
@@ -796,25 +806,26 @@ router.get('/generated-exams', async (req, res) => {
   }
 });
 
-router.get('/question-bank/subjects', async (_req, res) => {
+router.get('/question-bank/subjects', async (req, res) => {
   try {
     const db = getDB();
-    const subjects = await db.collection('question_bank_items').distinct('subject');
+    const subjects = await db.collection('question_bank_items').distinct('subject', collegeFilter(req));
     res.json(subjects);
   } catch (e) {
     sendError(res, e.message, 500);
   }
 });
 
-router.get('/question-bank/stats', async (_req, res) => {
+router.get('/question-bank/stats', async (req, res) => {
   try {
     const db = getDB();
+    const collegeQ = collegeFilter(req);
     const [total, subjects, easy, medium, hard] = await Promise.all([
-      db.collection('question_bank_items').countDocuments(),
-      db.collection('question_bank_items').distinct('subject'),
-      db.collection('question_bank_items').countDocuments({ difficulty: 'easy' }),
-      db.collection('question_bank_items').countDocuments({ difficulty: 'medium' }),
-      db.collection('question_bank_items').countDocuments({ difficulty: 'hard' }),
+      db.collection('question_bank_items').countDocuments(collegeQ),
+      db.collection('question_bank_items').distinct('subject', collegeQ),
+      db.collection('question_bank_items').countDocuments({ difficulty: 'easy', ...collegeQ }),
+      db.collection('question_bank_items').countDocuments({ difficulty: 'medium', ...collegeQ }),
+      db.collection('question_bank_items').countDocuments({ difficulty: 'hard', ...collegeQ }),
     ]);
     res.json({ total, subjects, easy, medium, hard });
   } catch (e) {
@@ -830,8 +841,8 @@ router.get('/question-bank', async (req, res) => {
     if (req.query.subject) filter.subject = req.query.subject;
 
     const [questions, total] = await Promise.all([
-      db.collection('question_bank_items').find(filter).skip(skip).limit(limit).toArray(),
-      db.collection('question_bank_items').countDocuments(filter),
+      db.collection('question_bank_items').find({ ...filter, ...collegeFilter(req) }).skip(skip).limit(limit).toArray(),
+      db.collection('question_bank_items').countDocuments({ ...filter, ...collegeFilter(req) }),
     ]);
 
     sendPaginated(
@@ -869,6 +880,7 @@ router.post('/question-bank', requireRole('faculty', 'college_admin', 'super_adm
       difficulty: difficulty || 'medium',
       marks: Number(marks || 1),
       type: type || 'mcq',
+      collegeId: oid(req.userCollegeId),
     };
 
     const result = await db.collection('question_bank_items').insertOne(doc);
@@ -909,9 +921,9 @@ router.get('/results/me', requireRole('student'), async (req, res) => {
     const user = await authUser(req);
     const sid = oid(String(user._id));
 
-    const results = await db.collection('exam_results').find({ studentId: sid }).toArray();
+    const results = await db.collection('exam_results').find({ studentId: sid, ...collegeFilter(req) }).toArray();
     const courseIds = [...new Set(results.map(r => r.courseId).filter(Boolean))];
-    const courseMap = await getCourseMap(db, courseIds);
+    const courseMap = await getCourseMap(db, courseIds, req);
 
     res.json(
       results.map(r => {
@@ -932,10 +944,10 @@ router.get('/results/me', requireRole('student'), async (req, res) => {
   }
 });
 
-router.get('/events', async (_req, res) => {
+router.get('/events', async (req, res) => {
   try {
     const db = getDB();
-    const events = await db.collection('events').find().sort({ date: -1 }).toArray();
+    const events = await db.collection('events').find({ ...collegeFilter(req) }).sort({ date: -1 }).toArray();
     res.json(
       events.map(e => ({
         id: String(e._id),

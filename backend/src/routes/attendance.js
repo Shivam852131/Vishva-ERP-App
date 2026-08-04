@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
-const { authUser, requireRole } = require('../auth');
+const { authUser, requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
 const { serializeUser, sendError, makeCode, nowIso, isoDate } = require('../utils');
 const { verifyFace, encodeFace } = require('../faceVerify');
 
@@ -14,63 +14,63 @@ function createAttendanceRouter(io) {
     io.emit('attendance:live:update', { sessionId: sid, courseId: String(session.courseId) });
   }
 
-  async function pushNotification({ audience = 'all', title, body, recipientIds = [] }) {
+  async function pushNotification(req, { audience = 'all', title, body, recipientIds = [] }) {
     const db = getDB();
-    const doc = { audience, title, body, recipientIds: recipientIds.map(String), readBy: [], createdAt: new Date() };
+    const doc = { audience, title, body, recipientIds: recipientIds.map(String), readBy: [], createdAt: new Date(), collegeId: oid(req.userCollegeId) };
     const { insertedId } = await db.collection('notifications').insertOne(doc);
     io.emit('notifications:update', { audience, recipientIds });
     return { _id: insertedId, ...doc };
   }
 
-  async function getSessionById(sid) {
+  async function getSessionById(req, sid) {
     const db = getDB();
     const id = oid(sid);
     if (!id) return null;
-    return db.collection('attendance_sessions').findOne({ _id: id });
+    return db.collection('attendance_sessions').findOne({ _id: id, ...collegeFilter(req) });
   }
 
-  async function getSessionWithDetails(sid) {
+  async function getSessionWithDetails(req, sid) {
     const db = getDB();
     const id = oid(sid);
     if (!id) return null;
-    const session = await db.collection('attendance_sessions').findOne({ _id: id });
+    const session = await db.collection('attendance_sessions').findOne({ _id: id, ...collegeFilter(req) });
     if (!session) return null;
     const [entries, course] = await Promise.all([
-      db.collection('attendance_roll_entries').find({ sessionId: id }).toArray(),
-      db.collection('courses').findOne({ _id: oid(session.courseId) }),
+      db.collection('attendance_roll_entries').find({ sessionId: id, ...collegeFilter(req) }).toArray(),
+      db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) }),
     ]);
     const students = await Promise.all(
       entries.map(async (entry) => {
-        const student = await db.collection('users').findOne({ _id: oid(entry.studentId) });
+        const student = await db.collection('users').findOne({ _id: oid(entry.studentId), ...collegeFilter(req) });
         return { ...entry, student };
       })
     );
     return { ...session, rollEntries: students, course };
   }
 
-  async function studentsForCourse(courseId) {
+  async function studentsForCourse(req, courseId) {
     const db = getDB();
     const cid = oid(courseId);
     if (!cid) return [];
-    const enrollments = await db.collection('course_enrollments').find({ courseId: cid }).toArray();
+    const enrollments = await db.collection('course_enrollments').find({ courseId: cid, ...collegeFilter(req) }).toArray();
     const studentIds = enrollments.map((e) => oid(e.studentId)).filter(Boolean);
     if (!studentIds.length) return [];
-    return db.collection('users').find({ _id: { $in: studentIds } }).toArray();
+    return db.collection('users').find({ _id: { $in: studentIds }, ...collegeFilter(req) }).toArray();
   }
 
-  async function getEnrolledCourseIds(studentId) {
+  async function getEnrolledCourseIds(req, studentId) {
     const db = getDB();
     const sid = oid(studentId);
     if (!sid) return [];
-    const enrollments = await db.collection('course_enrollments').find({ studentId: sid }).toArray();
+    const enrollments = await db.collection('course_enrollments').find({ studentId: sid, ...collegeFilter(req) }).toArray();
     return enrollments.map((e) => oid(e.courseId)).filter(Boolean);
   }
 
-  async function getTaughtCourseIds(facultyId) {
+  async function getTaughtCourseIds(req, facultyId) {
     const db = getDB();
     const fid = oid(facultyId);
     if (!fid) return [];
-    const courses = await db.collection('courses').find({ facultyId: fid }).toArray();
+    const courses = await db.collection('courses').find({ facultyId: fid, ...collegeFilter(req) }).toArray();
     return courses.map((c) => c._id);
   }
 
@@ -82,13 +82,13 @@ function createAttendanceRouter(io) {
     const db = getDB();
     const uid = oid(user._id);
     const userId = String(user._id);
-    const filter = { $or: [{ studentId: uid }, { studentId: userId }] };
+    const filter = { $or: [{ studentId: uid }, { studentId: userId }], ...collegeFilter(req) };
     if (req.query.courseId) filter.courseId = oid(req.query.courseId);
     const records = await db.collection('attendance_records').find(filter).sort({ date: -1 }).toArray();
     const courseIdsRaw = [...new Set(records.map((r) => String(r.courseId)))];
     const courseOids = courseIdsRaw.map(oid).filter(Boolean);
     const courses = courseOids.length || courseIdsRaw.length
-      ? await db.collection('courses').find({ $or: [{ _id: { $in: courseOids } }, { _id: { $in: courseIdsRaw } }] }).toArray()
+      ? await db.collection('courses').find({ $or: [{ _id: { $in: courseOids } }, { _id: { $in: courseIdsRaw } }], ...collegeFilter(req) }).toArray()
       : [];
     const courseMap = Object.fromEntries(courses.map((c) => [String(c._id), c]));
     const mappedRecords = records.map((r) => ({
@@ -125,16 +125,16 @@ function createAttendanceRouter(io) {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    const courseIds = await getEnrolledCourseIds(user._id);
+    const courseIds = await getEnrolledCourseIds(req, user._id);
     if (!courseIds.length) return res.json({ sessions: [], face_enrolled: false });
     const sessions = await db
       .collection('attendance_sessions')
-      .find({ courseId: { $in: courseIds }, isActive: true })
+      .find({ courseId: { $in: courseIds }, isActive: true, ...collegeFilter(req) })
       .toArray();
     const enriched = await Promise.all(
       sessions.map(async (session) => {
-        const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
-        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+        const course = await db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) });
+        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
         const checkedIn = entries.some((e) => String(e.studentId) === String(user._id));
         return {
           id: String(session._id),
@@ -147,7 +147,7 @@ function createAttendanceRouter(io) {
       })
     );
     const userId = String(user._id);
-    const faceProfile = await db.collection('face_profiles').findOne({ userId: userId });
+    const faceProfile = await db.collection('face_profiles').findOne({ userId: userId, ...collegeFilter(req) });
     res.json({ sessions: enriched, face_enrolled: !!faceProfile });
   });
 
@@ -157,13 +157,13 @@ function createAttendanceRouter(io) {
     const fid = oid(user._id);
     const sessions = await db
       .collection('attendance_sessions')
-      .find({ facultyId: fid })
+      .find({ facultyId: fid, ...collegeFilter(req) })
       .sort({ createdAt: -1 })
       .toArray();
     const enriched = await Promise.all(
       sessions.map(async (session) => {
-        const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
-        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+        const course = await db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) });
+        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
         const checkins = entries.filter((e) => e.status !== 'absent').length;
         return {
           id: String(session._id),
@@ -183,7 +183,7 @@ function createAttendanceRouter(io) {
   router.post('/attendance/sessions', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const user = await authUser(req);
     const db = getDB();
-    const course = await db.collection('courses').findOne({ _id: oid(req.body.courseId) });
+    const course = await db.collection('courses').findOne({ _id: oid(req.body.courseId), ...collegeFilter(req) });
     if (!course) return sendError(res, 'Course not found.', 404);
     const doc = {
       courseId: course._id,
@@ -197,6 +197,7 @@ function createAttendanceRouter(io) {
       location: req.body.location || null,
       radius: Number(req.body.radius) || 150,
       createdAt: new Date(),
+      collegeId: oid(req.userCollegeId),
     };
     const { insertedId } = await db.collection('attendance_sessions').insertOne(doc);
     const session = { _id: insertedId, ...doc };
@@ -214,9 +215,9 @@ function createAttendanceRouter(io) {
   });
 
   router.get('/attendance/sessions/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-    const session = await getSessionWithDetails(req.params.id);
+    const session = await getSessionWithDetails(req, req.params.id);
     if (!session) return sendError(res, 'Session not found.', 404);
-    const enrolledStudents = await studentsForCourse(session.courseId);
+    const enrolledStudents = await studentsForCourse(req, session.courseId);
     const roll = session.rollEntries
       .filter((e) => e.status !== 'absent')
       .map((e) => ({
@@ -244,13 +245,13 @@ function createAttendanceRouter(io) {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    const session = await getSessionById(req.body.sessionId || req.body.session_id);
+    const session = await getSessionById(req, req.body.sessionId || req.body.session_id);
     if (!session) return sendError(res, 'Session not found.', 404);
     if (!session.isActive) return sendError(res, 'This session has ended.');
     const uid = oid(user._id);
-    const enrolled = await db.collection('course_enrollments').findOne({ studentId: uid, courseId: oid(session.courseId) });
+    const enrolled = await db.collection('course_enrollments').findOne({ studentId: uid, courseId: oid(session.courseId), ...collegeFilter(req) });
     if (!enrolled) return sendError(res, 'You are not enrolled in this class.');
-    const existing = await db.collection('attendance_roll_entries').findOne({ sessionId: session._id, studentId: uid });
+    const existing = await db.collection('attendance_roll_entries').findOne({ sessionId: session._id, studentId: uid, ...collegeFilter(req) });
     if (existing) return sendError(res, 'You are already checked in.');
     const method = req.body.method || session.type || 'qr';
 
@@ -260,7 +261,7 @@ function createAttendanceRouter(io) {
       if (!selfie) return sendError(res, 'Selfie is required for face check-in.', 400);
 
       // Get enrolled face profile
-      const faceProfile = await db.collection('face_profiles').findOne({ userId: uid });
+      const faceProfile = await db.collection('face_profiles').findOne({ userId: uid, ...collegeFilter(req) });
 
       // Run face verification pipeline
       const result = await verifyFace(selfie, faceProfile, req.body.prev_frame_base64 || null);
@@ -277,6 +278,7 @@ function createAttendanceRouter(io) {
           enrolledAt: new Date(),
           lastVerified: new Date(),
           verificationCount: 1,
+          collegeId: oid(req.userCollegeId),
         };
         if (faceProfile) {
           await db.collection('face_profiles').updateOne({ _id: faceProfile._id }, { $set: faceDoc });
@@ -298,7 +300,7 @@ function createAttendanceRouter(io) {
     }
 
     // ── Record check-in ──
-    const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+    const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
     const status = entries.length === 0 ? 'present' : 'late';
     const now = new Date();
     await db.collection('attendance_roll_entries').insertOne({
@@ -309,6 +311,7 @@ function createAttendanceRouter(io) {
       status,
       location: req.body.location || null,
       verified: method === 'face' ? true : (req.body.qrCode === session.qrCode),
+      collegeId: oid(req.userCollegeId),
     });
     await db.collection('attendance_records').insertOne({
       studentId: uid,
@@ -316,10 +319,11 @@ function createAttendanceRouter(io) {
       date: isoDate(),
       status,
       sessionId: session._id,
+      collegeId: oid(req.userCollegeId),
     });
     emitAttendance(session);
-    const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
-    await pushNotification({ audience: 'students', title: 'Attendance confirmed', body: `${course?.name || 'Course'} check-in recorded.` });
+    const course = await db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) });
+    await pushNotification(req, { audience: 'students', title: 'Attendance confirmed', body: `${course?.name || 'Course'} check-in recorded.` });
     res.json({
       ok: true,
       status,
@@ -331,13 +335,13 @@ function createAttendanceRouter(io) {
   });
 
   router.post('/attendance/sessions/:id/close', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-    const session = await getSessionById(req.params.id);
+    const session = await getSessionById(req, req.params.id);
     if (!session) return sendError(res, 'Session not found.', 404);
     const db = getDB();
     const now = new Date();
     await db.collection('attendance_sessions').updateOne({ _id: session._id }, { $set: { isActive: false, endTime: now } });
-    const enrolledStudents = await studentsForCourse(session.courseId);
-    const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+    const enrolledStudents = await studentsForCourse(req, session.courseId);
+    const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
     const checkedInIds = new Set(entries.map((e) => String(e.studentId)));
     const absentStudents = enrolledStudents.filter((s) => !checkedInIds.has(String(s._id)));
     if (absentStudents.length) {
@@ -348,6 +352,7 @@ function createAttendanceRouter(io) {
           date: isoDate(),
           status: 'absent',
           sessionId: session._id,
+          collegeId: oid(req.userCollegeId),
         }))
       );
     }
@@ -356,13 +361,13 @@ function createAttendanceRouter(io) {
   });
 
   router.post('/attendance/sessions/:id/override', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
-    const session = await getSessionById(req.params.id);
+    const session = await getSessionById(req, req.params.id);
     if (!session) return sendError(res, 'Session not found.', 404);
     const db = getDB();
     const studentId = oid(req.body.studentId);
     if (!studentId) return sendError(res, 'Student not found.', 404);
     const newStatus = req.body.status || 'present';
-    const existing = await db.collection('attendance_roll_entries').findOne({ sessionId: session._id, studentId });
+    const existing = await db.collection('attendance_roll_entries').findOne({ sessionId: session._id, studentId, ...collegeFilter(req) });
     if (!existing) {
       await db.collection('attendance_roll_entries').insertOne({
         sessionId: session._id,
@@ -372,6 +377,7 @@ function createAttendanceRouter(io) {
         status: newStatus,
         location: null,
         verified: true,
+        collegeId: oid(req.userCollegeId),
       });
     } else {
       await db.collection('attendance_roll_entries').updateOne(
@@ -390,14 +396,14 @@ function createAttendanceRouter(io) {
 
   // ── Admin routes ──
 
-  router.get('/attendance/live', requireRole('faculty', 'college_admin', 'super_admin'), async (_req, res) => {
+  router.get('/attendance/live', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const sessions = await db.collection('attendance_sessions').find({ isActive: true }).toArray();
+    const sessions = await db.collection('attendance_sessions').find({ isActive: true, ...collegeFilter(req) }).toArray();
     const activeClasses = await Promise.all(
       sessions.map(async (session) => {
-        const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
-        const enrolledStudents = await studentsForCourse(session.courseId);
-        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+        const course = await db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) });
+        const enrolledStudents = await studentsForCourse(req, session.courseId);
+        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
         const checkedIn = entries.filter((e) => e.status !== 'absent').length;
         const totalEnrolled = enrolledStudents.length;
         const percentage = totalEnrolled ? Math.round((checkedIn / totalEnrolled) * 100) : 0;
@@ -420,12 +426,12 @@ function createAttendanceRouter(io) {
   router.get('/attendance/daily', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
     const date = req.query.date || isoDate();
-    const sessions = await db.collection('attendance_sessions').find({ date, isActive: false }).toArray();
+    const sessions = await db.collection('attendance_sessions').find({ date, isActive: false, ...collegeFilter(req) }).toArray();
     let totalEnrolled = 0;
     let totalPresent = 0;
     for (const session of sessions) {
-      const enrolledStudents = await studentsForCourse(session.courseId);
-      const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+      const enrolledStudents = await studentsForCourse(req, session.courseId);
+      const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
       totalEnrolled += enrolledStudents.length;
       totalPresent += entries.filter((e) => e.status !== 'absent').length;
     }
@@ -446,16 +452,16 @@ function createAttendanceRouter(io) {
     const sinceStr = since.toISOString().split('T')[0];
 
     const sessions = await db.collection('attendance_sessions')
-      .find({ date: { $gte: sinceStr } })
+      .find({ date: { $gte: sinceStr }, ...collegeFilter(req) })
       .toArray();
 
     const sessionIds = sessions.map(s => s._id);
     const entries = await db.collection('attendance_roll_entries')
-      .find({ sessionId: { $in: sessionIds } })
+      .find({ sessionId: { $in: sessionIds }, ...collegeFilter(req) })
       .toArray();
 
     const records = await db.collection('attendance_records')
-      .find({ date: { $gte: sinceStr } })
+      .find({ date: { $gte: sinceStr }, ...collegeFilter(req) })
       .toArray();
 
     const totalSessions = sessions.length;
@@ -499,10 +505,10 @@ function createAttendanceRouter(io) {
     const endDate = req.query.endDate || isoDate();
     const records = await db
       .collection('attendance_records')
-      .find({ courseId, date: { $gte: startDate, $lte: endDate } })
+      .find({ courseId, date: { $gte: startDate, $lte: endDate }, ...collegeFilter(req) })
       .toArray();
-    const course = await db.collection('courses').findOne({ _id: courseId });
-    const enrollments = await db.collection('course_enrollments').find({ courseId }).toArray();
+    const course = await db.collection('courses').findOne({ _id: courseId, ...collegeFilter(req) });
+    const enrollments = await db.collection('course_enrollments').find({ courseId, ...collegeFilter(req) }).toArray();
     const totalStudents = enrollments.length;
     const present = records.filter((r) => r.status === 'present').length;
     const late = records.filter((r) => r.status === 'late').length;
@@ -525,27 +531,27 @@ function createAttendanceRouter(io) {
     const db = getDB();
     let sessions;
     if (req.body.courseId) {
-      sessions = await db.collection('attendance_sessions').find({ courseId: oid(req.body.courseId), isActive: true }).toArray();
+      sessions = await db.collection('attendance_sessions').find({ courseId: oid(req.body.courseId), isActive: true, ...collegeFilter(req) }).toArray();
       if (!sessions.length) {
-        const session = await db.collection('attendance_sessions').findOne({ courseId: oid(req.body.courseId) }, { sort: { createdAt: -1 } });
+        const session = await db.collection('attendance_sessions').findOne({ courseId: oid(req.body.courseId), ...collegeFilter(req) }, { sort: { createdAt: -1 } });
         sessions = session ? [session] : [];
       }
     } else {
-      sessions = await db.collection('attendance_sessions').find({ isActive: true }).toArray();
+      sessions = await db.collection('attendance_sessions').find({ isActive: true, ...collegeFilter(req) }).toArray();
       if (!sessions.length) {
-        const session = await db.collection('attendance_sessions').findOne({}, { sort: { createdAt: -1 } });
+        const session = await db.collection('attendance_sessions').findOne({ ...collegeFilter(req) }, { sort: { createdAt: -1 } });
         sessions = session ? [session] : [];
       }
     }
     let notificationsSent = 0;
     for (const session of sessions) {
-      const enrolledStudents = await studentsForCourse(session.courseId);
-      const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id }).toArray();
+      const enrolledStudents = await studentsForCourse(req, session.courseId);
+      const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
       const checkedInIds = new Set(entries.filter((e) => e.status !== 'absent').map((e) => String(e.studentId)));
       const absentStudents = enrolledStudents.filter((s) => !checkedInIds.has(String(s._id)));
-      const course = await db.collection('courses').findOne({ _id: oid(session.courseId) });
+      const course = await db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) });
       for (const student of absentStudents) {
-        await pushNotification({
+        await pushNotification(req, {
           audience: 'students',
           title: 'Attendance alert',
           body: `You were marked absent for ${course?.name || 'your course'}. Contact your faculty if this is incorrect.`,
@@ -559,12 +565,12 @@ function createAttendanceRouter(io) {
 
   // ── Classroom CRUD (admin) ──
 
-  router.get('/classrooms', async (_req, res) => {
+  router.get('/classrooms', async (req, res) => {
     const db = getDB();
-    const classrooms = await db.collection('classrooms').find().toArray();
+    const classrooms = await db.collection('classrooms').find({ ...collegeFilter(req) }).toArray();
     const results = await Promise.all(
       classrooms.map(async (c) => {
-        const scheduleCount = await db.collection('schedules').countDocuments({ classroomId: c._id });
+        const scheduleCount = await db.collection('schedules').countDocuments({ classroomId: c._id, ...collegeFilter(req) });
         return {
           id: String(c._id),
           name: c.name,
@@ -595,6 +601,7 @@ function createAttendanceRouter(io) {
       latitude: Number(req.body.latitude) || 0,
       longitude: Number(req.body.longitude) || 0,
       radius: Number(req.body.radius) || 25,
+      collegeId: oid(req.userCollegeId),
     };
     const { insertedId } = await db.collection('classrooms').insertOne(doc);
     res.json({ id: String(insertedId), ...doc });
@@ -615,7 +622,7 @@ function createAttendanceRouter(io) {
     if (req.body.radius !== undefined) update.radius = Number(req.body.radius);
     const { matchedCount } = await db.collection('classrooms').updateOne({ _id: id }, { $set: update });
     if (!matchedCount) return sendError(res, 'Classroom not found.', 404);
-    const updated = await db.collection('classrooms').findOne({ _id: id });
+    const updated = await db.collection('classrooms').findOne({ _id: id, ...collegeFilter(req) });
     res.json({ id: String(updated._id), ...updated });
   });
 
@@ -634,20 +641,20 @@ function createAttendanceRouter(io) {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    let filter = {};
+    let filter = { ...collegeFilter(req) };
     if (user.role === 'student') {
-      const courseIds = await getEnrolledCourseIds(user._id);
-      filter = { courseId: { $in: courseIds } };
+      const courseIds = await getEnrolledCourseIds(req, user._id);
+      filter.courseId = { $in: courseIds };
     } else if (user.role === 'faculty') {
-      const courseIds = await getTaughtCourseIds(user._id);
-      filter = { courseId: { $in: courseIds } };
+      const courseIds = await getTaughtCourseIds(req, user._id);
+      filter.courseId = { $in: courseIds };
     }
     const schedules = await db.collection('schedules').find(filter).toArray();
     const enriched = await Promise.all(
       schedules.map(async (s) => {
         const [course, classroom] = await Promise.all([
-          db.collection('courses').findOne({ _id: oid(s.courseId) }),
-          db.collection('classrooms').findOne({ _id: oid(s.classroomId) }),
+          db.collection('courses').findOne({ _id: oid(s.courseId), ...collegeFilter(req) }),
+          db.collection('classrooms').findOne({ _id: oid(s.classroomId), ...collegeFilter(req) }),
         ]);
         return {
           id: String(s._id),
@@ -675,10 +682,11 @@ function createAttendanceRouter(io) {
       startTime: req.body.startTime || '09:00',
       endTime: req.body.endTime || '10:00',
       semester: req.body.semester || 'current',
+      collegeId: oid(req.userCollegeId),
     };
     const { insertedId } = await db.collection('schedules').insertOne(doc);
-    const course = await db.collection('courses').findOne({ _id: doc.courseId });
-    const classroom = await db.collection('classrooms').findOne({ _id: doc.classroomId });
+    const course = await db.collection('courses').findOne({ _id: doc.courseId, ...collegeFilter(req) });
+    const classroom = await db.collection('classrooms').findOne({ _id: doc.classroomId, ...collegeFilter(req) });
     res.json({
       id: String(insertedId),
       course_id: String(doc.courseId),
@@ -708,7 +716,7 @@ function createAttendanceRouter(io) {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id) });
+    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id), ...collegeFilter(req) });
     if (!profile) return res.json({ enrolled: false });
     res.json({
       enrolled: true,
@@ -726,7 +734,7 @@ function createAttendanceRouter(io) {
     if (!selfie) return sendError(res, 'Selfie is required.', 400);
 
     // Check existing profile
-    const existing = await db.collection('face_profiles').findOne({ userId: oid(user._id) });
+    const existing = await db.collection('face_profiles').findOne({ userId: oid(user._id), ...collegeFilter(req) });
 
     // Run liveness check
     const { detectLiveness } = require('../faceVerify');
@@ -747,6 +755,7 @@ function createAttendanceRouter(io) {
       enrolledAt: new Date(),
       lastVerified: new Date(),
       verificationCount: 0,
+      collegeId: oid(req.userCollegeId),
     };
 
     if (existing) {
@@ -769,7 +778,7 @@ function createAttendanceRouter(io) {
     const selfie = req.body.selfie_base64;
     if (!selfie) return sendError(res, 'Selfie is required.', 400);
 
-    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id) });
+    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id), ...collegeFilter(req) });
     if (!profile) return sendError(res, 'No face profile enrolled. Please enroll first.', 400);
 
     const result = await verifyFace(selfie, profile);

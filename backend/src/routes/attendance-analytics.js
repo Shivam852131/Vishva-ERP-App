@@ -334,24 +334,24 @@ function createAttendanceAnalyticsRouter(io) {
       .sort({ createdAt: -1 })
       .toArray();
 
-    const enriched = await Promise.all(requests.map(async (req) => {
+    const enriched = await Promise.all(requests.map(async (leaveReq) => {
       let courseName = '';
-      if (req.courseId) {
-        const course = await db.collection('courses').findOne({ _id: req.courseId, ...collegeFilter(req) });
+      if (leaveReq.courseId) {
+        const course = await db.collection('courses').findOne({ _id: leaveReq.courseId, ...collegeFilter(req) });
         courseName = course?.name || '';
       }
       return {
-        id: String(req._id),
-        student_name: req.studentName,
-        student_email: req.studentEmail,
-        date: req.date,
-        reason: req.reason,
-        course_id: req.courseId ? String(req.courseId) : null,
+        id: String(leaveReq._id),
+        student_name: leaveReq.studentName,
+        student_email: leaveReq.studentEmail,
+        date: leaveReq.date,
+        reason: leaveReq.reason,
+        course_id: leaveReq.courseId ? String(leaveReq.courseId) : null,
         course_name: courseName,
-        status: req.status,
-        created_at: req.createdAt,
-        updated_at: req.updatedAt,
-        comment: req.comment || undefined,
+        status: leaveReq.status,
+        created_at: leaveReq.createdAt,
+        updated_at: leaveReq.updatedAt,
+        comment: leaveReq.comment || undefined,
       };
     }));
 

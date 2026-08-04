@@ -282,7 +282,7 @@ router.get('/analytics/faculty', requireRole('faculty'), async (req, res) => {
     const fid = oid(String(user._id));
     const cf = collegeFilter(req);
 
-  const courses = await db.collection('courses').find({ ...cf, $or: [{ facultyId: fid }, { facultyId: facultyId }] }).toArray();
+  const courses = await db.collection('courses').find({ ...cf, facultyId: fid }).toArray();
     const courseIds = courses.map(c => c._id);
 
     const totalStudents = courseIds.length

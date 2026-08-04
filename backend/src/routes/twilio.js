@@ -111,7 +111,7 @@ router.post('/auth/verify-otp', async (req, res) => {
       passwordHash: await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10),
       role: 'student',
       phone: `+91${phone}`,
-      collegeId: null,
+      collegeId: null, // Assigned later by college_admin; requireCollegeAccess middleware blocks access until then
       college: 'Vishva Institute of Technology',
       department: 'Computer Science',
       studentCode: `VIT-P${phone.slice(-4)}`,
