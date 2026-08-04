@@ -112,7 +112,7 @@ router.post('/auth/verify-otp', async (req, res) => {
       role: 'student',
       phone: `+91${phone}`,
       collegeId: null, // Assigned later by college_admin; requireCollegeAccess middleware blocks access until then
-      college: 'Vishva Institute of Technology',
+      college: null,
       department: 'Computer Science',
       studentCode: `VIT-P${phone.slice(-4)}`,
       year: 1,
@@ -121,7 +121,7 @@ router.post('/auth/verify-otp', async (req, res) => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    user = { _id: result.insertedId, name: `User ${phone.slice(-4)}`, email: `phone_${phone}@campus.edu`, role: 'student', phone: `+91${phone}`, college: 'Vishva Institute of Technology', department: 'Computer Science', studentCode: `VIT-P${phone.slice(-4)}` };
+    user = { _id: result.insertedId, name: `User ${phone.slice(-4)}`, email: `phone_${phone}@campus.edu`, role: 'student', phone: `+91${phone}`, college: null, department: 'Computer Science', studentCode: `VIT-P${phone.slice(-4)}` };
   }
 
   const token = issueToken(user);

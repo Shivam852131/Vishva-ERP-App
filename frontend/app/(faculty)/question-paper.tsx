@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
@@ -11,8 +11,9 @@ import {
   Layers, Hash, ChevronRight, X,
 } from 'lucide-react-native';
 import RNFS from 'react-native-fs';
+import { api } from '@/src/api';
+import { useFetch } from '@/src/hooks/useFetch';
 
-const SUBJECTS = ['Mathematics', 'Physics', 'Chemistry', 'Computer Science', 'English', 'Biology', 'History'];
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Mixed'];
 const QUESTION_COUNTS = [10, 20, 30, 50];
 const MARKS_OPTIONS = [50, 100, 150, 200];
@@ -28,41 +29,6 @@ type GeneratedPaper = {
   questionCount: number; types: string[]; date: string; questions: any[];
 };
 
-const MOCK_QUESTIONS: Record<string, any[]> = {
-  Mathematics: [
-    { q: 'Solve: 2x² + 5x - 3 = 0', type: 'short', marks: 5 },
-    { q: 'The derivative of sin(x) is:', type: 'mcq', options: ['cos(x)', '-cos(x)', 'tan(x)', 'sin(x)'], marks: 1 },
-    { q: '∫(3x² + 2x + 1)dx = ?', type: 'mcq', options: ['x³ + x² + x + C', '3x + 2', 'x³ + x² + C', '6x + 2'], marks: 1 },
-    { q: 'Prove that √2 is irrational.', type: 'long', marks: 10 },
-    { q: 'If A = {1,2,3} and B = {2,3,4}, then A ∩ B = {2,3}', type: 'truefalse', marks: 1 },
-    { q: 'Find the limit: lim(x→0) sin(x)/x', type: 'short', marks: 5 },
-    { q: 'The area under the curve y = x² from x=0 to x=3 is:', type: 'mcq', options: ['9', '27', '3', '18'], marks: 1 },
-    { q: 'Solve the differential equation dy/dx = 2y', type: 'long', marks: 10 },
-    { q: 'If f(x) = x³ - 3x, find f\'(x)', type: 'short', marks: 5 },
-    { q: 'A bag contains 3 red and 5 blue balls. Probability of drawing red is 3/8', type: 'truefalse', marks: 1 },
-  ],
-  Physics: [
-    { q: 'State Newton\'s Third Law of Motion.', type: 'short', marks: 5 },
-    { q: 'SI unit of force is:', type: 'mcq', options: ['Joule', 'Newton', 'Watt', 'Pascal'], marks: 1 },
-    { q: 'The acceleration due to gravity on Earth is approximately:', type: 'mcq', options: ['8.9 m/s²', '9.8 m/s²', '10.8 m/s²', '7.8 m/s²'], marks: 1 },
-    { q: 'Derive the expression for kinetic energy of a moving body.', type: 'long', marks: 10 },
-    { q: 'Speed of light in vacuum is constant', type: 'truefalse', marks: 1 },
-    { q: 'A body of mass 5kg is moving with velocity 10m/s. Find its kinetic energy.', type: 'short', marks: 5 },
-  ],
-  Chemistry: [
-    { q: 'What is the atomic number of Carbon?', type: 'mcq', options: ['4', '6', '8', '12'], marks: 1 },
-    { q: 'Define Molarity.', type: 'short', marks: 5 },
-    { q: 'Explain the process of photosynthesis with a balanced equation.', type: 'long', marks: 10 },
-    { q: 'NaCl is an ionic compound', type: 'truefalse', marks: 1 },
-  ],
-  'Computer Science': [
-    { q: 'What is the time complexity of binary search?', type: 'mcq', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], marks: 1 },
-    { q: 'Explain the difference between stack and queue.', type: 'short', marks: 5 },
-    { q: 'Write an algorithm for Bubble Sort and analyze its complexity.', type: 'long', marks: 10 },
-    { q: 'A linked list allows random access of elements', type: 'truefalse', marks: 1 },
-  ],
-};
-
 export default function QuestionPaperGenerator() {
   const routerNav = useRouter();
   const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
@@ -73,6 +39,7 @@ export default function QuestionPaperGenerator() {
   const [selectedTypes, setSelectedTypes] = useState(['mcq', 'short', 'long']);
   const [generating, setGenerating] = useState(false);
   const [generatedPaper, setGeneratedPaper] = useState<GeneratedPaper | null>(null);
+  const { data: subjects } = useFetch<string[]>('/academics/question-bank/subjects');
   const [history, setHistory] = useState<GeneratedPaper[]>([]);
   const [showSubjects, setShowSubjects] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -111,21 +78,26 @@ ${qsHTML}</body></html>`;
     }
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!subject) return Alert.alert('Select Subject', 'Please choose a subject');
     if (selectedTypes.length === 0) return Alert.alert('Select Types', 'Choose at least one question type');
     setGenerating(true);
-    setTimeout(() => {
-      const pool = MOCK_QUESTIONS[subject] || MOCK_QUESTIONS.Mathematics;
-      const qs = pool.slice(0, Math.min(questionCount, pool.length)).map((q, i) => ({ ...q, id: i + 1 }));
+    try {
+      const data = await api('/academics/question-bank/generate', {
+        method: 'POST',
+        body: JSON.stringify({ subject, difficulty, questionCount, totalMarks, types: selectedTypes }),
+      });
       const paper: GeneratedPaper = {
-        id: Date.now().toString(), subject, difficulty, totalMarks, questionCount: qs.length,
-        types: [...selectedTypes], date: new Date().toLocaleDateString(), questions: qs,
+        id: Date.now().toString(), subject, difficulty, totalMarks, questionCount: data.questions?.length || 0,
+        types: [...selectedTypes], date: new Date().toLocaleDateString(), questions: data.questions || [],
       };
       setGeneratedPaper(paper);
       setHistory(prev => [paper, ...prev]);
+    } catch (err: any) {
+      Alert.alert('Generation failed', err?.message || 'Could not generate paper. Make sure questions exist in the question bank for this subject.');
+    } finally {
       setGenerating(false);
-    }, 2000);
+    }
   };
 
   return (
@@ -167,7 +139,7 @@ ${qsHTML}</body></html>`;
                 </Pressable>
                 {showSubjects && (
                   <Card style={{ padding: 0 }}>
-                    {SUBJECTS.map(s => (
+                    {(subjects || []).map(s => (
                       <Pressable key={s} onPress={() => { setSubject(s); setShowSubjects(false); }}
                         style={[styles.subjectItem, subject === s && styles.subjectActive]}>
                         <Text style={[styles.subjectText, subject === s && { color: '#fff', fontWeight: '700' }]}>{s}</Text>

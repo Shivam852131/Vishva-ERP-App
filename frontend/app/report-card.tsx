@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
@@ -6,70 +6,77 @@ import { theme } from '@/src/theme';
 import { Card, SectionTitle } from '@/src/ui';
 import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
+import { useFetch } from '@/src/hooks/useFetch';
+import { api } from '@/src/api';
 import {
   Sparkles, BarChart3, TrendingUp, TrendingDown, Award,
   BookOpen, Target, ChevronRight, AlertTriangle,
 } from 'lucide-react-native';
 
-const SEMESTERS = [
-  {
-    name: 'Semester 1',
-    gpa: 7.8,
-    subjects: [
-      { name: 'Mathematics', grade: 'B+', marks: 78, max: 100 },
-      { name: 'Physics', grade: 'A', marks: 85, max: 100 },
-      { name: 'Chemistry', grade: 'B', marks: 72, max: 100 },
-      { name: 'Computer Science', grade: 'A+', marks: 95, max: 100 },
-      { name: 'English', grade: 'B', marks: 70, max: 100 },
-    ],
-    attendance: 88,
-  },
-  {
-    name: 'Semester 2',
-    gpa: 8.2,
-    subjects: [
-      { name: 'Mathematics', grade: 'A', marks: 82, max: 100 },
-      { name: 'Physics', grade: 'A', marks: 88, max: 100 },
-      { name: 'Chemistry', grade: 'B+', marks: 78, max: 100 },
-      { name: 'Computer Science', grade: 'A+', marks: 96, max: 100 },
-      { name: 'English', grade: 'B+', marks: 76, max: 100 },
-    ],
-    attendance: 91,
-  },
-  {
-    name: 'Semester 3',
-    gpa: 8.4,
-    subjects: [
-      { name: 'Mathematics', grade: 'A', marks: 84, max: 100 },
-      { name: 'Physics', grade: 'A+', marks: 92, max: 100 },
-      { name: 'Chemistry', grade: 'A', marks: 80, max: 100 },
-      { name: 'Computer Science', grade: 'A+', marks: 97, max: 100 },
-      { name: 'English', grade: 'B+', marks: 75, max: 100 },
-    ],
-    attendance: 87,
-  },
-];
-
-const AI_INSIGHTS = [
-  { type: 'strength', text: 'Computer Science is your strongest subject with consistent A+ grades across all semesters.' },
-  { type: 'improvement', text: 'English performance has been stagnant. Consider focusing on writing practice and reading comprehension.' },
-  { type: 'trend', text: 'Overall GPA trend is positive (7.8 → 8.2 → 8.4). Keep up the momentum!' },
-  { type: 'warning', text: 'Mathematics improvement has plateaued. A focused 2-week review on calculus could boost your next exam score.' },
-  { type: 'strength', text: 'Physics practical scores are excellent — your lab skills are outstanding.' },
-];
-
 export default function ReportCardAnalysis() {
-  const [selectedSem, setSelectedSem] = useState(2);
+  const { data: results, loading } = useFetch<any[]>('/results/me');
+  const { data: insights } = useFetch<any[]>('/ai/insights');
+  const [selectedSem, setSelectedSem] = useState(0);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const semesters = useMemo(() => {
+    if (!results) return [];
+    const grouped: Record<string, any[]> = {};
+    results.forEach((r: any) => {
+      const sem = r.semester || 'Unknown';
+      if (!grouped[sem]) grouped[sem] = [];
+      grouped[sem].push(r);
+    });
+    return Object.entries(grouped).map(([name, subjects]) => ({ name, subjects }));
+  }, [results]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  const current = SEMESTERS[selectedSem];
-  const avgMarks = Math.round(current.subjects.reduce((s, sub) => s + sub.marks, 0) / current.subjects.length);
-  const bestSubject = current.subjects.reduce((a, b) => a.marks > b.marks ? a : b);
-  const worstSubject = current.subjects.reduce((a, b) => a.marks < b.marks ? a : b);
+  if (loading) {
+    return (
+      <ErrorBoundary>
+        <View style={{ flex: 1, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: theme.colors.muted }}>Loading results...</Text>
+        </View>
+      </ErrorBoundary>
+    );
+  }
+
+  if (!results || semesters.length === 0) {
+    return (
+      <ErrorBoundary>
+        <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
+          <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+            <View style={styles.hero}>
+              <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
+                <Pressable onPress={() => router.back()} style={styles.backBtn}>
+                  <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
+                </Pressable>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={styles.heroIcon}><Sparkles size={22} color="#fff" /></View>
+                  <View>
+                    <Text style={styles.heroTitle}>AI Report Card Analysis</Text>
+                    <Text style={styles.heroSub}>Deep insights into academic performance</Text>
+                  </View>
+                </View>
+              </LinearGradient>
+            </View>
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: theme.colors.text }}>No results published yet</Text>
+              <Text style={{ fontSize: 13, color: theme.colors.muted, marginTop: 8, textAlign: 'center' }}>Your results will appear here once published by your institution.</Text>
+            </View>
+          </SafeAreaView>
+        </View>
+      </ErrorBoundary>
+    );
+  }
+
+  const current = semesters[selectedSem];
+  const avgMarks = Math.round(current.subjects.reduce((s: number, sub: any) => s + (sub.marks || 0), 0) / current.subjects.length);
+  const bestSubject = current.subjects.reduce((a: any, b: any) => (a.marks || 0) > (b.marks || 0) ? a : b);
+  const worstSubject = current.subjects.reduce((a: any, b: any) => (a.marks || 0) < (b.marks || 0) ? a : b);
 
   return (
     <ErrorBoundary>
@@ -91,7 +98,7 @@ export default function ReportCardAnalysis() {
           </View>
 
           <View style={styles.semTabs}>
-            {SEMESTERS.map((s, i) => (
+            {semesters.map((s, i) => (
               <Pressable key={i} onPress={() => setSelectedSem(i)}
                 style={[styles.semTab, selectedSem === i && styles.semTabActive]}>
                 <Text style={[styles.semTabText, selectedSem === i && { color: '#fff' }]}>{s.name}</Text>
@@ -103,7 +110,7 @@ export default function ReportCardAnalysis() {
             <View style={styles.statsRow}>
               <Card style={styles.statCard}>
                 <Award size={20} color={theme.colors.brand} />
-                <Text style={styles.statValue}>{current.gpa}</Text>
+                <Text style={styles.statValue}>{current.gpa || '—'}</Text>
                 <Text style={styles.statLabel}>CGPA</Text>
               </Card>
               <Card style={styles.statCard}>
@@ -113,28 +120,28 @@ export default function ReportCardAnalysis() {
               </Card>
               <Card style={styles.statCard}>
                 <Target size={20} color="#F59E0B" />
-                <Text style={styles.statValue}>{current.attendance}%</Text>
+                <Text style={styles.statValue}>{current.attendance || '—'}%</Text>
                 <Text style={styles.statLabel}>Attendance</Text>
               </Card>
             </View>
 
             <SectionTitle>Subject Performance</SectionTitle>
-            {current.subjects.map((sub, i) => (
+            {current.subjects.map((sub: any, i: number) => (
               <Card key={i} style={{ padding: 14, gap: 8 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontWeight: '700', color: theme.colors.text }}>{sub.name}</Text>
+                  <Text style={{ fontWeight: '700', color: theme.colors.text }}>{sub.name || sub.subject}</Text>
                   <View style={styles.gradeBadge}>
-                    <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>{sub.grade}</Text>
+                    <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>{sub.grade || '—'}</Text>
                   </View>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 12, color: theme.colors.muted }}>{sub.marks}/{sub.max}</Text>
-                  <Text style={{ fontSize: 12, color: theme.colors.muted }}>{sub.marks}%</Text>
+                  <Text style={{ fontSize: 12, color: theme.colors.muted }}>{sub.marks || 0}/{sub.max || 100}</Text>
+                  <Text style={{ fontSize: 12, color: theme.colors.muted }}>{sub.marks || 0}%</Text>
                 </View>
                 <View style={styles.progressBar}>
                   <View style={[styles.progressFill, {
-                    width: `${sub.marks}%`,
-                    backgroundColor: sub.marks >= 90 ? '#10B981' : sub.marks >= 75 ? '#4F46E5' : sub.marks >= 60 ? '#F59E0B' : '#EF4444',
+                    width: `${sub.marks || 0}%`,
+                    backgroundColor: (sub.marks || 0) >= 90 ? '#10B981' : (sub.marks || 0) >= 75 ? '#4F46E5' : (sub.marks || 0) >= 60 ? '#F59E0B' : '#EF4444',
                   }]} />
                 </View>
               </Card>
@@ -143,20 +150,20 @@ export default function ReportCardAnalysis() {
             <SectionTitle>Semester Trend</SectionTitle>
             <Card style={{ padding: 16, gap: 12 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
-                {SEMESTERS.map((s, i) => (
+                {semesters.map((s, i) => (
                   <View key={i} style={{ alignItems: 'center', gap: 6 }}>
                     <Text style={{ fontSize: 10, color: theme.colors.muted }}>{s.name.replace('Semester ', 'Sem ')}</Text>
-                    <View style={[styles.trendBar, { height: s.gpa * 10 }]}>
+                    <View style={[styles.trendBar, { height: (s.gpa || 0) * 10 }]}>
                       <LinearGradient colors={[theme.colors.brand, theme.colors.brandSecondary]} style={StyleSheet.absoluteFill} />
                     </View>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: theme.colors.text }}>{s.gpa}</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: theme.colors.text }}>{s.gpa || '—'}</Text>
                   </View>
                 ))}
               </View>
             </Card>
 
             <SectionTitle>AI Insights</SectionTitle>
-            {AI_INSIGHTS.map((ins, i) => (
+            {insights && insights.length > 0 ? insights.map((ins: any, i: number) => (
               <Card key={i} style={{ padding: 14, gap: 6 }}>
                 <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
                   {ins.type === 'strength' ? <TrendingUp size={16} color="#10B981" /> :
@@ -166,7 +173,11 @@ export default function ReportCardAnalysis() {
                   <Text style={{ fontSize: 13, color: theme.colors.text, flex: 1, lineHeight: 18 }}>{ins.text}</Text>
                 </View>
               </Card>
-            ))}
+            )) : (
+              <Card style={{ padding: 16, gap: 8 }}>
+                <Text style={{ color: theme.colors.muted, textAlign: 'center' }}>No insights available</Text>
+              </Card>
+            )}
 
             <Card style={{ padding: 16, gap: 8, backgroundColor: theme.colors.brandTertiary, borderColor: theme.colors.brand + '30' }}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -174,7 +185,7 @@ export default function ReportCardAnalysis() {
                 <Text style={{ fontWeight: '700', color: theme.colors.brand }}>Top Performer</Text>
               </View>
               <Text style={{ fontSize: 13, color: theme.colors.text }}>
-                {bestSubject.name} — {bestSubject.marks} marks ({bestSubject.grade}). Your consistent excellence here suggests strong aptitude.
+                {bestSubject.name || bestSubject.subject} — {bestSubject.marks || 0} marks ({bestSubject.grade || '—'}). Your consistent excellence here suggests strong aptitude.
               </Text>
             </Card>
 
@@ -184,7 +195,7 @@ export default function ReportCardAnalysis() {
                 <Text style={{ fontWeight: '700', color: '#B45309' }}>Needs Focus</Text>
               </View>
               <Text style={{ fontSize: 13, color: theme.colors.text }}>
-                {worstSubject.name} — {worstSubject.marks} marks ({worstSubject.grade}). Consider allocating extra study time here.
+                {worstSubject.name || worstSubject.subject} — {worstSubject.marks || 0} marks ({worstSubject.grade || '—'}). Consider allocating extra study time here.
               </Text>
             </Card>
           </ScrollView>

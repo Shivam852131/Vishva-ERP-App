@@ -1,65 +1,24 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
 import { Card, SectionTitle, GradientButton } from '@/src/ui';
 import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
+import { api } from '@/src/api';
 import {
   Sparkles, Mic, Play, Pause, RotateCcw, CheckCircle, AlertTriangle,
   ChevronRight, Clock, Target, TrendingUp, MessageSquare, Award,
 } from 'lucide-react-native';
+
+type InterviewQuestion = { q: string; tips: string[]; sampleAnswer: string };
 
 const INTERVIEW_TYPES = [
   { id: 'technical', title: 'Technical Interview', icon: Target, desc: 'Coding problems, system design, algorithms' },
   { id: 'behavioral', title: 'Behavioral Interview', icon: MessageSquare, desc: 'STAR method, leadership, teamwork' },
   { id: 'hr', title: 'HR Interview', icon: ChevronRight, desc: 'Salary, career goals, company culture' },
 ];
-
-const MOCK_QUESTIONS: Record<string, { q: string; tips: string[]; sampleAnswer: string }[]> = {
-  technical: [
-    {
-      q: 'Explain the difference between a stack and a queue. When would you use each?',
-      tips: ['Mention FIFO vs LIFO', 'Give real-world examples', 'Discuss time complexity'],
-      sampleAnswer: 'A stack follows LIFO (Last In First Out) principle - like a plate stack. Used in function calls, undo operations, and backtracking. A queue follows FIFO (First In First Out) - like a line at a store. Used in BFS, task scheduling, and print queues. Both have O(1) push/enqueue and pop/dequeue operations.',
-    },
-    {
-      q: 'How would you design a URL shortener like bit.ly?',
-      tips: ['Consider scalability', 'Discuss hashing strategies', 'Think about storage'],
-      sampleAnswer: 'I\'d use a hash function to generate short codes from URLs. Store mappings in a distributed database like DynamoDB. Use Redis for caching popular URLs. Implement a counter-based approach for generating unique IDs. Add analytics for click tracking. Consider rate limiting to prevent abuse.',
-    },
-    {
-      q: 'What is a deadlock? How do you prevent it?',
-      tips: ['Define 4 conditions', 'Give an example', 'Mention prevention strategies'],
-      sampleAnswer: 'Deadlock occurs when four conditions hold simultaneously: mutual exclusion, hold and wait, no preemption, and circular wait. Example: Thread A holds Lock 1 and waits for Lock 2, while Thread B holds Lock 2 and waits for Lock 1. Prevention strategies include lock ordering, timeout mechanisms, and using atomic operations.',
-    },
-  ],
-  behavioral: [
-    {
-      q: 'Tell me about a time you faced a conflict with a team member. How did you resolve it?',
-      tips: ['Use STAR method', 'Focus on resolution', 'Show emotional intelligence'],
-      sampleAnswer: 'Situation: During a group project, a teammate disagreed with my approach to the database schema. Task: We needed to resolve this to meet our deadline. Action: I scheduled a one-on-one meeting, listened to their concerns, and we found that their approach was better for scalability. Result: We combined both approaches, delivered on time, and I learned to be more open to alternative perspectives.',
-    },
-    {
-      q: 'Describe a situation where you had to learn something quickly.',
-      tips: ['Show adaptability', 'Mention specific learning strategy', 'Quantify results'],
-      sampleAnswer: 'Situation: Two weeks before a hackathon, I realized I needed to learn React Native. Task: Build a functional mobile app in 48 hours. Action: I followed a structured tutorial, built small projects daily, and joined a Discord community for help. Result: Successfully built and deployed our team\'s app, which won second place. Now React Native is one of my primary skills.',
-    },
-  ],
-  hr: [
-    {
-      q: 'Where do you see yourself in 5 years?',
-      tips: ['Be ambitious but realistic', 'Align with company goals', 'Show growth mindset'],
-      sampleAnswer: 'In 5 years, I see myself as a senior software engineer leading a team of 5-8 developers, contributing to architecting scalable systems. I want to have deep expertise in cloud infrastructure and mentor junior developers. Ultimately, I aim to drive technical decisions that impact millions of users while continuously learning emerging technologies.',
-    },
-    {
-      q: 'Why should we hire you over other candidates?',
-      tips: ['Highlight unique strengths', 'Be specific', 'Connect to role requirements'],
-      sampleAnswer: 'I bring a unique combination of strong technical skills and proven project delivery. My CGPA of 8.4 reflects my academic rigor, while my 3 deployed projects demonstrate practical ability. I\'ve led a team of 4 in building our campus ERP system, showing leadership. I\'m also a quick learner who thrives in collaborative environments, which aligns perfectly with your team culture.',
-    },
-  ],
-};
 
 export default function InterviewPractice() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
@@ -69,6 +28,8 @@ export default function InterviewPractice() {
   const [timerRunning, setTimerRunning] = useState(false);
   const [userNotes, setUserNotes] = useState('');
   const [completedQs, setCompletedQs] = useState<number[]>([]);
+  const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
+  const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -85,9 +46,20 @@ export default function InterviewPractice() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [timerRunning]);
 
+  const loadQuestions = async (type: string) => {
+    setLoading(true);
+    try {
+      const data = await api(`/ai/interview-questions?type=${type}`);
+      setQuestions(data.questions || []);
+    } catch {
+      setQuestions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
-  const questions = selectedType ? MOCK_QUESTIONS[selectedType] || [] : [];
   const totalScore = Math.round((completedQs.length / Math.max(questions.length, 1)) * 100);
 
   const handleNext = () => {
@@ -100,6 +72,66 @@ export default function InterviewPractice() {
   };
 
   if (selectedType) {
+    if (loading) {
+      return (
+        <ErrorBoundary>
+          <Animated.View style={{ flex: 1, backgroundColor: theme.colors.surface, opacity: fadeAnim }}>
+            <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+              <View style={styles.hero}>
+                <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
+                  <Pressable onPress={() => { setSelectedType(null); setCurrentQ(0); setShowAnswer(false); setTimerRunning(false); setTimer(0); }} style={styles.backBtn}>
+                    <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
+                  </Pressable>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={styles.heroIcon}><Sparkles size={22} color="#fff" /></View>
+                    <View>
+                      <Text style={styles.heroTitle}>Loading Questions...</Text>
+                      <Text style={styles.heroSub}>{INTERVIEW_TYPES.find(t => t.id === selectedType)?.title}</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </View>
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 }}>
+                <ActivityIndicator size="large" color={theme.colors.brand} />
+                <Text style={{ color: theme.colors.muted, fontSize: 14 }}>Fetching AI-generated questions...</Text>
+              </View>
+            </SafeAreaView>
+          </Animated.View>
+        </ErrorBoundary>
+      );
+    }
+
+    if (questions.length === 0) {
+      return (
+        <ErrorBoundary>
+          <Animated.View style={{ flex: 1, backgroundColor: theme.colors.surface, opacity: fadeAnim }}>
+            <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+              <View style={styles.hero}>
+                <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
+                  <Pressable onPress={() => { setSelectedType(null); setCurrentQ(0); setShowAnswer(false); setTimerRunning(false); setTimer(0); }} style={styles.backBtn}>
+                    <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
+                  </Pressable>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={styles.heroIcon}><Sparkles size={22} color="#fff" /></View>
+                    <View>
+                      <Text style={styles.heroTitle}>No Questions Available</Text>
+                      <Text style={styles.heroSub}>{INTERVIEW_TYPES.find(t => t.id === selectedType)?.title}</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </View>
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 32 }}>
+                <AlertTriangle size={40} color={theme.colors.muted} />
+                <Text style={{ color: theme.colors.text, fontSize: 16, fontWeight: '700', textAlign: 'center' }}>No questions available</Text>
+                <Text style={{ color: theme.colors.muted, fontSize: 13, textAlign: 'center' }}>Could not load questions for this interview type. Please try again later.</Text>
+                <GradientButton label="Go Back" onPress={() => setSelectedType(null)} />
+              </View>
+            </SafeAreaView>
+          </Animated.View>
+        </ErrorBoundary>
+      );
+    }
+
     const q = questions[currentQ];
     return (
       <ErrorBoundary>
@@ -209,7 +241,7 @@ export default function InterviewPractice() {
             {INTERVIEW_TYPES.map((type) => {
               const Icon = type.icon;
               return (
-                <Pressable key={type.id} onPress={() => setSelectedType(type.id)}>
+                <Pressable key={type.id} onPress={() => { setSelectedType(type.id); loadQuestions(type.id); }}>
                   <Card style={{ padding: 16, gap: 10 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <View style={styles.typeIcon}>
@@ -219,9 +251,7 @@ export default function InterviewPractice() {
                         <Text style={{ fontWeight: '700', fontSize: 16, color: theme.colors.text }}>{type.title}</Text>
                         <Text style={{ fontSize: 12, color: theme.colors.muted, marginTop: 2 }}>{type.desc}</Text>
                       </View>
-                      <View style={{ alignItems: 'center' }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: theme.colors.brand }}>{MOCK_QUESTIONS[type.id]?.length || 0} Qs</Text>
-                      </View>
+                      <ChevronRight size={16} color={theme.colors.muted} />
                     </View>
                   </Card>
                 </Pressable>

@@ -7,18 +7,13 @@ import { Card, SectionTitle } from '@/src/ui';
 import { useAuth } from '@/src/providers/AuthContext';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { router } from '@/src/navigation/router';
+import { useFetch } from '@/src/hooks/useFetch';
+import { api } from '@/src/api';
 import {
   Sparkles, BarChart3, Bell, Wallet, MessageSquare,
   TrendingUp, TrendingDown, ChevronRight, Send, BookOpen,
   GraduationCap, Clock, AlertTriangle,
 } from 'lucide-react-native';
-
-const QUICK_STATS = [
-  { label: 'Attendance', value: '87%', icon: TrendingUp, color: '#10B981' },
-  { label: 'CGPA', value: '8.4', icon: GraduationCap, color: '#4F46E5' },
-  { label: 'Fees Due', value: '₹12,500', icon: Wallet, color: '#F59E0B' },
-  { label: 'Assignments', value: '3 Due', icon: BookOpen, color: '#EF4444' },
-];
 
 const FEATURE_CARDS = [
   { key: 'progress', title: 'Child Progress', icon: BarChart3, color: '#4F46E5', desc: 'CGPA, grades & trends' },
@@ -27,31 +22,40 @@ const FEATURE_CARDS = [
   { key: 'chat', title: 'Smart Chat', icon: MessageSquare, color: '#3B82F6', desc: 'Ask anything about your child' },
 ];
 
-const MOCK_ALERTS = [
-  { id: '1', type: 'attendance', title: 'Low Attendance - Mathematics', body: 'Rahul\'s attendance in Mathematics has dropped to 68%. Immediate attention required.', priority: 'high', time: '2h ago' },
-  { id: '2', type: 'fee', title: 'Fee Payment Due', body: 'Semester 5 tuition fee of ₹45,000 is due by 30th Jan 2026.', priority: 'medium', time: '1d ago' },
-  { id: '3', type: 'exam', title: 'Mid-Term Results', body: 'Mid-term exam results are out. Rahul scored 78% aggregate.', priority: 'low', time: '3d ago' },
-  { id: '4', type: 'assignment', title: 'Assignment Overdue', body: 'Data Structures assignment was due yesterday. Status: Not submitted.', priority: 'high', time: '5h ago' },
-];
-
-const CHAT_PROMPTS = [
-  'How is my child performing academically?',
-  'What subjects need improvement?',
-  'Show attendance breakdown',
-  'Upcoming exam schedule',
-];
-
 export default function ParentAI() {
   const { user } = useAuth();
+  const { data: childData } = useFetch<any>('/dashboard/parent');
+  const { data: alerts } = useFetch<any[]>('/notifications');
   const [activeFeature, setActiveFeature] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<{ role: string; text: string }[]>([]);
   const [sending, setSending] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  const quickStats = childData ? [
+    { label: 'Attendance', value: childData.attendance || '—' },
+    { label: 'CGPA', value: childData.cgpa || '—' },
+    { label: 'Fees Due', value: childData.feesDue || '—' },
+    { label: 'Assignments', value: childData.pendingAssignments || '—' },
+  ] : [];
+
+  const CHAT_PROMPTS = [
+    'How is my child performing academically?',
+    'What subjects need improvement?',
+    'Show attendance breakdown',
+    'Upcoming exam schedule',
+  ];
+
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
+
+  const sendMessage = async (msg: string) => {
+    try {
+      const res = await api('/ai/chat', { method: 'POST', body: JSON.stringify({ message: msg }) });
+      return res.response || 'I could not process that request.';
+    } catch { return 'AI service unavailable. Please try again.'; }
+  };
 
   const handleSend = async (text?: string) => {
     const msg = text || chatInput.trim();
@@ -59,17 +63,9 @@ export default function ParentAI() {
     setChatInput('');
     setChatMessages(prev => [...prev, { role: 'user', text: msg }]);
     setSending(true);
-    setTimeout(() => {
-      const responses: Record<string, string> = {
-        'How is my child performing academically?': 'Rahul is performing well with a CGPA of 8.4. His strongest subjects are Computer Science (9.2) and Physics (8.8). Mathematics (7.1) and English (7.5) could use more attention. Overall trend is improving over the last 3 semesters.',
-        'What subjects need improvement?': 'Based on analysis, Mathematics and English need improvement. In Mathematics, algebra and calculus units scored lower. In English, creative writing and comprehension sections need work. I recommend 30 minutes of daily practice in these areas.',
-        'Show attendance breakdown': 'Attendance Summary:\n• Overall: 87%\n• Computer Science: 92%\n• Physics: 88%\n• Mathematics: 68% (⚠️ Below 75%)\n• English: 85%\n• Chemistry: 91%\n\nMathematics attendance is concerning. Please ensure regular class attendance.',
-        'Upcoming exam schedule': 'Upcoming Exams:\n• Jan 28 - Mathematics Mid-Term\n• Feb 3 - Physics Practical\n• Feb 10 - Computer Science Quiz\n• Feb 15 - English Essay Submission\n• Feb 22 - Chemistry Unit Test\n\nRahul has 3 weeks to prepare for the first exam.',
-      };
-      const reply = responses[msg] || `I've analyzed your query about "${msg}". Based on the current academic data, Rahul is progressing steadily. His overall performance is in the good category with room for improvement in specific areas. Would you like a detailed breakdown?`;
-      setChatMessages(prev => [...prev, { role: 'ai', text: reply }]);
-      setSending(false);
-    }, 1200);
+    const reply = await sendMessage(msg);
+    setChatMessages(prev => [...prev, { role: 'ai', text: reply }]);
+    setSending(false);
   };
 
   if (activeFeature === 'chat') {
@@ -140,11 +136,9 @@ export default function ParentAI() {
 
           <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
             <View style={styles.statsRow}>
-              {QUICK_STATS.map((s, i) => {
-                const Icon = s.icon;
+              {quickStats.map((s, i) => {
                 return (
                   <Card key={i} style={styles.statCard}>
-                    <Icon size={20} color={s.color} />
                     <Text style={styles.statValue}>{s.value}</Text>
                     <Text style={styles.statLabel}>{s.label}</Text>
                   </Card>
@@ -170,7 +164,7 @@ export default function ParentAI() {
             </View>
 
             <SectionTitle>Recent Alerts</SectionTitle>
-            {MOCK_ALERTS.map((a) => (
+            {alerts && alerts.length > 0 ? alerts.map((a: any) => (
               <Card key={a.id} style={styles.alertCard}>
                 <View style={styles.alertHeader}>
                   <View style={[styles.alertBadge, a.priority === 'high' ? styles.badgeHigh : a.priority === 'medium' ? styles.badgeMed : styles.badgeLow]}>
@@ -182,7 +176,11 @@ export default function ParentAI() {
                 <Text style={styles.alertTitle}>{a.title}</Text>
                 <Text style={styles.alertBody}>{a.body}</Text>
               </Card>
-            ))}
+            )) : (
+              <Card style={styles.alertCard}>
+                <Text style={{ color: theme.colors.muted, textAlign: 'center' }}>No alerts at this time</Text>
+              </Card>
+            )}
           </ScrollView>
         </SafeAreaView>
       </Animated.View>

@@ -11,6 +11,7 @@ import {
   Award, Plus, Trash2, ChevronDown, Eye, Edit3,
 } from 'lucide-react-native';
 import RNFS from 'react-native-fs';
+import { useAuth } from '@/src/providers/AuthContext';
 
 type ResumeData = {
   name: string; email: string; phone: string; objective: string;
@@ -18,6 +19,11 @@ type ResumeData = {
   skills: string[]; experience: { title: string; company: string; duration: string; desc: string }[];
   projects: { name: string; desc: string; tech: string }[];
   certifications: string[];
+};
+
+const EMPTY_RESUME: ResumeData = {
+  name: '', email: '', phone: '', objective: '',
+  education: [], skills: [], experience: [], projects: [], certifications: [],
 };
 
 function generateResumeHTML(r: ResumeData): string {
@@ -57,26 +63,9 @@ ${r.certifications.length > 0 ? `<div class="section"><div class="section-title"
 </body></html>`;
 }
 
-const DEFAULT_RESUME: ResumeData = {
-  name: 'Rahul Sharma', email: 'rahul@example.com', phone: '+91 9876543210',
-  objective: 'Aspiring software engineer seeking to leverage strong technical skills and academic excellence in a challenging role.',
-  education: [
-    { degree: 'B.Tech Computer Science', school: 'Vishva University', year: '2023-2027', gpa: '8.4' },
-    { degree: 'Higher Secondary', school: 'Delhi Public School', year: '2021-2023', gpa: '92%' },
-  ],
-  skills: ['JavaScript', 'React', 'Node.js', 'Python', 'SQL', 'Git', 'Data Structures', 'Algorithms'],
-  experience: [
-    { title: 'Frontend Intern', company: 'TechCorp Solutions', duration: 'Jun-Aug 2025', desc: 'Built responsive web interfaces using React and TypeScript. Improved page load by 30%.' },
-  ],
-  projects: [
-    { name: 'Campus ERP System', desc: 'Full-stack ERP with React Native, Node.js, PostgreSQL', tech: 'React Native, Node.js, PostgreSQL' },
-    { name: 'AI Study Planner', desc: 'ML-powered study schedule optimizer', tech: 'Python, TensorFlow, Flask' },
-  ],
-  certifications: ['AWS Cloud Practitioner', 'Google IT Support', 'NPTEL Data Structures'],
-};
-
 export default function ResumeBuilder() {
-  const [resume, setResume] = useState<ResumeData>(DEFAULT_RESUME);
+  const { user } = useAuth();
+  const [resume, setResume] = useState<ResumeData>(EMPTY_RESUME);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -85,6 +74,17 @@ export default function ResumeBuilder() {
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      setResume(prev => ({
+        ...prev,
+        name: prev.name || user.name || '',
+        email: prev.email || user.email || '',
+        phone: prev.phone || user.phone || '',
+      }));
+    }
+  }, [user]);
 
   const addEducation = () => {
     setResume(prev => ({ ...prev, education: [...prev.education, { degree: '', school: '', year: '', gpa: '' }] }));

@@ -6,54 +6,28 @@ import { theme } from '@/src/theme';
 import { Card, SectionTitle, GradientButton } from '@/src/ui';
 import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
+import { useFetch } from '@/src/hooks/useFetch';
+import { api } from '@/src/api';
 import {
   Sparkles, ClipboardCheck, Upload, CheckCircle, AlertTriangle,
   FileText, Star, TrendingUp, ChevronRight, X, Eye,
 } from 'lucide-react-native';
 
+type FeedbackResult = { score: number; breakdown: { label: string; score: number; color: string }[]; comments: { type: string; text: string }[]; suggestions: string[] };
+
 const SUBJECTS = ['Mathematics', 'Physics', 'Chemistry', 'Computer Science', 'English', 'Biology'];
-
-const MOCK_FEEDBACK = {
-  score: 82,
-  breakdown: [
-    { label: 'Content Accuracy', score: 88, color: '#10B981' },
-    { label: 'Grammar & Language', score: 75, color: '#F59E0B' },
-    { label: 'Structure & Flow', score: 85, color: '#4F46E5' },
-    { label: 'Citations & References', score: 78, color: '#3B82F6' },
-  ],
-  comments: [
-    { type: 'good', text: 'Strong understanding of core concepts demonstrated throughout.' },
-    { type: 'good', text: 'Well-structured paragraphs with clear topic sentences.' },
-    { type: 'improve', text: 'Consider adding more real-world examples to support arguments.' },
-    { type: 'improve', text: 'Some sentences are overly complex. Try simplifying for clarity.' },
-    { type: 'improve', text: 'Include proper citations for referenced theories.' },
-    { type: 'good', text: 'Good use of technical terminology appropriate for the subject.' },
-  ],
-  suggestions: [
-    'Read through the essay aloud to catch awkward phrasing',
-    'Use transition words between paragraphs for better flow',
-    'Add a brief introduction summarizing your argument',
-    'Proofread for spelling errors in the conclusion',
-  ],
-};
-
-const MOCK_SUBMISSIONS = [
-  { id: '1', title: 'Data Structures Essay', subject: 'Computer Science', score: 88, date: 'Jan 20, 2026', status: 'checked' },
-  { id: '2', title: 'Physics Lab Report', subject: 'Physics', score: 72, date: 'Jan 18, 2026', status: 'checked' },
-  { id: '3', title: 'Math Problem Set 5', subject: 'Mathematics', score: 95, date: 'Jan 15, 2026', status: 'checked' },
-  { id: '4', title: 'English Literature Review', subject: 'English', score: 68, date: 'Jan 12, 2026', status: 'checked' },
-];
 
 export default function AssignmentChecker() {
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
   const [uploaded, setUploaded] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<typeof MOCK_FEEDBACK | null>(null);
+  const [result, setResult] = useState<FeedbackResult | null>(null);
   const [showSubjects, setShowSubjects] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scoreAnim = useRef(new Animated.Value(0)).current;
   const [displayScore, setDisplayScore] = useState(0);
+  const { data: submissions } = useFetch<any[]>('/ai/submissions');
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
@@ -70,14 +44,21 @@ export default function AssignmentChecker() {
     return () => scoreAnim.removeListener(id);
   }, []);
 
-  const handleCheck = () => {
+  const handleCheck = async () => {
     if (!subject) return Alert.alert('Select Subject', 'Please choose a subject');
     if (!uploaded) return Alert.alert('Upload Required', 'Please upload your assignment');
     setChecking(true);
-    setTimeout(() => {
-      setResult(MOCK_FEEDBACK);
+    try {
+      const result = await api('/ai/check-assignment', {
+        method: 'POST',
+        body: JSON.stringify({ subject, topic, content: '...' }),
+      });
+      setResult(result);
+    } catch {
+      Alert.alert('Error', 'Could not check assignment. Please try again.');
+    } finally {
       setChecking(false);
-    }, 2500);
+    }
   };
 
   const handleUpload = () => setUploaded(true);
@@ -194,19 +175,26 @@ export default function AssignmentChecker() {
             )}
 
             <SectionTitle>Recent Submissions</SectionTitle>
-            {MOCK_SUBMISSIONS.map(s => (
-              <Card key={s.id} style={{ padding: 14, gap: 6 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '700', color: theme.colors.text }}>{s.title}</Text>
-                    <Text style={{ fontSize: 12, color: theme.colors.muted }}>{s.subject} · {s.date}</Text>
+            {submissions && submissions.length > 0 ? (
+              submissions.map((s: any) => (
+                <Card key={s.id} style={{ padding: 14, gap: 6 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: '700', color: theme.colors.text }}>{s.title}</Text>
+                      <Text style={{ fontSize: 12, color: theme.colors.muted }}>{s.subject} · {s.date}</Text>
+                    </View>
+                    <View style={[styles.scoreBadge, s.score >= 80 ? styles.scoreGood : s.score >= 60 ? styles.scoreMid : styles.scoreLow]}>
+                      <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>{s.score}</Text>
+                    </View>
                   </View>
-                  <View style={[styles.scoreBadge, s.score >= 80 ? styles.scoreGood : s.score >= 60 ? styles.scoreMid : styles.scoreLow]}>
-                    <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>{s.score}</Text>
-                  </View>
-                </View>
+                </Card>
+              ))
+            ) : (
+              <Card style={{ padding: 20, alignItems: 'center', gap: 8 }}>
+                <FileText size={28} color={theme.colors.muted} />
+                <Text style={{ color: theme.colors.muted, fontSize: 13 }}>No submissions yet</Text>
               </Card>
-            ))}
+            )}
           </ScrollView>
         </SafeAreaView>
       </Animated.View>

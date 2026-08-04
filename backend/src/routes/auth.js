@@ -65,7 +65,7 @@ router.post('/auth/register', async (req, res) => {
     passwordHash: await hashPassword(password),
     role: resolvedRole,
     phone: phone || null,
-    college: 'Vishva Institute of Technology',
+    college: null,
     collegeId: null,
     department: resolvedRole === 'student' ? 'Computer Science' : null,
     studentCode: resolvedRole === 'student' ? `VIT-${String(Math.floor(1000 + Math.random() * 9000))}` : null,

@@ -10,6 +10,11 @@ import {
   Sparkles, CalendarCheck, Check, Clock, Target, BookOpen,
   ChevronRight, Plus, Trash2, RotateCcw, CheckCircle,
 } from 'lucide-react-native';
+import { useFetch } from '@/src/hooks/useFetch';
+
+type PlanTask = { time: string; task: string; course: string; done: boolean };
+type PlanDay = { day: string; focus: string; tasks: PlanTask[] };
+type StudyPlan = { title: string; goal: string; days: PlanDay[]; tips: string[] };
 
 const PLAN_TYPES = [
   { id: 'weekly', title: 'Weekly Study Plan', icon: CalendarCheck, desc: 'Structured plan for the week' },
@@ -17,84 +22,13 @@ const PLAN_TYPES = [
   { id: 'daily', title: 'Daily Focus Plan', icon: Clock, desc: 'Today\'s study roadmap' },
 ];
 
-const MOCK_WEEKLY_PLAN = {
-  title: 'Weekly Study Plan — Computer Science',
-  goal: 'Master Data Structures & Algorithms',
-  days: [
-    { day: 'Monday', focus: 'Arrays & Linked Lists', tasks: [
-      { time: '9:00 AM', task: 'Review array operations (insert, delete, search)', course: 'DSA', done: true },
-      { time: '11:00 AM', task: 'Practice 3 LeetCode medium problems', course: 'DSA', done: true },
-      { time: '2:00 PM', task: 'Study linked list types and implementations', course: 'DSA', done: false },
-      { time: '4:00 PM', task: 'Mathematics homework — Calculus Ch.5', course: 'Mathematics', done: false },
-    ]},
-    { day: 'Tuesday', focus: 'Stacks & Queues', tasks: [
-      { time: '9:00 AM', task: 'Stack implementation using arrays and linked lists', course: 'DSA', done: true },
-      { time: '11:00 AM', task: 'Solve 5 stack/queue problems', course: 'DSA', done: false },
-      { time: '2:00 PM', task: 'Physics lab report preparation', course: 'Physics', done: false },
-      { time: '4:00 PM', task: 'Review lecture notes — Operating Systems', course: 'OS', done: false },
-    ]},
-    { day: 'Wednesday', focus: 'Trees & BST', tasks: [
-      { time: '9:00 AM', task: 'Study binary tree traversal algorithms', course: 'DSA', done: false },
-      { time: '11:00 AM', task: 'Implement BST with insert/delete/search', course: 'DSA', done: false },
-      { time: '2:00 PM', task: 'English essay preparation', course: 'English', done: false },
-      { time: '4:00 PM', task: 'CS assignment — Database normalization', course: 'DBMS', done: false },
-    ]},
-    { day: 'Thursday', focus: 'Graphs', tasks: [
-      { time: '9:00 AM', task: 'Study BFS and DFS algorithms', course: 'DSA', done: false },
-      { time: '11:00 AM', task: 'Practice graph problems', course: 'DSA', done: false },
-      { time: '2:00 PM', task: 'Mathematics — Practice integration problems', course: 'Mathematics', done: false },
-      { time: '4:00 PM', task: 'Physics theory — Electromagnetic waves', course: 'Physics', done: false },
-    ]},
-    { day: 'Friday', focus: 'Sorting & Searching', tasks: [
-      { time: '9:00 AM', task: 'Study quicksort and mergesort complexity', course: 'DSA', done: false },
-      { time: '11:00 AM', task: 'Implement sorting algorithms', course: 'DSA', done: false },
-      { time: '2:00 PM', task: 'Weekly revision — all subjects', course: 'All', done: false },
-      { time: '4:00 PM', task: 'Work on Campus ERP project', course: 'Project', done: false },
-    ]},
-  ],
-  tips: [
-    'Take 10-minute breaks every 50 minutes of study',
-    'Review all completed tasks before sleeping',
-    'Prioritize difficult topics when your energy is highest (morning)',
-    'Use active recall instead of passive re-reading',
-  ],
-};
-
-const MOCK_REVISION_PLAN = {
-  title: 'Exam Revision — Mid-Term',
-  goal: 'Score 85%+ in all subjects',
-  days: [
-    { day: 'Day 1', focus: 'Mathematics Revision', tasks: [
-      { time: '8:00 AM', task: 'Revise Calculus — Limits, Derivatives, Integration', course: 'Mathematics', done: true },
-      { time: '11:00 AM', task: 'Solve 20 practice problems', course: 'Mathematics', done: true },
-      { time: '2:00 PM', task: 'Review Linear Algebra formulas', course: 'Mathematics', done: false },
-      { time: '5:00 PM', task: 'Self-test — 30 min timed quiz', course: 'Mathematics', done: false },
-    ]},
-    { day: 'Day 2', focus: 'Physics Revision', tasks: [
-      { time: '8:00 AM', task: 'Revise Electromagnetic Theory', course: 'Physics', done: false },
-      { time: '11:00 AM', task: 'Practice numerical problems', course: 'Physics', done: false },
-      { time: '2:00 PM', task: 'Review lab experiments and viva questions', course: 'Physics', done: false },
-      { time: '5:00 PM', task: 'Solve previous year papers', course: 'Physics', done: false },
-    ]},
-    { day: 'Day 3', focus: 'CS Revision', tasks: [
-      { time: '8:00 AM', task: 'Revise DBMS — Normalization, SQL queries', course: 'DBMS', done: false },
-      { time: '11:00 AM', task: 'Practice SQL queries on sample database', course: 'DBMS', done: false },
-      { time: '2:00 PM', task: 'Review OS concepts — Process scheduling', course: 'OS', done: false },
-      { time: '5:00 PM', task: 'Solve CS previous year papers', course: 'CS', done: false },
-    ]},
-  ],
-  tips: [
-    'Start with your weakest subject when fresh',
-    'Use spaced repetition for formula memorization',
-    'Take mock tests under exam conditions',
-    'Review mistakes from previous practice tests',
-  ],
-};
+const EMPTY_PLAN: StudyPlan = { title: '', goal: '', days: [], tips: [] };
 
 export default function StudyPlanner() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
-  const [plan, setPlan] = useState(MOCK_WEEKLY_PLAN);
+  const [plan, setPlan] = useState<StudyPlan>(EMPTY_PLAN);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const { data: plans, loading } = useFetch<StudyPlan[]>('/ai/study-plans');
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
@@ -113,6 +47,16 @@ export default function StudyPlanner() {
   const doneTasks = plan.days.reduce((s, d) => s + d.tasks.filter(t => t.done).length, 0);
   const progress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
+  const selectPlanType = (planType: string) => {
+    const matched = plans?.find((p: any) => p.type === planType);
+    if (matched) {
+      setPlan(matched);
+    } else {
+      setPlan(EMPTY_PLAN);
+    }
+    setSelectedPlan(planType);
+  };
+
   if (selectedPlan) {
     return (
       <ErrorBoundary>
@@ -123,19 +67,37 @@ export default function StudyPlanner() {
                 <Pressable onPress={() => setSelectedPlan(null)} style={styles.backBtn}>
                   <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
                 </Pressable>
-                <Text style={styles.heroTitle}>{plan.title}</Text>
-                <Text style={styles.heroSub}>Goal: {plan.goal}</Text>
-                <View style={styles.progressRow}>
-                  <View style={styles.progressBg}>
-                    <View style={[styles.progressFill, { width: `${progress}%` }]} />
+                <Text style={styles.heroTitle}>{plan.title || 'Study Plan'}</Text>
+                {plan.goal ? <Text style={styles.heroSub}>Goal: {plan.goal}</Text> : null}
+                {totalTasks > 0 && (
+                  <View style={styles.progressRow}>
+                    <View style={styles.progressBg}>
+                      <View style={[styles.progressFill, { width: `${progress}%` }]} />
+                    </View>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>{progress}%</Text>
                   </View>
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>{progress}%</Text>
-                </View>
+                )}
               </LinearGradient>
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-              {plan.days.map((day, di) => (
+              {loading && (
+                <Card style={{ padding: 24, alignItems: 'center', gap: 8 }}>
+                  <Text style={{ color: theme.colors.muted }}>Loading study plans...</Text>
+                </Card>
+              )}
+
+              {!loading && plan.days.length === 0 && (
+                <Card style={{ padding: 24, alignItems: 'center', gap: 12 }}>
+                  <BookOpen size={40} color={theme.colors.brand} />
+                  <Text style={{ fontWeight: '700', fontSize: 16, color: theme.colors.text }}>No plan generated yet</Text>
+                  <Text style={{ fontSize: 13, color: theme.colors.muted, textAlign: 'center' }}>
+                    Use AI to create your study plan. Select a plan type and let AI build a personalized schedule for you.
+                  </Text>
+                </Card>
+              )}
+
+              {!loading && plan.days.length > 0 && plan.days.map((day, di) => (
                 <Card key={di} style={{ padding: 16, gap: 10 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View>
@@ -165,15 +127,17 @@ export default function StudyPlanner() {
                 </Card>
               ))}
 
-              <Card style={{ padding: 16, gap: 8, backgroundColor: theme.colors.brandTertiary }}>
-                <Text style={{ fontWeight: '700', color: theme.colors.brand }}>AI Study Tips</Text>
-                {plan.tips.map((tip, i) => (
-                  <View key={i} style={{ flexDirection: 'row', gap: 6 }}>
-                    <Sparkles size={12} color={theme.colors.brand} style={{ marginTop: 2 }} />
-                    <Text style={{ fontSize: 12, color: theme.colors.text, flex: 1, lineHeight: 16 }}>{tip}</Text>
-                  </View>
-                ))}
-              </Card>
+              {!loading && plan.tips.length > 0 && (
+                <Card style={{ padding: 16, gap: 8, backgroundColor: theme.colors.brandTertiary }}>
+                  <Text style={{ fontWeight: '700', color: theme.colors.brand }}>AI Study Tips</Text>
+                  {plan.tips.map((tip, i) => (
+                    <View key={i} style={{ flexDirection: 'row', gap: 6 }}>
+                      <Sparkles size={12} color={theme.colors.brand} style={{ marginTop: 2 }} />
+                      <Text style={{ fontSize: 12, color: theme.colors.text, flex: 1, lineHeight: 16 }}>{tip}</Text>
+                    </View>
+                  ))}
+                </Card>
+              )}
             </ScrollView>
           </SafeAreaView>
         </Animated.View>
@@ -204,11 +168,7 @@ export default function StudyPlanner() {
             {PLAN_TYPES.map((type) => {
               const Icon = type.icon;
               return (
-                <Pressable key={type.id} onPress={() => {
-                  setSelectedPlan(type.id);
-                  if (type.id === 'revision') setPlan(MOCK_REVISION_PLAN);
-                  else setPlan(MOCK_WEEKLY_PLAN);
-                }}>
+                <Pressable key={type.id} onPress={() => selectPlanType(type.id)}>
                   <Card style={{ padding: 16, gap: 10 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <View style={styles.typeIcon}>
