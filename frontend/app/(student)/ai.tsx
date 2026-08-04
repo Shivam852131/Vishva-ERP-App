@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Animated, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
+import { useFetch } from '@/src/hooks/useFetch';
 import ChatTab from '@/src/screens/ai/ChatTab';
 import PlannerTab from '@/src/screens/ai/PlannerTab';
 import GradeAnalyzer from '@/src/screens/ai/GradeAnalyzer';
@@ -45,13 +46,6 @@ const PERSONAS = [
   { key: 'code', label: 'Code Helper', icon: Cpu, color: '#0891B2', desc: 'Debug code & learn programming' },
 ];
 
-const AI_STATS = [
-  { label: 'Questions', value: '1.2K', icon: MessageCircle, color: '#4F46E5' },
-  { label: 'Study Hours', value: '86h', icon: Clock, color: '#059669' },
-  { label: 'Tasks Done', value: '342', icon: Zap, color: '#7C3AED' },
-  { label: 'Streak', value: '12d', icon: Star, color: '#F59E0B' },
-];
-
 const QUICK_ACTIONS = [
   { icon: Lightbulb, label: 'Explain', color: '#F59E0B', prompt: 'Explain this concept in simple terms' },
   { icon: BookOpen, label: 'Summarize', color: '#059669', prompt: 'Summarize the key points of this chapter' },
@@ -59,13 +53,14 @@ const QUICK_ACTIONS = [
   { icon: Brain, label: 'Quiz Me', color: '#7C3AED', prompt: 'Test my knowledge with a quiz' },
 ];
 
-const RECENT_CONVERSATIONS = [
-  { id: '1', title: 'Explain Binary Search Trees', time: '2h ago', persona: 'Doubt Solver', messages: 8 },
-  { id: '2', title: 'Weekly study plan for mid-terms', time: 'Yesterday', persona: 'Study Coach', messages: 12 },
-  { id: '3', title: 'Help with React hooks assignment', time: '2 days ago', persona: 'Code Helper', messages: 15 },
-];
+function HeroSection({ fadeAnim, glowAnim, aiStats }: { fadeAnim: Animated.Value; glowAnim: Animated.Value; aiStats: any }) {
+  const defaultStats = [
+    { label: 'Questions', value: aiStats?.questions || '0', icon: MessageCircle, color: '#4F46E5' },
+    { label: 'Study Hours', value: aiStats?.studyHours || '0h', icon: Clock, color: '#059669' },
+    { label: 'Tasks Done', value: aiStats?.tasksDone || '0', icon: Zap, color: '#7C3AED' },
+    { label: 'Streak', value: aiStats?.streak || '0d', icon: Star, color: '#F59E0B' },
+  ];
 
-function HeroSection({ fadeAnim, glowAnim }: { fadeAnim: Animated.Value; glowAnim: Animated.Value }) {
   return (
     <View style={styles.heroContainer}>
       <LinearGradient colors={['#4F46E5', '#6366F1', '#818CF8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroGradient}>
@@ -83,7 +78,7 @@ function HeroSection({ fadeAnim, glowAnim }: { fadeAnim: Animated.Value; glowAni
               </Animated.View>
             </View>
             <View style={styles.statsRow}>
-              {AI_STATS.map((stat, i) => {
+              {defaultStats.map((stat, i) => {
                 const Icon = stat.icon;
                 return (
                   <View key={i} style={styles.statItem}>
@@ -148,32 +143,39 @@ function QuickActions({ onStartChat }: { onStartChat: (prompt: string) => void }
   );
 }
 
-function RecentConversations() {
+function RecentConversations({ conversations }: { conversations: any[] }) {
   return (
     <View style={styles.recentContainer}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Recent</Text>
         <Pressable onPress={() => {}}><Text style={styles.seeAllText}>See All</Text></Pressable>
       </View>
-      {RECENT_CONVERSATIONS.map(conv => (
-        <Pressable key={conv.id} style={styles.convCard}>
-          <View style={styles.convIcon}>
-            <MessageCircle size={16} color="#4F46E5" />
-          </View>
-          <View style={styles.convInfo}>
-            <Text style={styles.convTitle} numberOfLines={1} ellipsizeMode="tail">{conv.title}</Text>
-            <View style={styles.convMeta}>
-              <Text style={styles.convPersona} numberOfLines={1} ellipsizeMode="tail">{conv.persona}</Text>
-              <Text style={styles.convDot}>·</Text>
-              <Text style={styles.convMessages}>{conv.messages} msgs</Text>
+      {(!conversations || conversations.length === 0) ? (
+        <View style={{ alignItems: 'center', marginTop: 16, gap: 8 }}>
+          <MessageCircle size={28} color={theme.colors.muted} />
+          <Text style={{ fontSize: 13, color: theme.colors.muted, fontWeight: '600' }}>No conversations yet</Text>
+        </View>
+      ) : (
+        conversations.map((conv: any) => (
+          <Pressable key={conv.id} style={styles.convCard}>
+            <View style={styles.convIcon}>
+              <MessageCircle size={16} color="#4F46E5" />
             </View>
-          </View>
-          <View style={styles.convRight}>
-            <Text style={styles.convTime}>{conv.time}</Text>
-            <ChevronRight size={12} color={theme.colors.muted} />
-          </View>
-        </Pressable>
-      ))}
+            <View style={styles.convInfo}>
+              <Text style={styles.convTitle} numberOfLines={1} ellipsizeMode="tail">{conv.title}</Text>
+              <View style={styles.convMeta}>
+                <Text style={styles.convPersona} numberOfLines={1} ellipsizeMode="tail">{conv.persona}</Text>
+                <Text style={styles.convDot}>·</Text>
+                <Text style={styles.convMessages}>{conv.messages} msgs</Text>
+              </View>
+            </View>
+            <View style={styles.convRight}>
+              <Text style={styles.convTime}>{conv.time}</Text>
+              <ChevronRight size={12} color={theme.colors.muted} />
+            </View>
+          </Pressable>
+        ))
+      )}
     </View>
   );
 }
@@ -248,6 +250,8 @@ function ToolsTab({ onNavigate }: { onNavigate: (route: string) => void }) {
 }
 
 export default function AIHub() {
+  const { data: aiStats } = useFetch<any>('/ai/stats');
+  const { data: conversations } = useFetch<any[]>('/ai/sessions');
   const [tab, setTab] = useState('home');
   const [selectedPersona, setSelectedPersona] = useState('doubt');
   const [chatInput, setChatInput] = useState('');
@@ -322,13 +326,13 @@ export default function AIHub() {
   return (
     <ErrorBoundary>
       <View style={styles.container}>
-        <HeroSection fadeAnim={fadeAnim} glowAnim={glowAnim} />
+        <HeroSection fadeAnim={fadeAnim} glowAnim={glowAnim} aiStats={aiStats} />
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <PersonaSelector selected={selectedPersona} onSelect={setSelectedPersona} />
           <QuickActions onStartChat={handleStartChat} />
           <AITip />
-          <RecentConversations />
+          <RecentConversations conversations={conversations || []} />
           <AIToolsGrid onNavigate={handleNavigate} />
           <View style={{ height: 20 }} />
         </ScrollView>

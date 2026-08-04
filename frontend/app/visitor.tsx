@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
@@ -10,31 +10,32 @@ import {
   Users, UserPlus, Clock, CheckCircle, AlertTriangle, Phone,
   ChevronRight, Shield, Car, BookOpen, Camera,
 } from 'lucide-react-native';
+import { useFetch } from '@/src/hooks/useFetch';
 
-const VISITORS_LOG = [
-  { id: '1', name: 'Priya Sharma', purpose: 'Parent Meeting', who: 'Rahul Sharma (CS-A)', inTime: '10:30 AM', outTime: '12:15 PM', status: 'checked_out', type: 'Parent', photo: true },
-  { id: '2', name: 'Vikram Singh', purpose: 'Guest Lecture', who: 'Dr. Mehta', inTime: '2:00 PM', outTime: null, status: 'in_campus', type: 'Guest', photo: true },
-  { id: '3', name: 'Amit Patel', purpose: 'Delivery', who: 'Admin Office', inTime: '11:00 AM', outTime: '11:20 AM', status: 'checked_out', type: 'Vendor', photo: false },
-  { id: '4', name: 'Neha Gupta', purpose: 'Interview', who: 'HR Department', inTime: '3:30 PM', outTime: null, status: 'in_campus', type: 'Candidate', photo: true },
-  { id: '5', name: 'Rajesh Kumar', purpose: 'Maintenance', who: 'Hostel Block A', inTime: '9:00 AM', outTime: '4:30 PM', status: 'checked_out', type: 'Vendor', photo: false },
-];
-
-const PENDING_APPROVAL = [
-  { id: '10', name: 'Sunita Verma', purpose: 'Parent Meeting', who: 'Amit Verma (CS-B)', type: 'Parent', expectedTime: 'Tomorrow 10 AM', phone: '+91 9876543220' },
-  { id: '11', name: 'Dr. Rajesh Iyer', purpose: 'Workshop', who: 'CS Department', type: 'Guest', expectedTime: 'Jan 28, 2 PM', phone: '+91 9876543221' },
-];
-
-const VISITOR_TYPES = [
-  { type: 'Parent', icon: Users, color: '#4F46E5', count: 12 },
-  { type: 'Guest', icon: BookOpen, color: '#10B981', count: 5 },
-  { type: 'Vendor', icon: Car, color: '#F59E0B', count: 8 },
-  { type: 'Candidate', icon: UserPlus, color: '#3B82F6', count: 3 },
+const VISITOR_TYPE_META = [
+  { type: 'parent', label: 'Parent', icon: Users, color: '#4F46E5' },
+  { type: 'guest', label: 'Guest', icon: BookOpen, color: '#10B981' },
+  { type: 'vendor', label: 'Vendor', icon: Car, color: '#F59E0B' },
+  { type: 'candidate', label: 'Candidate', icon: UserPlus, color: '#3B82F6' },
 ];
 
 export default function VisitorManagement() {
   const [activeTab, setActiveTab] = useState<'log' | 'pending' | 'register'>('log');
   const [newVisitor, setNewVisitor] = useState({ name: '', purpose: '', who: '', phone: '' });
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const { data: visitors, loading } = useFetch<any[]>('/campus/visitors');
+
+  const visitorTypes = useMemo(() => {
+    const items = visitors || [];
+    return VISITOR_TYPE_META.map(t => ({
+      ...t,
+      count: items.filter((v: any) => v.type === t.type).length,
+    }));
+  }, [visitors]);
+
+  const visitorLog = (visitors || []).filter((v: any) => v.status !== 'pending_approval');
+  const pendingApproval = (visitors || []).filter((v: any) => v.status === 'pending_approval');
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
@@ -63,13 +64,13 @@ export default function VisitorManagement() {
                 </View>
               </View>
               <View style={styles.heroStats}>
-                {VISITOR_TYPES.map((vt, i) => {
+                {visitorTypes.map((vt, i) => {
                   const Icon = vt.icon;
                   return (
                     <View key={i} style={styles.heroStat}>
                       <Icon size={16} color={vt.color} />
                       <Text style={styles.heroStatVal}>{vt.count}</Text>
-                      <Text style={styles.heroStatLabel}>{vt.type}</Text>
+                      <Text style={styles.heroStatLabel}>{vt.label}</Text>
                     </View>
                   );
                 })}
@@ -88,57 +89,71 @@ export default function VisitorManagement() {
           <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
             {activeTab === 'log' && (
               <>
-                {VISITORS_LOG.map(v => (
-                  <Card key={v.id} style={{ padding: 14, gap: 8 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <View style={[styles.avatar, v.status === 'in_campus' ? styles.avatarActive : styles.avatarLeft]}>
-                          <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>{v.name.charAt(0)}</Text>
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: '700', color: theme.colors.text }}>{v.name}</Text>
-                          <Text style={{ fontSize: 11, color: theme.colors.muted }}>{v.purpose} · {v.type}</Text>
-                        </View>
-                      </View>
-                      <View style={[styles.statusBadge, v.status === 'in_campus' ? styles.statusIn : styles.statusOut]}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: v.status === 'in_campus' ? '#10B981' : '#64748B' }}>{v.status === 'in_campus' ? 'In Campus' : 'Left'}</Text>
-                      </View>
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: 16, marginLeft: 42 }}>
-                      <Text style={{ fontSize: 11, color: theme.colors.muted }}>📞 {v.who}</Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: 12, marginLeft: 42 }}>
-                      <View style={styles.timeChip}><Clock size={10} color={theme.colors.brand} /><Text style={styles.timeText}>In: {v.inTime}</Text></View>
-                      {v.outTime && <View style={styles.timeChip}><Clock size={10} color={theme.colors.muted} /><Text style={styles.timeText}>Out: {v.outTime}</Text></View>}
-                    </View>
+                {visitorLog.length === 0 ? (
+                  <Card style={{ padding: 40, alignItems: 'center' }}>
+                    <Users size={32} color={theme.colors.muted} />
+                    <Text style={{ fontSize: 14, color: theme.colors.muted, marginTop: 12 }}>No visitor log</Text>
                   </Card>
-                ))}
+                ) : (
+                  visitorLog.map((v: any) => (
+                    <Card key={v.id} style={{ padding: 14, gap: 8 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={[styles.avatar, v.status === 'in_campus' ? styles.avatarActive : styles.avatarLeft]}>
+                            <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>{v.name.charAt(0)}</Text>
+                          </View>
+                          <View>
+                            <Text style={{ fontWeight: '700', color: theme.colors.text }}>{v.name}</Text>
+                            <Text style={{ fontSize: 11, color: theme.colors.muted }}>{v.purpose} · {v.type}</Text>
+                          </View>
+                        </View>
+                        <View style={[styles.statusBadge, v.status === 'in_campus' ? styles.statusIn : styles.statusOut]}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: v.status === 'in_campus' ? '#10B981' : '#64748B' }}>{v.status === 'in_campus' ? 'In Campus' : 'Left'}</Text>
+                        </View>
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 16, marginLeft: 42 }}>
+                        <Text style={{ fontSize: 11, color: theme.colors.muted }}>📞 {v.who}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 12, marginLeft: 42 }}>
+                        <View style={styles.timeChip}><Clock size={10} color={theme.colors.brand} /><Text style={styles.timeText}>In: {v.inTime}</Text></View>
+                        {v.outTime && <View style={styles.timeChip}><Clock size={10} color={theme.colors.muted} /><Text style={styles.timeText}>Out: {v.outTime}</Text></View>}
+                      </View>
+                    </Card>
+                  ))
+                )}
               </>
             )}
 
             {activeTab === 'pending' && (
               <>
-                {PENDING_APPROVAL.map(p => (
-                  <Card key={p.id} style={{ padding: 16, gap: 10 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <View style={[styles.avatar, styles.avatarPending]}><AlertTriangle size={16} color="#F59E0B" /></View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontWeight: '700', color: theme.colors.text }}>{p.name}</Text>
-                        <Text style={{ fontSize: 11, color: theme.colors.muted }}>{p.purpose} · {p.type}</Text>
-                      </View>
-                    </View>
-                    <Text style={{ fontSize: 12, color: theme.colors.muted, marginLeft: 42 }}>Meeting: {p.who}</Text>
-                    <Text style={{ fontSize: 11, color: theme.colors.muted, marginLeft: 42 }}>Expected: {p.expectedTime}</Text>
-                    <View style={{ flexDirection: 'row', gap: 8, marginLeft: 42 }}>
-                      <Pressable style={styles.approveBtn} onPress={() => Alert.alert('Approved', `${p.name} has been approved`)}>
-                        <CheckCircle size={14} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Approve</Text>
-                      </Pressable>
-                      <Pressable style={styles.rejectBtn} onPress={() => Alert.alert('Rejected', `${p.name} has been rejected`)}>
-                        <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 12 }}>Reject</Text>
-                      </Pressable>
-                    </View>
+                {pendingApproval.length === 0 ? (
+                  <Card style={{ padding: 40, alignItems: 'center' }}>
+                    <CheckCircle size={32} color={theme.colors.muted} />
+                    <Text style={{ fontSize: 14, color: theme.colors.muted, marginTop: 12 }}>No pending approvals</Text>
                   </Card>
-                ))}
+                ) : (
+                  pendingApproval.map((p: any) => (
+                    <Card key={p.id} style={{ padding: 16, gap: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <View style={[styles.avatar, styles.avatarPending]}><AlertTriangle size={16} color="#F59E0B" /></View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontWeight: '700', color: theme.colors.text }}>{p.name}</Text>
+                          <Text style={{ fontSize: 11, color: theme.colors.muted }}>{p.purpose} · {p.type}</Text>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 12, color: theme.colors.muted, marginLeft: 42 }}>Meeting: {p.who}</Text>
+                      <Text style={{ fontSize: 11, color: theme.colors.muted, marginLeft: 42 }}>Expected: {p.expectedTime}</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, marginLeft: 42 }}>
+                        <Pressable style={styles.approveBtn} onPress={() => Alert.alert('Approved', `${p.name} has been approved`)}>
+                          <CheckCircle size={14} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Approve</Text>
+                        </Pressable>
+                        <Pressable style={styles.rejectBtn} onPress={() => Alert.alert('Rejected', `${p.name} has been rejected`)}>
+                          <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 12 }}>Reject</Text>
+                        </Pressable>
+                      </View>
+                    </Card>
+                  ))
+                )}
               </>
             )}
 

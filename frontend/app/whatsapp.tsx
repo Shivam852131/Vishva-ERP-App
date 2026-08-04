@@ -1,27 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Animated, TextInput, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Animated, TextInput, Switch, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
 import { Card, SectionTitle, GradientButton } from '@/src/ui';
 import { router } from '@/src/navigation/router';
 import { api } from '@/src/api';
+import { useFetch } from '@/src/hooks/useFetch';
+import { useAuth } from '@/src/providers/AuthContext';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import {
   MessageCircle, Send, Check, CheckCheck, Phone, Video,
   Settings, Link, Unlink, Bell, BellOff, Shield, Clock,
   ChevronRight, ExternalLink, QrCode, Smartphone, Wifi,
 } from 'lucide-react-native';
-
-const WHATSAPP_MESSAGES = [
-  { id: '1', from: 'system', text: 'Welcome to Vishva University WhatsApp Notifications! You will receive attendance alerts, fee reminders, exam updates, and more.', time: 'Jan 15, 10:00 AM', type: 'system' },
-  { id: '2', from: 'parent', text: 'Hi, I wanted to know about the upcoming parent-teacher meeting schedule.', time: 'Jan 18, 2:30 PM', type: 'sent' },
-  { id: '3', from: 'bot', text: 'Hello! The Parent-Teacher Meeting is scheduled for February 5, 2026 at 10:00 AM in the Seminar Hall. Your child\'s progress report will be discussed. Would you like to confirm your attendance?', time: 'Jan 18, 2:31 PM', type: 'received' },
-  { id: '4', from: 'parent', text: 'Yes, I will attend. Thank you!', time: 'Jan 18, 2:35 PM', type: 'sent' },
-  { id: '5', from: 'bot', text: 'Perfect! Your attendance has been confirmed for the PTM on Feb 5. You will receive a reminder 1 day before the event. Is there anything else I can help you with?', time: 'Jan 18, 2:36 PM', type: 'received' },
-  { id: '6', from: 'bot', text: '📢 ATTENDANCE ALERT: Your child Rahul\'s Mathematics attendance has dropped to 68%. The minimum required is 75%. Please ensure regular attendance to avoid detention.', time: 'Today, 10:15 AM', type: 'received', priority: true },
-  { id: '7', from: 'bot', text: '💰 FEE REMINDER: Semester 5 tuition fee of ₹45,000 is due by January 30, 2026. A late fee of ₹500 will apply after the deadline. Pay online at portal.vishva.edu', time: 'Today, 11:00 AM', type: 'received', priority: true },
-];
 
 const QUICK_REPLIES = [
   'Confirm attendance',
@@ -41,13 +33,17 @@ const WHATSAPP_FEATURES = [
 ];
 
 export default function WhatsAppIntegration() {
+  const { user } = useAuth();
+  const { data: fetchedMessages, loading } = useFetch<any[]>('/notifications');
+  const messages = fetchedMessages || [];
   const [linked, setLinked] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [features, setFeatures] = useState(WHATSAPP_FEATURES);
   const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat');
-  const [messages, setMessages] = useState(WHATSAPP_MESSAGES);
+  const [localMessages, setLocalMessages] = useState<any[]>([]);
   const [sending, setSending] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const allMessages = [...messages, ...localMessages];
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
@@ -66,13 +62,13 @@ export default function WhatsAppIntegration() {
       time: 'Just now',
       type: 'sent' as const,
     };
-    setMessages(prev => [...prev, newMsg]);
+    setLocalMessages(prev => [...prev, newMsg]);
     setChatInput('');
     setSending(true);
     try {
       await api('/twilio/whatsapp/send', {
         method: 'POST',
-        body: JSON.stringify({ to: '+919876543210', message: text.trim() }),
+        body: JSON.stringify({ to: user?.phone || '', message: text.trim() }),
       });
     } catch {
       // Message already shown locally — silently fail
@@ -94,7 +90,7 @@ export default function WhatsAppIntegration() {
                 <View style={styles.heroIcon}><MessageCircle size={22} color="#fff" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.heroTitle}>WhatsApp Integration</Text>
-                  <Text style={styles.heroSub}>{linked ? 'Connected • +91 9876543210' : 'Not connected'}</Text>
+                  <Text style={styles.heroSub}>{linked ? `Connected • ${user?.phone || 'Not set'}` : 'Not connected'}</Text>
                 </View>
                 <Pressable onPress={() => setLinked(!linked)}
                   style={[styles.linkBtn, linked ? styles.linkedBtn : styles.unlinkedBtn]}>
@@ -119,14 +115,23 @@ export default function WhatsAppIntegration() {
           {activeTab === 'chat' ? (
             <>
               <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} style={{ flex: 1 }}>
-                {messages.map(msg => (
+                {loading ? (
+                  <ActivityIndicator size="small" color={theme.colors.brand} style={{ marginTop: 40 }} />
+                ) : allMessages.length === 0 ? (
+                  <View style={{ alignItems: 'center', marginTop: 40, gap: 8 }}>
+                    <MessageCircle size={32} color={theme.colors.muted} />
+                    <Text style={{ fontSize: 14, color: theme.colors.muted, fontWeight: '600' }}>No messages yet</Text>
+                  </View>
+                ) : (
+                  allMessages.map(msg => (
                   <View key={msg.id} style={[styles.msgBubble, msg.type === 'sent' ? styles.msgSent : msg.type === 'system' ? styles.msgSystem : styles.msgReceived]}>
                     {msg.priority && <View style={styles.priorityBadge}><Text style={{ color: '#fff', fontSize: 8, fontWeight: '700' }}>ALERT</Text></View>}
                     <Text style={[styles.msgText, msg.type === 'sent' ? { color: '#fff' } : { color: theme.colors.text }]}>{msg.text}</Text>
                     <Text style={[styles.msgTime, msg.type === 'sent' && { color: 'rgba(255,255,255,0.7)' }]}>{msg.time}</Text>
                     {msg.type === 'sent' && <CheckCheck size={14} color="rgba(255,255,255,0.7)" style={{ alignSelf: 'flex-end', marginTop: 2 }} />}
-                  </View>
-                ))}
+                    </View>
+                  ))
+                )}
               </ScrollView>
 
               <View style={styles.quickReplyRow}>
@@ -156,7 +161,7 @@ export default function WhatsAppIntegration() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: '700', color: theme.colors.text }}>{linked ? 'WhatsApp Connected' : 'Not Connected'}</Text>
-                    <Text style={{ fontSize: 12, color: theme.colors.muted }}>{linked ? '+91 9876543210 • Verified' : 'Link your WhatsApp number'}</Text>
+                    <Text style={{ fontSize: 12, color: theme.colors.muted }}>{linked ? `${user?.phone || 'Not set'} • Verified` : 'Link your WhatsApp number'}</Text>
                   </View>
                 </View>
                 {!linked && <GradientButton label="Link WhatsApp" onPress={() => setLinked(true)} />}

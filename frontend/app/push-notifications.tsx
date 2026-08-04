@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Switch, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
 import { Card, SectionTitle } from '@/src/ui';
 import { router } from '@/src/navigation/router';
+import { useFetch } from '@/src/hooks/useFetch';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import {
   Smartphone, Bell, BellRing, Settings, Check, ChevronRight,
@@ -30,15 +31,8 @@ const QUICK_SETTINGS = [
   { key: 'quiet', label: 'Quiet Hours', icon: Clock, color: '#D97706', value: '10 PM - 7 AM' },
 ];
 
-const PUSH_HISTORY = [
-  { id: '1', title: 'Attendance Alert: Math 68%', time: '10 min ago', read: false, category: 'attendance' },
-  { id: '2', title: 'Fee Due: ₹45,000 by Jan 30', time: '1 hour ago', read: false, category: 'fee' },
-  { id: '3', title: 'Mid-term results available', time: '3 hours ago', read: false, category: 'exam' },
-  { id: '4', title: 'Assignment overdue: Data Structures', time: '8 hours ago', read: true, category: 'assignment' },
-  { id: '5', title: 'PTM scheduled: Feb 5, 10 AM', time: '1 day ago', read: true, category: 'event' },
-];
-
 export default function PushNotifications() {
+  const { data: pushHistory, loading } = useFetch<any[]>('/notifications');
   const [categories, setCategories] = useState(PUSH_CATEGORIES);
   const [globalEnabled, setGlobalEnabled] = useState(true);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -138,17 +132,26 @@ export default function PushNotifications() {
             })}
 
             <SectionTitle>Recent Push Notifications</SectionTitle>
-            {PUSH_HISTORY.map(p => (
-              <Card key={p.id} style={{ padding: 12, gap: 6 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View style={[styles.notifDot, p.read && { backgroundColor: theme.colors.muted }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.text }}>{p.title}</Text>
-                    <Text style={{ fontSize: 10, color: theme.colors.muted }}>{p.time}</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color={theme.colors.brand} style={{ marginTop: 20 }} />
+            ) : !pushHistory || pushHistory.length === 0 ? (
+              <View style={{ alignItems: 'center', marginTop: 20, gap: 8 }}>
+                <Bell size={32} color={theme.colors.muted} />
+                <Text style={{ fontSize: 14, color: theme.colors.muted, fontWeight: '600' }}>No push notifications sent yet</Text>
+              </View>
+            ) : (
+              pushHistory.map((p: any) => (
+                <Card key={p.id} style={{ padding: 12, gap: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={[styles.notifDot, p.read && { backgroundColor: theme.colors.muted }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.text }}>{p.title}</Text>
+                      <Text style={{ fontSize: 10, color: theme.colors.muted }}>{p.time}</Text>
+                    </View>
                   </View>
-                </View>
-              </Card>
-            ))}
+                </Card>
+              ))
+            )}
           </ScrollView>
         </SafeAreaView>
       </Animated.View>

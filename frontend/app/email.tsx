@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Animated, TextInput, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Animated, TextInput, Switch, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
 import { Card, SectionTitle, GradientButton } from '@/src/ui';
 import { router } from '@/src/navigation/router';
+import { useFetch } from '@/src/hooks/useFetch';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import {
   Mail, Send, Inbox, Star, Trash2, Archive, Search, Filter,
@@ -16,15 +17,6 @@ type Email = {
   id: string; from: string; subject: string; preview: string; time: string;
   read: boolean; starred: boolean; category: string; hasAttachment: boolean;
 };
-
-const EMAILS: Email[] = [
-  { id: '1', from: 'Examination Cell', subject: 'Mid-Term Results Published', preview: 'Dear Parent, The mid-term examination results for Semester 5 have been published. Your child Rahul has scored...', time: '10:30 AM', read: false, starred: true, category: 'exam', hasAttachment: true },
-  { id: '2', from: 'Finance Department', subject: 'Fee Payment Reminder - Due Jan 30', preview: 'This is a reminder that the Semester 5 tuition fee of ₹45,000 is due by January 30, 2026. A late fee...', time: '9:15 AM', read: false, starred: false, category: 'fee', hasAttachment: false },
-  { id: '3', from: 'Parent-Teacher Association', subject: 'PTM Scheduled - February 5', preview: 'Dear Parent, A Parent-Teacher Meeting has been scheduled for February 5, 2026 at 10:00 AM in the...', time: 'Yesterday', read: true, starred: false, category: 'event', hasAttachment: true },
-  { id: '4', from: 'Library', subject: 'Book Due Reminder', preview: 'This is to inform you that the book "Introduction to Algorithms" issued by your child is due for return...', time: 'Jan 20', read: true, starred: false, category: 'library', hasAttachment: false },
-  { id: '5', from: 'Campus Security', subject: 'Emergency Contact Update Required', preview: 'Dear Parent, Please update your emergency contact details in the parent portal. This is important for...', time: 'Jan 18', read: true, starred: true, category: 'admin', hasAttachment: false },
-  { id: '6', from: 'CS Department', subject: 'Project Exhibition - Participation', preview: 'Dear Parents, The annual project exhibition is scheduled for February 12-13. Students are encouraged to...', time: 'Jan 15', read: true, starred: false, category: 'event', hasAttachment: true },
-];
 
 const EMAIL_FILTERS = [
   { key: 'all', label: 'All Mail', icon: Inbox, count: 6 },
@@ -41,36 +33,48 @@ const EMAIL_CATEGORIES: Record<string, { color: string; label: string }> = {
 };
 
 export default function EmailIntegration() {
+  const { data: emails, loading } = useFetch<any[]>('/notifications');
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [emails, setEmails] = useState(EMAILS);
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
   const [emailPrefs, setEmailPrefs] = useState({ dailyDigest: true, instantAlerts: true, weeklyReport: false });
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  const filteredEmails = emails.filter(e => {
+  const allEmails = (emails || []).map((e: any) => ({
+    ...e,
+    starred: starredIds.has(e.id) ? true : e.starred,
+    read: readIds.has(e.id) ? true : e.read,
+  }));
+
+  const filteredEmails = allEmails.filter((e: any) => {
     if (filter === 'unread') return !e.read;
     if (filter === 'starred') return e.starred;
     return true;
-  }).filter(e => {
+  }).filter((e: any) => {
     if (!search) return true;
-    return e.subject.toLowerCase().includes(search.toLowerCase()) || e.from.toLowerCase().includes(search.toLowerCase());
+    return (e.subject || '').toLowerCase().includes(search.toLowerCase()) || (e.from || '').toLowerCase().includes(search.toLowerCase());
   });
 
   const toggleStar = (id: string) => {
-    setEmails(prev => prev.map(e => e.id === id ? { ...e, starred: !e.starred } : e));
+    setStarredIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   const markRead = (id: string) => {
-    setEmails(prev => prev.map(e => e.id === id ? { ...e, read: true } : e));
+    setReadIds(prev => new Set(prev).add(id));
     setSelectedEmail(id);
   };
 
-  const selected = emails.find(e => e.id === selectedEmail);
+  const selected = allEmails.find((e: any) => e.id === selectedEmail);
 
   if (selected) {
     const cat = EMAIL_CATEGORIES[selected.category] || { color: '#64748B', label: 'Other' };
@@ -149,7 +153,7 @@ export default function EmailIntegration() {
                 <View style={styles.heroIcon}><Mail size={22} color="#fff" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.heroTitle}>Email Integration</Text>
-                  <Text style={styles.heroSub}>{emails.filter(e => !e.read).length} unread messages</Text>
+                  <Text style={styles.heroSub}>{allEmails.filter((e: any) => !e.read).length} unread messages</Text>
                 </View>
                 <Pressable style={styles.settingsBtn}><Settings size={18} color="#fff" /></Pressable>
               </View>
@@ -179,7 +183,15 @@ export default function EmailIntegration() {
           </ScrollView>
 
           <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
-            {filteredEmails.map(email => {
+            {loading ? (
+              <ActivityIndicator size="small" color={theme.colors.brand} style={{ marginTop: 40 }} />
+            ) : filteredEmails.length === 0 ? (
+              <View style={{ alignItems: 'center', marginTop: 40, gap: 8 }}>
+                <Mail size={32} color={theme.colors.muted} />
+                <Text style={{ fontSize: 14, color: theme.colors.muted, fontWeight: '600' }}>No emails yet</Text>
+              </View>
+            ) : (
+              filteredEmails.map(email => {
               const cat = EMAIL_CATEGORIES[email.category] || { color: '#64748B', label: 'Other' };
               return (
                 <Pressable key={email.id} onPress={() => markRead(email.id)}>

@@ -10,23 +10,7 @@ import {
   Package, Search, Wrench, CheckCircle, AlertTriangle, Clock,
   Monitor, Projector, Printer, Server, Cpu, Wifi, ChevronRight,
 } from 'lucide-react-native';
-
-const ASSETS = [
-  { id: '1', name: 'Dell Monitor 24"', category: 'Electronics', location: 'CS Lab 1', status: 'active', assignee: 'Lab 1', icon: Monitor, condition: 'Good', lastMaint: 'Jan 5' },
-  { id: '2', name: 'Epson Projector', category: 'AV Equipment', location: 'Seminar Hall', status: 'maintenance', assignee: 'Seminar Hall', icon: Projector, condition: 'Needs Repair', lastMaint: 'Dec 15' },
-  { id: '3', name: 'HP LaserJet Pro', category: 'Printers', location: 'Admin Office', status: 'active', assignee: 'Admin', icon: Printer, condition: 'Excellent', lastMaint: 'Jan 18' },
-  { id: '4', name: 'Dell PowerEdge Server', category: 'Servers', location: 'Server Room', status: 'active', assignee: 'IT Dept', icon: Server, condition: 'Good', lastMaint: 'Jan 10' },
-  { id: '5', name: 'Cisco Router 2900', category: 'Networking', location: 'Server Room', status: 'active', assignee: 'IT Dept', icon: Wifi, condition: 'Good', lastMaint: 'Jan 8' },
-  { id: '6', name: 'Workstation PC #12', category: 'Computers', location: 'CS Lab 2', status: 'retired', assignee: 'None', icon: Cpu, condition: 'Retired', lastMaint: 'Nov 20' },
-  { id: '7', name: 'Dell Monitor 27"', category: 'Electronics', location: 'Faculty Room', status: 'active', assignee: 'Dr. Mehta', icon: Monitor, condition: 'Good', lastMaint: 'Jan 12' },
-  { id: '8', name: 'Projector Screen 120"', category: 'AV Equipment', location: 'Seminar Hall', status: 'active', assignee: 'Seminar Hall', icon: Projector, condition: 'Good', lastMaint: 'Jan 2' },
-];
-
-const MAINTENANCE_LOG = [
-  { id: '1', asset: 'Epson Projector', issue: 'Lamp flickering', date: 'Jan 20', status: 'pending', technician: 'Assigned' },
-  { id: '2', asset: 'Workstation PC #12', issue: 'Motherboard failure', date: 'Dec 15', status: 'completed', technician: 'Ravi Kumar' },
-  { id: '3', asset: 'HP LaserJet Pro', issue: 'Paper jam recurring', date: 'Jan 18', status: 'in_progress', technician: 'Suresh' },
-];
+import { useFetch } from '@/src/hooks/useFetch';
 
 const CATEGORIES = ['All', 'Electronics', 'Computers', 'Servers', 'Networking', 'AV Equipment', 'Printers'];
 const STATUS_COLORS: Record<string, string> = { active: '#10B981', maintenance: '#F59E0B', retired: '#64748B' };
@@ -38,24 +22,27 @@ export default function AssetManagement() {
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  const { data: assets, loading } = useFetch<any[]>('/campus/assets');
+  const { data: maintenanceLog } = useFetch<any[]>('/campus/maintenance');
+
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  const filteredAssets = ASSETS.filter(a => {
+  const filteredAssets = (assets || []).filter((a: any) => {
     if (selectedCategory !== 'All' && a.category !== selectedCategory) return false;
     if (search && !a.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
   const stats = {
-    total: ASSETS.length,
-    active: ASSETS.filter(a => a.status === 'active').length,
-    maintenance: ASSETS.filter(a => a.status === 'maintenance').length,
-    retired: ASSETS.filter(a => a.status === 'retired').length,
+    total: (assets || []).length,
+    active: (assets || []).filter((a: any) => a.status === 'active').length,
+    maintenance: (assets || []).filter((a: any) => a.status === 'maintenance').length,
+    retired: (assets || []).filter((a: any) => a.status === 'retired').length,
   };
 
-  const assetDetail = ASSETS.find(a => a.id === selectedAsset);
+  const assetDetail = (assets || []).find((a: any) => a.id === selectedAsset);
 
   return (
     <ErrorBoundary>
@@ -111,19 +98,23 @@ export default function AssetManagement() {
                   ))}
                 </ScrollView>
 
-                {filteredAssets.map(asset => {
-                  const Icon = asset.icon;
-                  return (
+                {filteredAssets.length === 0 ? (
+                  <Card style={{ padding: 40, alignItems: 'center' }}>
+                    <Package size={32} color={theme.colors.muted} />
+                    <Text style={{ fontSize: 14, color: theme.colors.muted, marginTop: 12 }}>No assets registered yet</Text>
+                  </Card>
+                ) : (
+                  filteredAssets.map((asset: any) => (
                     <Pressable key={asset.id} onPress={() => setSelectedAsset(selectedAsset === asset.id ? null : asset.id)}>
                       <Card style={{ padding: 14, gap: 8 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <View style={styles.assetIcon}><Icon size={20} color={theme.colors.brand} /></View>
+                          <View style={styles.assetIcon}><Monitor size={20} color={theme.colors.brand} /></View>
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontWeight: '700', color: theme.colors.text }}>{asset.name}</Text>
                             <Text style={{ fontSize: 11, color: theme.colors.muted }}>{asset.category} · {asset.location}</Text>
                           </View>
-                          <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[asset.status] + '20' }]}>
-                            <Text style={{ fontSize: 10, fontWeight: '700', color: STATUS_COLORS[asset.status] }}>{asset.status}</Text>
+                          <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[asset.status] || '#64748B') + '20' }]}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: STATUS_COLORS[asset.status] || '#64748B' }}>{asset.status}</Text>
                           </View>
                         </View>
 
@@ -149,29 +140,36 @@ export default function AssetManagement() {
                         )}
                       </Card>
                     </Pressable>
-                  );
-                })}
+                  ))
+                )}
               </>
             )}
 
             {activeTab === 'maintenance' && (
               <>
                 <SectionTitle>Maintenance Requests</SectionTitle>
-                {MAINTENANCE_LOG.map(m => (
-                  <Card key={m.id} style={{ padding: 14, gap: 8 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontWeight: '700', color: theme.colors.text }}>{m.asset}</Text>
-                      <View style={[styles.statusBadge, m.status === 'completed' ? styles.statusResolved : m.status === 'in_progress' ? styles.statusProgress : styles.statusPending]}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: m.status === 'completed' ? '#10B981' : m.status === 'in_progress' ? '#3B82F6' : '#F59E0B' }}>{m.status.replace('_', ' ')}</Text>
-                      </View>
-                    </View>
-                    <Text style={{ fontSize: 12, color: theme.colors.muted }}>Issue: {m.issue}</Text>
-                    <View style={{ flexDirection: 'row', gap: 12 }}>
-                      <Text style={{ fontSize: 11, color: theme.colors.muted }}>📅 {m.date}</Text>
-                      <Text style={{ fontSize: 11, color: theme.colors.muted }}>👤 {m.technician}</Text>
-                    </View>
+                {(maintenanceLog || []).length === 0 ? (
+                  <Card style={{ padding: 40, alignItems: 'center' }}>
+                    <Wrench size={32} color={theme.colors.muted} />
+                    <Text style={{ fontSize: 14, color: theme.colors.muted, marginTop: 12 }}>No maintenance records</Text>
                   </Card>
-                ))}
+                ) : (
+                  (maintenanceLog || []).map((m: any) => (
+                    <Card key={m.id} style={{ padding: 14, gap: 8 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontWeight: '700', color: theme.colors.text }}>{m.asset}</Text>
+                        <View style={[styles.statusBadge, m.status === 'completed' ? styles.statusResolved : m.status === 'in_progress' ? styles.statusProgress : styles.statusPending]}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: m.status === 'completed' ? '#10B981' : m.status === 'in_progress' ? '#3B82F6' : '#F59E0B' }}>{m.status.replace('_', ' ')}</Text>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 12, color: theme.colors.muted }}>Issue: {m.issue}</Text>
+                      <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <Text style={{ fontSize: 11, color: theme.colors.muted }}>📅 {m.date}</Text>
+                        <Text style={{ fontSize: 11, color: theme.colors.muted }}>👤 {m.technician}</Text>
+                      </View>
+                    </Card>
+                  ))
+                )}
               </>
             )}
 
@@ -192,7 +190,7 @@ export default function AssetManagement() {
                 <Card style={{ padding: 16, gap: 12 }}>
                   <Text style={{ fontWeight: '700', color: theme.colors.text }}>By Category</Text>
                   {CATEGORIES.filter(c => c !== 'All').map(c => {
-                    const count = ASSETS.filter(a => a.category === c).length;
+                    const count = (assets || []).filter((a: any) => a.category === c).length;
                     return (
                       <View key={c} style={styles.summaryRow}>
                         <Text style={{ fontSize: 13, color: theme.colors.muted, flexShrink: 1 }} numberOfLines={1}>{c}</Text>

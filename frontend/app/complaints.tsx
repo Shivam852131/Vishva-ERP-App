@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
@@ -10,6 +10,7 @@ import {
   AlertTriangle, Clock, CheckCircle, ChevronRight, Plus,
   Wrench, Wifi, Droplets, Zap, Shield, MessageSquare, X,
 } from 'lucide-react-native';
+import { useFetch, useMutate } from '@/src/hooks/useFetch';
 
 const CATEGORIES = [
   { key: 'maintenance', label: 'Maintenance', icon: Wrench, color: '#F59E0B' },
@@ -20,32 +21,6 @@ const CATEGORIES = [
   { key: 'other', label: 'Other', icon: MessageSquare, color: '#64748B' },
 ];
 
-const MY_COMPLAINTS = [
-  { id: '1', title: 'AC not working in Room 302', category: 'maintenance', status: 'in_progress', priority: 'high', date: 'Jan 20', ticketId: 'CMP-2024-001', updates: [
-    { time: 'Jan 20, 3 PM', text: 'Complaint registered', type: 'info' },
-    { time: 'Jan 21, 10 AM', text: 'Technician assigned — Ravi Kumar', type: 'info' },
-    { time: 'Jan 22, 2 PM', text: 'Technician visited. Parts needed, ordering.', type: 'warning' },
-  ]},
-  { id: '2', title: 'WiFi very slow in Block A', category: 'network', status: 'pending', priority: 'medium', date: 'Jan 18', ticketId: 'CMP-2024-002', updates: [
-    { time: 'Jan 18, 11 AM', text: 'Complaint registered', type: 'info' },
-    { time: 'Jan 19, 9 AM', text: 'Under investigation by IT team', type: 'info' },
-  ]},
-  { id: '3', title: 'Water leakage from ceiling', category: 'plumbing', status: 'resolved', priority: 'high', date: 'Jan 10', ticketId: 'CMP-2024-003', updates: [
-    { time: 'Jan 10, 8 PM', text: 'Emergency complaint registered', type: 'warning' },
-    { time: 'Jan 11, 7 AM', text: 'Plumber visited and fixed the issue', type: 'success' },
-    { time: 'Jan 11, 10 AM', text: 'Issue resolved. Verified by student.', type: 'success' },
-  ]},
-  { id: '4', title: 'Street light not working near hostel', category: 'electrical', status: 'pending', priority: 'low', date: 'Jan 15', ticketId: 'CMP-2024-004', updates: [
-    { time: 'Jan 15, 6 PM', text: 'Complaint registered', type: 'info' },
-  ]},
-  { id: '5', title: 'Suspicious activity near parking', category: 'security', status: 'resolved', priority: 'high', date: 'Jan 8', ticketId: 'CMP-2024-005', updates: [
-    { time: 'Jan 8, 9 PM', text: 'Security complaint registered', type: 'warning' },
-    { time: 'Jan 9, 8 AM', text: 'Security team investigated. False alarm.', type: 'success' },
-  ]},
-];
-
-const STATS = { total: 5, pending: 2, inProgress: 1, resolved: 2 };
-
 export default function ComplaintManagement() {
   const [activeTab, setActiveTab] = useState<'list' | 'new' | 'detail'>('list');
   const [selectedComplaint, setSelectedComplaint] = useState<string | null>(null);
@@ -53,23 +28,42 @@ export default function ComplaintManagement() {
   const [newComplaint, setNewComplaint] = useState({ title: '', category: 'maintenance', priority: 'medium', description: '' });
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  const { data: complaints, loading, refresh, setData } = useFetch<any[]>('/campus/grievances');
+  const { mutate } = useMutate('/campus/grievances');
+
+  const stats = useMemo(() => {
+    const items = complaints || [];
+    return {
+      total: items.length,
+      pending: items.filter((c: any) => c.status === 'pending').length,
+      inProgress: items.filter((c: any) => c.status === 'in_progress').length,
+      resolved: items.filter((c: any) => c.status === 'resolved').length,
+    };
+  }, [complaints]);
+
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!newComplaint.title.trim()) return Alert.alert('Error', 'Enter complaint title');
-    Alert.alert('Complaint Filed', `Ticket ID: CMP-2024-${String(STATS.total + 1).padStart(3, '0')} has been created.`);
-    setNewComplaint({ title: '', category: 'maintenance', priority: 'medium', description: '' });
-    setActiveTab('list');
+    try {
+      await mutate('POST', newComplaint);
+      Alert.alert('Complaint Filed', 'Your complaint has been submitted.');
+      setNewComplaint({ title: '', category: 'maintenance', priority: 'medium', description: '' });
+      setActiveTab('list');
+      refresh();
+    } catch {
+      Alert.alert('Error', 'Failed to submit complaint.');
+    }
   };
 
-  const filteredComplaints = MY_COMPLAINTS.filter(c => {
+  const filteredComplaints = (complaints || []).filter((c: any) => {
     if (filter === 'all') return true;
     return c.status === filter;
   });
 
-  const detail = MY_COMPLAINTS.find(c => c.id === selectedComplaint);
+  const detail = (complaints || []).find((c: any) => c.id === selectedComplaint);
 
   return (
     <ErrorBoundary>
@@ -88,13 +82,13 @@ export default function ComplaintManagement() {
                 </View>
               </View>
               <View style={styles.heroStats}>
-                <View style={styles.heroStat}><Text style={styles.heroStatVal}>{STATS.total}</Text><Text style={styles.heroStatLabel}>Total</Text></View>
+                <View style={styles.heroStat}><Text style={styles.heroStatVal}>{stats.total}</Text><Text style={styles.heroStatLabel}>Total</Text></View>
                 <View style={styles.heroStatDivider} />
-                <View style={styles.heroStat}><Text style={[styles.heroStatVal, { color: '#F59E0B' }]}>{STATS.pending}</Text><Text style={styles.heroStatLabel}>Pending</Text></View>
+                <View style={styles.heroStat}><Text style={[styles.heroStatVal, { color: '#F59E0B' }]}>{stats.pending}</Text><Text style={styles.heroStatLabel}>Pending</Text></View>
                 <View style={styles.heroStatDivider} />
-                <View style={styles.heroStat}><Text style={[styles.heroStatVal, { color: '#3B82F6' }]}>{STATS.inProgress}</Text><Text style={styles.heroStatLabel}>In Progress</Text></View>
+                <View style={styles.heroStat}><Text style={[styles.heroStatVal, { color: '#3B82F6' }]}>{stats.inProgress}</Text><Text style={styles.heroStatLabel}>In Progress</Text></View>
                 <View style={styles.heroStatDivider} />
-                <View style={styles.heroStat}><Text style={[styles.heroStatVal, { color: '#10B981' }]}>{STATS.resolved}</Text><Text style={styles.heroStatLabel}>Resolved</Text></View>
+                <View style={styles.heroStat}><Text style={[styles.heroStatVal, { color: '#10B981' }]}>{stats.resolved}</Text><Text style={styles.heroStatLabel}>Resolved</Text></View>
               </View>
             </LinearGradient>
           </View>
@@ -121,34 +115,41 @@ export default function ComplaintManagement() {
                   ))}
                 </ScrollView>
 
-                {filteredComplaints.map(c => {
-                  const cat = CATEGORIES.find(ct => ct.key === c.category);
-                  const Icon = cat?.icon || AlertTriangle;
-                  return (
-                    <Pressable key={c.id} onPress={() => { setSelectedComplaint(c.id); setActiveTab('detail'); }}>
-                      <Card style={{ padding: 14, gap: 8 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <View style={[styles.catIcon, { backgroundColor: (cat?.color || '#64748B') + '15' }]}>
-                            <Icon size={18} color={cat?.color || '#64748B'} />
+                {filteredComplaints.length === 0 ? (
+                  <Card style={{ padding: 40, alignItems: 'center' }}>
+                    <AlertTriangle size={32} color={theme.colors.muted} />
+                    <Text style={{ fontSize: 14, color: theme.colors.muted, marginTop: 12 }}>No complaints filed yet</Text>
+                  </Card>
+                ) : (
+                  filteredComplaints.map((c: any) => {
+                    const cat = CATEGORIES.find(ct => ct.key === c.category);
+                    const Icon = cat?.icon || AlertTriangle;
+                    return (
+                      <Pressable key={c.id} onPress={() => { setSelectedComplaint(c.id); setActiveTab('detail'); }}>
+                        <Card style={{ padding: 14, gap: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <View style={[styles.catIcon, { backgroundColor: (cat?.color || '#64748B') + '15' }]}>
+                              <Icon size={18} color={cat?.color || '#64748B'} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontWeight: '700', color: theme.colors.text, fontSize: 13 }}>{c.title}</Text>
+                              <Text style={{ fontSize: 11, color: theme.colors.muted }}>{c.ticketId} · {c.date}</Text>
+                            </View>
+                            <View style={[styles.statusBadge, c.status === 'resolved' ? styles.statusResolved : c.status === 'in_progress' ? styles.statusProgress : styles.statusPending]}>
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: c.status === 'resolved' ? '#10B981' : c.status === 'in_progress' ? '#3B82F6' : '#F59E0B' }}>{c.status.replace('_', ' ')}</Text>
+                            </View>
                           </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontWeight: '700', color: theme.colors.text, fontSize: 13 }}>{c.title}</Text>
-                            <Text style={{ fontSize: 11, color: theme.colors.muted }}>{c.ticketId} · {c.date}</Text>
+                          <View style={{ flexDirection: 'row', gap: 8, marginLeft: 44 }}>
+                            <View style={[styles.priorityBadge, c.priority === 'high' ? styles.priHigh : c.priority === 'medium' ? styles.priMed : styles.priLow]}>
+                              <Text style={{ fontSize: 9, fontWeight: '700', color: c.priority === 'high' ? '#EF4444' : c.priority === 'medium' ? '#F59E0B' : '#10B981' }}>{c.priority}</Text>
+                            </View>
+                            <Text style={{ fontSize: 11, color: theme.colors.muted }}>{c.updates?.length || 0} updates</Text>
                           </View>
-                          <View style={[styles.statusBadge, c.status === 'resolved' ? styles.statusResolved : c.status === 'in_progress' ? styles.statusProgress : styles.statusPending]}>
-                            <Text style={{ fontSize: 10, fontWeight: '700', color: c.status === 'resolved' ? '#10B981' : c.status === 'in_progress' ? '#3B82F6' : '#F59E0B' }}>{c.status.replace('_', ' ')}</Text>
-                          </View>
-                        </View>
-                        <View style={{ flexDirection: 'row', gap: 8, marginLeft: 44 }}>
-                          <View style={[styles.priorityBadge, c.priority === 'high' ? styles.priHigh : c.priority === 'medium' ? styles.priMed : styles.priLow]}>
-                            <Text style={{ fontSize: 9, fontWeight: '700', color: c.priority === 'high' ? '#EF4444' : c.priority === 'medium' ? '#F59E0B' : '#10B981' }}>{c.priority}</Text>
-                          </View>
-                          <Text style={{ fontSize: 11, color: theme.colors.muted }}>{c.updates.length} updates</Text>
-                        </View>
-                      </Card>
-                    </Pressable>
-                  );
-                })}
+                        </Card>
+                      </Pressable>
+                    );
+                  })
+                )}
               </>
             )}
 
@@ -201,11 +202,11 @@ export default function ComplaintManagement() {
                 </Card>
 
                 <SectionTitle>Updates Timeline</SectionTitle>
-                {detail.updates.map((u, i) => (
+                {(detail.updates || []).map((u: any, i: number) => (
                   <View key={i} style={{ flexDirection: 'row', gap: 10 }}>
                     <View style={{ width: 20, alignItems: 'center' }}>
                       <View style={[styles.timelineDot, u.type === 'success' ? { backgroundColor: '#10B981' } : u.type === 'warning' ? { backgroundColor: '#F59E0B' } : { backgroundColor: theme.colors.brand }]} />
-                      {i < detail.updates.length - 1 && <View style={styles.timelineLine} />}
+                      {i < (detail.updates || []).length - 1 && <View style={styles.timelineLine} />}
                     </View>
                     <Card style={{ flex: 1, padding: 12, gap: 4 }}>
                       <Text style={{ fontSize: 11, color: theme.colors.muted }}>{u.time}</Text>
