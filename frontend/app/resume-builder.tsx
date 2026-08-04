@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
@@ -10,6 +10,7 @@ import {
   Sparkles, FileText, Download, User, Briefcase, GraduationCap,
   Award, Plus, Trash2, ChevronDown, Eye, Edit3,
 } from 'lucide-react-native';
+import RNFS from 'react-native-fs';
 
 type ResumeData = {
   name: string; email: string; phone: string; objective: string;
@@ -18,6 +19,43 @@ type ResumeData = {
   projects: { name: string; desc: string; tech: string }[];
   certifications: string[];
 };
+
+function generateResumeHTML(r: ResumeData): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>${esc(r.name)} - Resume</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; color: #1e293b; padding: 32px; line-height: 1.5; }
+  .header { text-align: center; border-bottom: 3px solid #4F46E5; padding-bottom: 16px; margin-bottom: 20px; }
+  .name { font-size: 28px; font-weight: 800; color: #0f172a; }
+  .contact { font-size: 13px; color: #64748b; margin-top: 4px; }
+  .section { margin-bottom: 18px; }
+  .section-title { font-size: 11px; font-weight: 800; color: #4F46E5; text-transform: uppercase; letter-spacing: 1.5px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 10px; }
+  .edu-item, .exp-item, .proj-item { margin-bottom: 10px; }
+  .edu-degree { font-weight: 700; font-size: 14px; }
+  .edu-detail { font-size: 12px; color: #64748b; }
+  .skills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .skill-tag { background: #eef2ff; color: #4338ca; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .exp-title { font-weight: 700; font-size: 14px; }
+  .exp-meta { font-size: 11px; color: #64748b; }
+  .exp-desc { font-size: 13px; margin-top: 4px; }
+  .proj-name { font-weight: 700; font-size: 14px; }
+  .proj-desc { font-size: 13px; margin-top: 2px; }
+  .proj-tech { font-size: 11px; color: #4F46E5; }
+  .cert-item { font-size: 13px; margin-bottom: 4px; }
+  @media print { body { padding: 16px; } }
+</style></head><body>
+<div class="header"><div class="name">${esc(r.name)}</div><div class="contact">${esc(r.email)} &middot; ${esc(r.phone)}</div></div>
+${r.objective ? `<div class="section"><div class="section-title">Career Objective</div><p style="font-size:13px">${esc(r.objective)}</p></div>` : ''}
+${r.education.length > 0 ? `<div class="section"><div class="section-title">Education</div>${r.education.map(e => `<div class="edu-item"><div class="edu-degree">${esc(e.degree)}</div><div class="edu-detail">${esc(e.school)} &middot; ${esc(e.year)} &middot; GPA: ${esc(e.gpa)}</div></div>`).join('')}</div>` : ''}
+${r.skills.filter(Boolean).length > 0 ? `<div class="section"><div class="section-title">Skills</div><div class="skills">${r.skills.filter(Boolean).map(s => `<span class="skill-tag">${esc(s)}</span>`).join('')}</div></div>` : ''}
+${r.experience.length > 0 ? `<div class="section"><div class="section-title">Experience</div>${r.experience.map(e => `<div class="exp-item"><div class="exp-title">${esc(e.title)} at ${esc(e.company)}</div><div class="exp-meta">${esc(e.duration)}</div><div class="exp-desc">${esc(e.desc)}</div></div>`).join('')}</div>` : ''}
+${r.projects.length > 0 ? `<div class="section"><div class="section-title">Projects</div>${r.projects.map(p => `<div class="proj-item"><div class="proj-name">${esc(p.name)}</div><div class="proj-desc">${esc(p.desc)}</div><div class="proj-tech">${esc(p.tech)}</div></div>`).join('')}</div>` : ''}
+${r.certifications.length > 0 ? `<div class="section"><div class="section-title">Certifications</div>${r.certifications.map(c => `<div class="cert-item">&bull; ${esc(c)}</div>`).join('')}</div>` : ''}
+</body></html>`;
+}
 
 const DEFAULT_RESUME: ResumeData = {
   name: 'Rahul Sharma', email: 'rahul@example.com', phone: '+91 9876543210',
@@ -64,6 +102,29 @@ export default function ResumeBuilder() {
 
   const removeSkill = (index: number) => {
     setResume(prev => ({ ...prev, skills: prev.skills.filter((_, i) => i !== index) }));
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      const html = generateResumeHTML(resume);
+      const fileName = `Resume_${resume.name.replace(/\s+/g, '_')}_${Date.now()}`;
+      const dir = Platform.OS === 'android' ? RNFS.DownloadDirectoryPath : RNFS.DocumentDirectoryPath;
+      const filePath = `${dir}/${fileName}.html`;
+      await RNFS.writeFile(filePath, html, 'utf8');
+      Alert.alert(
+        'Resume Saved',
+        `Saved as ${fileName}.html\n\nOpen it and use Print > Save as PDF to get a PDF file.`,
+        [
+          { text: 'OK' },
+          { text: 'Open', onPress: () => RNFS.readFile(filePath, 'utf8').then(() => {
+            const { Linking } = require('react-native');
+            Linking.openURL(`file://${filePath}`);
+          }) },
+        ],
+      );
+    } catch (err: any) {
+      Alert.alert('Export failed', err?.message || 'Could not save the resume.');
+    }
   };
 
   const handleGenerate = () => {
@@ -269,7 +330,7 @@ export default function ResumeBuilder() {
 
                 <View style={{ flexDirection: 'row', gap: 12 }}>
                   <View style={{ flex: 1 }}><GradientButton label="Edit Resume" onPress={() => setPreview(false)} /></View>
-                  <View style={{ flex: 1 }}><GradientButton label="Download PDF" onPress={() => Alert.alert('Coming Soon', 'PDF export will be available soon.')} /></View>
+                  <View style={{ flex: 1 }}><GradientButton label="Download Resume" onPress={handleDownloadPDF} /></View>
                 </View>
               </>
             )}

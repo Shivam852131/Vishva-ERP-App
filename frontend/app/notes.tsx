@@ -1,9 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -37,6 +36,7 @@ import type { Note } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
 import { Card, EmptyState } from '@/src/ui';
+import { downloadFile, openFile, type DownloadProgress } from '@/src/download';
 
 type SharedNote = Note & {
   class_name?: string;
@@ -96,6 +96,8 @@ export default function Notes() {
   const [form, setForm] = useState<UploadForm>(() => createEmptyForm(user?.year));
   const [formError, setFormError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
 
   const itemsSafe = useMemo(() => items || [], [items]);
 
@@ -181,13 +183,35 @@ export default function Notes() {
     }
   };
 
-  const downloadNote = (note: SharedNote) => {
+  const downloadNote = useCallback(async (note: SharedNote) => {
     if (!note.url) {
       Alert.alert('Download unavailable', 'This note does not have a downloadable link yet.');
       return;
     }
-    Linking.openURL(note.url).catch(() => Alert.alert('Cannot open link', 'Please check the resource URL.'));
-  };
+    const noteId = note.id || note.url;
+    setDownloadingId(noteId);
+    setDownloadProgress(null);
+    try {
+      const result = await downloadFile(
+        note.url,
+        note.title || 'download',
+        (p) => setDownloadProgress(p),
+      );
+      Alert.alert(
+        'Download Complete',
+        `${result.fileName} saved. Open it now?`,
+        [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Open', onPress: () => openFile(result.path) },
+        ],
+      );
+    } catch (err: any) {
+      Alert.alert('Download failed', err?.message || 'Could not download this file. Try opening the link instead.');
+    } finally {
+      setDownloadingId(null);
+      setDownloadProgress(null);
+    }
+  }, []);
 
   return (
     <ErrorBoundary>
@@ -324,9 +348,29 @@ export default function Notes() {
                         <CheckCircle2 color={theme.colors.success} size={14} />
                         <Text style={styles.footerStatText}>{note.helpful_count || 0}</Text>
                       </View>
-                      <Pressable onPress={() => downloadNote(note)} style={styles.downloadBtn} testID={`download-note-${note.id || index}`} accessibilityLabel={`Download ${note.title}`}>
-                        <Download color="#fff" size={15} />
-                        <Text style={styles.downloadText}>Download</Text>
+                      <Pressable
+                        onPress={() => downloadNote(note)}
+                        disabled={downloadingId === (note.id || note.url)}
+                        style={[
+                          styles.downloadBtn,
+                          downloadingId === (note.id || note.url) && styles.downloadBtnActive,
+                        ]}
+                        testID={`download-note-${note.id || index}`}
+                        accessibilityLabel={`Download ${note.title}`}
+                      >
+                        {downloadingId === (note.id || note.url) ? (
+                          <>
+                            <ActivityIndicator color="#fff" size={14} />
+                            <Text style={styles.downloadText}>
+                              {downloadProgress ? `${downloadProgress.percentage}%` : 'Downloading...'}
+                            </Text>
+                          </>
+                        ) : (
+                          <>
+                            <Download color="#fff" size={15} />
+                            <Text style={styles.downloadText}>Download</Text>
+                          </>
+                        )}
                       </Pressable>
                       {note.url ? <ExternalLink color={theme.colors.muted} size={15} /> : null}
                     </View>
@@ -481,6 +525,7 @@ const styles = StyleSheet.create({
   footerStats: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   footerStatText: { color: theme.colors.success, fontSize: 11, fontWeight: '800' },
   downloadBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.colors.brandPrimary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.pill },
+  downloadBtnActive: { opacity: 0.7 },
   downloadText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.48)', justifyContent: 'flex-end' },
   sheet: { maxHeight: '88%', backgroundColor: theme.colors.surfaceSecondary, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: theme.spacing.xl },

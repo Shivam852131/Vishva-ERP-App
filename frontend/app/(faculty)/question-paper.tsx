@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
@@ -10,6 +10,7 @@ import {
   Sparkles, FileText, Download, Check, Clock, BookOpen,
   Layers, Hash, ChevronRight, X,
 } from 'lucide-react-native';
+import RNFS from 'react-native-fs';
 
 const SUBJECTS = ['Mathematics', 'Physics', 'Chemistry', 'Computer Science', 'English', 'Biology', 'History'];
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Mixed'];
@@ -82,6 +83,32 @@ export default function QuestionPaperGenerator() {
 
   const toggleType = (key: string) => {
     setSelectedTypes(prev => prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key]);
+  };
+
+  const handleDownload = async () => {
+    if (!generatedPaper) return;
+    try {
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const qsHTML = generatedPaper.questions.map((q: any, i: number) => {
+        let opts = '';
+        if (q.options) {
+          opts = q.options.map((o: string, j: number) => `<div style="margin-left:16px;color:#64748b">${String.fromCharCode(65 + j)}. ${esc(o)}</div>`).join('');
+        }
+        return `<div style="border-bottom:1px solid #e2e8f0;padding:10px 0"><div><strong>${q.id}.</strong> ${esc(q.q)}</div><div style="font-size:11px;color:#64748b;margin-top:4px">${q.type.toUpperCase()} &middot; ${q.marks} mark${q.marks > 1 ? 's' : ''}</div>${opts}</div>`;
+      }).join('');
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Question Paper - ${esc(generatedPaper.subject)}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;padding:32px;color:#1e293b}.header{text-align:center;border-bottom:3px solid #4F46E5;padding-bottom:12px;margin-bottom:20px}.title{font-size:22px;font-weight:800}.meta{font-size:12px;color:#64748b;margin-top:6px}</style></head><body>
+<div class="header"><div class="title">${esc(generatedPaper.subject)} Question Paper</div><div class="meta">${generatedPaper.difficulty} &middot; ${generatedPaper.totalMarks} marks &middot; ${generatedPaper.questionCount} questions &middot; ${generatedPaper.date}</div></div>
+${qsHTML}</body></html>`;
+
+      const fileName = `QuestionPaper_${generatedPaper.subject.replace(/\s+/g, '_')}_${Date.now()}`;
+      const dir = Platform.OS === 'android' ? RNFS.DownloadDirectoryPath : RNFS.DocumentDirectoryPath;
+      await RNFS.writeFile(`${dir}/${fileName}.html`, html, 'utf8');
+      Alert.alert('Saved', `${fileName}.html saved. Open and print to PDF.`);
+    } catch (err: any) {
+      Alert.alert('Download failed', err?.message || 'Could not save paper.');
+    }
   };
 
   const handleGenerate = () => {
@@ -197,7 +224,7 @@ export default function QuestionPaperGenerator() {
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text style={{ fontWeight: '800', fontSize: 16, color: theme.colors.text }}>Generated Paper</Text>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <Pressable style={styles.iconBtn}><Download size={16} color={theme.colors.brand} /></Pressable>
+                        <Pressable style={styles.iconBtn} onPress={handleDownload}><Download size={16} color={theme.colors.brand} /></Pressable>
                         <Pressable onPress={() => setGeneratedPaper(null)} style={styles.iconBtn}><X size={16} color={theme.colors.error} /></Pressable>
                       </View>
                     </View>

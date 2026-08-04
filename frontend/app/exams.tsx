@@ -1,15 +1,16 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { router } from '@/src/navigation/router';
-import { ArrowLeft, Calendar, Clock, MapPin, FileText } from 'lucide-react-native';
+import { ArrowLeft, Calendar, Clock, MapPin, FileText, Download } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch } from '@/src/hooks/useFetch';
 import type { Exam } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
 import { Card, Badge, AsyncView } from '@/src/ui';
+import RNFS from 'react-native-fs';
 
 interface HallTicket {
   id: string;
@@ -26,6 +27,28 @@ export default function Exams() {
   );
 
   const examsSafe = exams || [];
+
+  const handleDownloadHallTicket = useCallback(async () => {
+    if (!hallTicket) return;
+    try {
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const examsHTML = (hallTicket.exams || []).map(e =>
+        `<tr><td style="padding:8px;border-bottom:1px solid #e2e8f0">${esc(e.course_name)}</td><td style="padding:8px;border-bottom:1px solid #e2e8f0">${esc(e.date)}</td><td style="padding:8px;border-bottom:1px solid #e2e8f0">${esc(e.venue)}</td></tr>`
+      ).join('');
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Hall Ticket</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;padding:32px;color:#1e293b}.header{text-align:center;border-bottom:3px solid #4F46E5;padding-bottom:12px;margin-bottom:20px}.name{font-size:22px;font-weight:800}.label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px}table{width:100%;border-collapse:collapse;margin-top:16px}th{text-align:left;padding:8px;border-bottom:2px solid #4F46E5;font-size:12px;font-weight:700;color:#4F46E5}</style></head><body>
+<div class="header"><div class="label">Hall Ticket</div><div class="name" style="margin-top:8px">${esc(hallTicket.student_name)}</div><div style="font-size:12px;color:#64748b;margin-top:4px">${(hallTicket.exams || []).length} exam(s) scheduled</div></div>
+<table><tr><th>Subject</th><th>Date</th><th>Venue</th></tr>${examsHTML}</table></body></html>`;
+
+      const fileName = `HallTicket_${Date.now()}`;
+      const dir = Platform.OS === 'android' ? RNFS.DownloadDirectoryPath : RNFS.DocumentDirectoryPath;
+      await RNFS.writeFile(`${dir}/${fileName}.html`, html, 'utf8');
+      Alert.alert('Saved', `${fileName}.html saved to Downloads. Open and print to PDF.`);
+    } catch (err: any) {
+      Alert.alert('Download failed', err?.message || 'Could not save hall ticket.');
+    }
+  }, [hallTicket]);
 
   return (
     <ErrorBoundary>
@@ -46,7 +69,9 @@ export default function Exams() {
             <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.ticketCard}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={styles.ticketLabel}>Hall Ticket</Text>
-                <FileText color="rgba(255,255,255,0.8)" size={24} />
+                <Pressable onPress={handleDownloadHallTicket} style={{ padding: 8 }}>
+                  <Download color="rgba(255,255,255,0.9)" size={20} />
+                </Pressable>
               </View>
               <Text style={styles.ticketName}>{hallTicket.student_name}</Text>
               <Text style={styles.ticketExams}>{hallTicket.exams?.length || 0} exam(s) scheduled</Text>
