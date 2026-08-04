@@ -5,6 +5,9 @@ const { sendError } = require('../utils');
 
 const router = express.Router();
 
+// Master college registry - super_admin only for mutations
+// No collegeId filtering needed here: this IS the college list
+
 function serializeCollege(college) {
   return {
     id: String(college._id),

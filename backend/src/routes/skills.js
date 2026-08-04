@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser } = require('../utils');
-const { requireRole } = require('../auth');
+const { requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
 const { ensureCareerSeed } = require('../careerData');
 const {
   allSkillsCatalog,
@@ -58,11 +58,12 @@ function createSkillsRouter(io) {
     const studentId = await resolveStudentId(req, res);
     if (!studentId) return;
 
+    const collegeQ = collegeFilter(req);
     const [entries, certifications, projects, endorsements] = await Promise.all([
       getSkillEntries(studentId),
-      db.collection('student_certifications').find({ studentId: oid(studentId) }).sort({ issuedAt: -1 }).toArray(),
-      db.collection('student_projects').find({ studentId: oid(studentId) }).sort({ createdAt: -1 }).toArray(),
-      db.collection('skill_endorsements').find({ studentId: oid(studentId) }).sort({ createdAt: -1 }).limit(50).toArray(),
+      db.collection('student_certifications').find({ studentId: oid(studentId), ...collegeQ }).sort({ issuedAt: -1 }).toArray(),
+      db.collection('student_projects').find({ studentId: oid(studentId), ...collegeQ }).sort({ createdAt: -1 }).toArray(),
+      db.collection('skill_endorsements').find({ studentId: oid(studentId), ...collegeQ }).sort({ createdAt: -1 }).limit(50).toArray(),
     ]);
 
     const skills = entries.map(decorateSkill).sort((a, b) => b.score - a.score);
@@ -143,6 +144,7 @@ function createSkillsRouter(io) {
     if (existing) return sendError(res, 'You have already endorsed this skill.', 409);
 
     const doc = {
+      collegeId: oid(req.userCollegeId),
       studentId: oid(studentId),
       skillKey,
       endorserId: oid(req.user._id),
@@ -166,6 +168,7 @@ function createSkillsRouter(io) {
     if (!title || !issuer) return sendError(res, 'title and issuer are required.', 400);
 
     const doc = {
+      collegeId: oid(req.userCollegeId),
       studentId: oid(req.user._id),
       title,
       issuer,
@@ -199,6 +202,7 @@ function createSkillsRouter(io) {
     if (!title) return sendError(res, 'title is required.', 400);
 
     const doc = {
+      collegeId: oid(req.userCollegeId),
       studentId: oid(req.user._id),
       title,
       description: description || '',
@@ -270,15 +274,16 @@ function createCareerRouter() {
     await ensureCareerSeed(db);
     const studentId = oid(req.user._id);
 
+    const collegeQ = collegeFilter(req);
     const [skillMap, matches, applications, attempts, connections, sessions, certifications, projects] = await Promise.all([
       getSkillMap(req.user._id),
       buildCareerMatches(req.user._id),
-      db.collection('placement_applications').find({ studentId }).sort({ appliedAt: -1 }).toArray(),
-      db.collection('assessment_attempts').find({ studentId, status: 'submitted' }).sort({ submittedAt: -1 }).toArray(),
-      db.collection('mentorship_connections').find({ studentId }).toArray(),
-      db.collection('mentorship_sessions').find({ studentId }).sort({ scheduledAt: 1 }).toArray(),
-      db.collection('student_certifications').countDocuments({ studentId }),
-      db.collection('student_projects').countDocuments({ studentId }),
+      db.collection('placement_applications').find({ studentId, ...collegeQ }).sort({ appliedAt: -1 }).toArray(),
+      db.collection('assessment_attempts').find({ studentId, ...collegeQ, status: 'submitted' }).sort({ submittedAt: -1 }).toArray(),
+      db.collection('mentorship_connections').find({ studentId, ...collegeQ }).toArray(),
+      db.collection('mentorship_sessions').find({ studentId, ...collegeQ }).sort({ scheduledAt: 1 }).toArray(),
+      db.collection('student_certifications').countDocuments({ studentId, ...collegeQ }),
+      db.collection('student_projects').countDocuments({ studentId, ...collegeQ }),
     ]);
 
     const skills = [...skillMap.values()];

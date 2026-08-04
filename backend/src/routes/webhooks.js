@@ -64,10 +64,14 @@ function createWebhookRouter(io) {
 
       console.log(`[Webhook] Received event: ${event}, payment: ${payment?.id}`);
 
+      const resolvedCollegeId = collegeIdNote
+        ? (oid(collegeIdNote) || collegeIdNote)
+        : null;
+
       if (event === 'payment.captured') {
-        await handlePaymentCaptured(db, payment, io);
+        await handlePaymentCaptured(db, payment, io, resolvedCollegeId);
       } else if (event === 'payment.failed') {
-        await handlePaymentFailed(db, payment, io);
+        await handlePaymentFailed(db, payment, io, resolvedCollegeId);
       } else if (event === 'payment.authorized') {
         console.log(`[Webhook] Payment authorized: ${payment?.id}`);
       }
@@ -82,7 +86,7 @@ function createWebhookRouter(io) {
   return router;
 }
 
-async function handlePaymentCaptured(db, payment, io) {
+async function handlePaymentCaptured(db, payment, io, collegeId) {
   if (!payment || !payment.id) return;
 
   const existing = await db.collection('fee_payments').findOne({ razorpayPaymentId: payment.id });
@@ -103,7 +107,7 @@ async function handlePaymentCaptured(db, payment, io) {
       );
 
       const paymentRecord = {
-        collegeId: fee.collegeId || null,
+        collegeId: collegeId || fee.collegeId || null,
         studentId: fee.userId,
         feeId: fee._id,
         amount: payment.amount,
@@ -122,7 +126,7 @@ async function handlePaymentCaptured(db, payment, io) {
       const receipt = {
         feeId: fee._id,
         userId: fee.userId,
-        collegeId: fee.collegeId || null,
+        collegeId: collegeId || fee.collegeId || null,
         amount: payment.amount,
         razorpayPaymentId: payment.id,
         date: nowIso(),
@@ -151,7 +155,7 @@ async function handlePaymentCaptured(db, payment, io) {
   }
 }
 
-async function handlePaymentFailed(db, payment, io) {
+async function handlePaymentFailed(db, payment, io, collegeId) {
   if (!payment || !payment.id) return;
 
   console.log(`[Webhook] Payment failed: ${payment.id}, error: ${payment.error_description}`);

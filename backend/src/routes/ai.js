@@ -3,6 +3,7 @@ const { getDB, oid } = require('../db');
 const { serializeUser, sendError, makeCode, nowIso, roomForUser } = require('../utils');
 const { generateAIResponse, generateStudyPlanWithAI } = require('../ml/llmService');
 const { getPerformanceInsights } = require('../ml/performancePredictor');
+const { collegeFilter, requireCollegeAccess } = require('../auth');
 
 function createAiRouter(io) {
   const router = express.Router();
@@ -11,7 +12,7 @@ function createAiRouter(io) {
     try {
       const db = getDB();
       const sessions = await db.collection('ai_sessions')
-        .find({ userId: oid(req.user._id) })
+        .find({ userId: oid(req.user._id), ...collegeFilter(req) })
         .sort({ createdAt: -1 })
         .toArray();
 
@@ -46,6 +47,7 @@ function createAiRouter(io) {
 
       if (!sid) {
         const session = {
+          collegeId: oid(req.userCollegeId),
           userId: oid(currentUserId),
           type: aiType,
           title: message.substring(0, 60),
@@ -56,6 +58,7 @@ function createAiRouter(io) {
       }
 
       const userMessage = {
+        collegeId: oid(req.userCollegeId),
         sessionId: oid(sid),
         role: 'user',
         content: message,
@@ -75,6 +78,7 @@ function createAiRouter(io) {
       const aiResult = await generateAIResponse(aiType, message, currentUserId, history);
 
       const assistantMessage = {
+        collegeId: oid(req.userCollegeId),
         sessionId: oid(sid),
         role: 'assistant',
         content: aiResult.response,
@@ -189,6 +193,7 @@ function createAiRouter(io) {
       }
 
       const plan = {
+        collegeId: oid(req.userCollegeId),
         userId: oid(req.user._id),
         ...planData,
         createdAt: nowIso(),
@@ -206,7 +211,7 @@ function createAiRouter(io) {
     try {
       const db = getDB();
       const plans = await db.collection('study_plans')
-        .find({ userId: oid(req.user._id) })
+        .find({ userId: oid(req.user._id), ...collegeFilter(req) })
         .sort({ createdAt: -1 })
         .toArray();
 

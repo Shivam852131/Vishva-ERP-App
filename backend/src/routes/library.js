@@ -1,14 +1,15 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { serializeUser, sendError, makeCode, nowIso } = require('../utils');
+const { collegeFilter, requireCollegeAccess } = require('../auth');
 
 const router = express.Router();
 
-router.get('/books', async (req, res) => {
+router.get('/books', requireCollegeAccess, async (req, res) => {
   try {
     const db = getDB();
     const { department, search } = req.query;
-    const filter = {};
+    const filter = { ...collegeFilter(req) };
 
     if (department) filter.department = department;
     if (search) {
@@ -29,13 +30,13 @@ router.get('/books', async (req, res) => {
   }
 });
 
-router.get('/my-issues', async (req, res) => {
+router.get('/my-issues', requireCollegeAccess, async (req, res) => {
   try {
     const db = getDB();
     const userId = req.user._id;
     const { active } = req.query;
 
-    const filter = { userId: oid(userId) };
+    const filter = { ...collegeFilter(req), userId: oid(userId) };
     if (active === 'true') filter.status = 'issued';
 
     const issues = await db.collection('book_issues')
@@ -62,7 +63,7 @@ router.get('/my-issues', async (req, res) => {
   }
 });
 
-router.post('/issue', async (req, res) => {
+router.post('/issue', requireCollegeAccess, async (req, res) => {
   try {
     const db = getDB();
     const { bookId, userId, dueDate } = req.body;
@@ -77,6 +78,7 @@ router.post('/issue', async (req, res) => {
     );
 
     const issue = {
+      collegeId: oid(req.userCollegeId),
       bookId: oid(bookId),
       userId: oid(userId),
       issueDate: nowIso(),
@@ -94,7 +96,7 @@ router.post('/issue', async (req, res) => {
   }
 });
 
-router.post('/return/:issueId', async (req, res) => {
+router.post('/return/:issueId', requireCollegeAccess, async (req, res) => {
   try {
     const db = getDB();
     const { issueId } = req.params;

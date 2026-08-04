@@ -1,6 +1,6 @@
 const { getDB, oid } = require('../db');
 const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated } = require('../utils');
-const { requireRole } = require('../auth');
+const { requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
 
 function createCampusRouter(io) {
   const { Router } = require('express');
@@ -8,10 +8,10 @@ function createCampusRouter(io) {
 
   // ── Hostel CRUD (admin) ──────────────────────────────
 
-  router.get('/hostels', async (req, res) => {
+  router.get('/hostels', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const hostels = await db.collection('hostels').find({}).toArray();
+      const hostels = await db.collection('hostels').find({ ...collegeFilter(req) }).toArray();
       const mapped = hostels.map(h => ({
         id: String(h._id),
         name: h.name || '',
@@ -30,10 +30,10 @@ function createCampusRouter(io) {
     }
   });
 
-  router.get('/hostels/:id', async (req, res) => {
+  router.get('/hostels/:id', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const hostel = await db.collection('hostels').findOne({ _id: oid(req.params.id) });
+      const hostel = await db.collection('hostels').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
       if (!hostel) return sendError(res, 'Hostel not found', 404);
       res.json({
         id: String(hostel._id),
@@ -52,13 +52,14 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/hostels', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.post('/hostels', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { name, type, total_rooms, warden_name, contact, amenities, description } = req.body;
       if (!name) return sendError(res, 'Hostel name is required.');
 
       const doc = {
+        collegeId: oid(req.userCollegeId),
         name,
         type: type || 'Boys',
         total_rooms: Number(total_rooms || 0),
@@ -89,13 +90,13 @@ function createCampusRouter(io) {
     }
   });
 
-  router.put('/hostels/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.put('/hostels/:id', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const _id = oid(req.params.id);
       if (!_id) return sendError(res, 'Invalid hostel id.', 404);
 
-      const existing = await db.collection('hostels').findOne({ _id });
+      const existing = await db.collection('hostels').findOne({ _id, ...collegeFilter(req) });
       if (!existing) return sendError(res, 'Hostel not found.', 404);
 
       const update = {};
@@ -126,7 +127,7 @@ function createCampusRouter(io) {
     }
   });
 
-  router.delete('/hostels/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.delete('/hostels/:id', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const _id = oid(req.params.id);
@@ -135,10 +136,11 @@ function createCampusRouter(io) {
       const activeAllocations = await db.collection('hostel_allocations').countDocuments({
         hostelId: _id,
         status: 'active',
+        ...collegeFilter(req),
       });
       if (activeAllocations > 0) return sendError(res, 'Cannot delete hostel with active allocations.');
 
-      const result = await db.collection('hostels').deleteOne({ _id });
+      const result = await db.collection('hostels').deleteOne({ _id, ...collegeFilter(req) });
       if (!result.deletedCount) return sendError(res, 'Hostel not found.', 404);
       res.json({ ok: true });
     } catch (e) {
@@ -148,14 +150,14 @@ function createCampusRouter(io) {
 
   // ── Allocations (admin) ──────────────────────────────
 
-  router.get('/hostel/allocations', requireRole('college_admin', 'super_admin', 'student'), async (req, res) => {
+  router.get('/hostel/allocations', requireRole('college_admin', 'super_admin', 'student'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      let filter = {};
+      let filter = { ...collegeFilter(req) };
       if (req.user.role === 'student') {
-        filter = { studentId: oid(req.user._id), status: 'active' };
+        filter = { ...filter, studentId: oid(req.user._id), status: 'active' };
       } else if (req.query.hostel_id) {
-        filter = { hostelId: oid(req.query.hostel_id) };
+        filter = { ...filter, hostelId: oid(req.query.hostel_id) };
       }
 
       const allocations = await db.collection('hostel_allocations').find(filter).sort({ startDate: -1 }).toArray();
@@ -187,21 +189,23 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/hostels/:id/allocate', async (req, res) => {
+  router.post('/hostels/:id/allocate', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { room, bed } = req.body;
-      const hostel = await db.collection('hostels').findOne({ _id: oid(req.params.id) });
+      const hostel = await db.collection('hostels').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
       if (!hostel) return sendError(res, 'Hostel not found', 404);
 
       const existing = await db.collection('hostel_allocations').findOne({
         hostelId: oid(req.params.id),
         studentId: oid(req.user._id),
         status: 'active',
+        ...collegeFilter(req),
       });
       if (existing) return sendError(res, 'Already allocated', 400);
 
       const allocation = {
+        collegeId: oid(req.userCollegeId),
         hostelId: oid(req.params.id),
         studentId: oid(req.user._id),
         room: room || 'Auto-assigned',
@@ -225,13 +229,13 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/hostel/allocations/:id/deallocate', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.post('/hostel/allocations/:id/deallocate', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const _id = oid(req.params.id);
       if (!_id) return sendError(res, 'Invalid allocation id.', 404);
 
-      const allocation = await db.collection('hostel_allocations').findOne({ _id });
+      const allocation = await db.collection('hostel_allocations').findOne({ _id, ...collegeFilter(req) });
       if (!allocation) return sendError(res, 'Allocation not found.', 404);
       if (allocation.status !== 'active') return sendError(res, 'Allocation is not active.');
 
@@ -253,23 +257,25 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/hostel/allocations/admin-assign', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.post('/hostel/allocations/admin-assign', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { hostel_id, student_id, room, bed } = req.body;
       if (!hostel_id || !student_id) return sendError(res, 'hostel_id and student_id are required.');
 
-      const hostel = await db.collection('hostels').findOne({ _id: oid(hostel_id) });
+      const hostel = await db.collection('hostels').findOne({ _id: oid(hostel_id), ...collegeFilter(req) });
       if (!hostel) return sendError(res, 'Hostel not found.', 404);
 
       const existing = await db.collection('hostel_allocations').findOne({
         hostelId: oid(hostel_id),
         studentId: oid(student_id),
         status: 'active',
+        ...collegeFilter(req),
       });
       if (existing) return sendError(res, 'Student already allocated to a hostel.', 400);
 
       const allocation = {
+        collegeId: oid(req.userCollegeId),
         hostelId: oid(hostel_id),
         studentId: oid(student_id),
         room: room || 'Auto-assigned',
@@ -293,13 +299,14 @@ function createCampusRouter(io) {
     }
   });
 
-  router.get('/hostel/stats', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.get('/hostel/stats', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const hostels = await db.collection('hostels').find({}).toArray();
+      const collegeQ = collegeFilter(req);
+      const hostels = await db.collection('hostels').find(collegeQ).toArray();
       const totalRooms = hostels.reduce((s, h) => s + (h.total_rooms || 0), 0);
       const totalOccupied = hostels.reduce((s, h) => s + (h.occupied || 0), 0);
-      const activeAllocations = await db.collection('hostel_allocations').countDocuments({ status: 'active' });
+      const activeAllocations = await db.collection('hostel_allocations').countDocuments({ status: 'active', ...collegeQ });
 
       const boys = hostels.filter(h => h.type === 'Boys');
       const girls = hostels.filter(h => h.type === 'Girls');
@@ -320,10 +327,10 @@ function createCampusRouter(io) {
     }
   });
 
-  router.get('/transport/routes', async (req, res) => {
+  router.get('/transport/routes', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const routes = await db.collection('transport_routes').find({}).toArray();
+      const routes = await db.collection('transport_routes').find({ ...collegeFilter(req) }).toArray();
       const mapped = routes.map(r => ({
         id: String(r._id),
         route_name: r.route_name || '',
@@ -339,12 +346,13 @@ function createCampusRouter(io) {
     }
   });
 
-  router.get('/transport/my-route', async (req, res) => {
+  router.get('/transport/my-route', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const enrollment = await db.collection('transport_enrollments').findOne({
         studentId: oid(req.user._id),
         status: 'active',
+        ...collegeFilter(req),
       });
       if (!enrollment) return res.json(null);
 
@@ -367,22 +375,24 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/transport/enroll', async (req, res) => {
+  router.post('/transport/enroll', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { routeId } = req.body;
 
-      const route = await db.collection('transport_routes').findOne({ _id: oid(routeId) });
+      const route = await db.collection('transport_routes').findOne({ _id: oid(routeId), ...collegeFilter(req) });
       if (!route) return sendError(res, 'Route not found', 404);
 
       const existing = await db.collection('transport_enrollments').findOne({
         routeId: oid(routeId),
         studentId: oid(req.user._id),
         status: 'active',
+        ...collegeFilter(req),
       });
       if (existing) return sendError(res, 'Already enrolled', 400);
 
       const enrollment = {
+        collegeId: oid(req.userCollegeId),
         routeId: oid(routeId),
         studentId: oid(req.user._id),
         startDate: isoDate(new Date()),
@@ -399,7 +409,7 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/transport/deenroll/:routeId', async (req, res) => {
+  router.post('/transport/deenroll/:routeId', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const result = await db.collection('transport_enrollments').updateOne(
@@ -407,6 +417,7 @@ function createCampusRouter(io) {
           routeId: oid(req.params.routeId),
           studentId: oid(req.user._id),
           status: 'active',
+          ...collegeFilter(req),
         },
         { $set: { status: 'inactive' } }
       );
@@ -420,10 +431,10 @@ function createCampusRouter(io) {
     }
   });
 
-  router.get('/grievances', async (req, res) => {
+  router.get('/grievances', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      let filter = {};
+      let filter = { ...collegeFilter(req) };
       if (req.user.role === 'student') {
         filter.userId = oid(req.user._id);
       }
@@ -437,12 +448,13 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/grievances', async (req, res) => {
+  router.post('/grievances', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { category, subject, description, priority, anonymous } = req.body;
 
       const grievance = {
+        collegeId: oid(req.userCollegeId),
         userId: oid(req.user._id),
         category,
         subject,
@@ -466,7 +478,7 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/grievances/:id/respond', async (req, res) => {
+  router.post('/grievances/:id/respond', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { text } = req.body;
@@ -478,7 +490,7 @@ function createCampusRouter(io) {
       };
 
       const result = await db.collection('grievances').updateOne(
-        { _id: oid(req.params.id) },
+        { _id: oid(req.params.id), ...collegeFilter(req) },
         {
           $push: { responses: response },
           $set: { status: 'in_progress' },
@@ -496,10 +508,10 @@ function createCampusRouter(io) {
 
   // ── Gate Pass ─────────────────────────────────────────
 
-  router.get('/gate-passes', async (req, res) => {
+  router.get('/gate-passes', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      let filter = {};
+      let filter = { ...collegeFilter(req) };
       if (req.user.role === 'student') {
         filter.userId = oid(req.user._id);
       }
@@ -546,7 +558,7 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/gate-passes', async (req, res) => {
+  router.post('/gate-passes', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { hostel_id, reason, destination, out_time, expected_return } = req.body;
@@ -556,11 +568,12 @@ function createCampusRouter(io) {
 
       let hostel_name = '';
       if (hostel_id) {
-        const hostel = await db.collection('hostels').findOne({ _id: oid(hostel_id) });
+        const hostel = await db.collection('hostels').findOne({ _id: oid(hostel_id), ...collegeFilter(req) });
         if (hostel) hostel_name = hostel.name;
       }
 
       const pass = {
+        collegeId: oid(req.userCollegeId),
         userId: oid(req.user._id),
         student_name: req.user.name || '',
         hostelId: hostel_id ? oid(hostel_id) : null,
@@ -590,12 +603,12 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/gate-passes/:id/approve', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.post('/gate-passes/:id/approve', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { review_note } = req.body;
       const result = await db.collection('gate_passes').updateOne(
-        { _id: oid(req.params.id) },
+        { _id: oid(req.params.id), ...collegeFilter(req) },
         { $set: { status: 'approved', reviewed_by: oid(req.user._id), review_note: review_note || '', reviewed_at: nowIso() } }
       );
       if (result.matchedCount === 0) return sendError(res, 'Gate pass not found', 404);
@@ -608,12 +621,12 @@ function createCampusRouter(io) {
     }
   });
 
-  router.post('/gate-passes/:id/reject', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.post('/gate-passes/:id/reject', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { review_note } = req.body;
       const result = await db.collection('gate_passes').updateOne(
-        { _id: oid(req.params.id) },
+        { _id: oid(req.params.id), ...collegeFilter(req) },
         { $set: { status: 'rejected', reviewed_by: oid(req.user._id), review_note: review_note || '', reviewed_at: nowIso() } }
       );
       if (result.matchedCount === 0) return sendError(res, 'Gate pass not found', 404);

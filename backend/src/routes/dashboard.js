@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
-const { authUser, requireRole } = require('../auth');
+const { authUser, requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
 const { serializeUser, sendError, nowIso } = require('../utils');
 
 const router = express.Router();
@@ -16,26 +16,28 @@ async function buildStudentAttendance(studentId) {
   return { rate, total, present };
 }
 
-async function buildStudentDashboard(studentId) {
+async function buildStudentDashboard(studentId, req) {
   const db = getDB();
   const sid = oid(studentId);
+  const cf = collegeFilter(req);
 
-  const enrollments = await db.collection('course_enrollments').find({ studentId: sid }).toArray();
+  const enrollments = await db.collection('course_enrollments').find({ ...cf, studentId: sid }).toArray();
   const courseIds = enrollments.map(e => e.courseId);
 
   const courses = courseIds.length
-    ? await db.collection('courses').find({ _id: { $in: courseIds } }).toArray()
+    ? await db.collection('courses').find({ ...cf, _id: { $in: courseIds } }).toArray()
     : [];
 
   const attendance = await buildStudentAttendance(studentId);
 
   const submittedAssignmentIds = (
-    await db.collection('submissions').find({ $or: [{ studentId: sid }, { studentId: studentId }] }).toArray()
+    await db.collection('submissions').find({ ...cf, $or: [{ studentId: sid }, { studentId: studentId }] }).toArray()
   ).map(s => s.assignmentId);
 
   const pendingAssignments = courseIds.length
     ? await db.collection('assignments')
         .find({
+          ...cf,
           courseId: { $in: courseIds },
           _id: { $nin: submittedAssignmentIds },
         })
@@ -43,19 +45,19 @@ async function buildStudentDashboard(studentId) {
     : [];
 
   const pendingFees = await db.collection('fees')
-    .find({ $or: [{ userId: sid }, { userId: studentId }], status: { $ne: 'paid' } })
+    .find({ ...cf, $or: [{ userId: sid }, { userId: studentId }], status: { $ne: 'paid' } })
     .toArray();
 
   const upcomingClasses = courseIds.length
-    ? await db.collection('timetable_slots').find({ $or: [{ courseId: { $in: courseIds } }, { courseId: { $in: courseIds.map(String) } }] }).toArray()
+    ? await db.collection('timetable_slots').find({ ...cf, $or: [{ courseId: { $in: courseIds } }, { courseId: { $in: courseIds.map(String) } }] }).toArray()
     : [];
 
-  const results = await db.collection('exam_results').find({ $or: [{ studentId: sid }, { studentId: studentId }] }).toArray();
+  const results = await db.collection('exam_results').find({ ...cf, $or: [{ studentId: sid }, { studentId: studentId }] }).toArray();
   const cgpa = results.length
     ? Number((results.reduce((sum, r) => sum + (r.marks || 0), 0) / results.length).toFixed(2))
     : null;
 
-  const faceProfile = await db.collection('face_profiles').findOne({ userId: sid });
+  const faceProfile = await db.collection('face_profiles').findOne({ ...cf, userId: sid });
 
   return {
     attendance: attendance.rate,
@@ -80,19 +82,20 @@ async function buildStudentDashboard(studentId) {
   };
 }
 
-async function buildFacultyDashboard(facultyId) {
+async function buildFacultyDashboard(facultyId, req) {
   const db = getDB();
   const fid = oid(facultyId);
+  const cf = collegeFilter(req);
 
-  const courses = await db.collection('courses').find({ $or: [{ facultyId: fid }, { facultyId: facultyId }] }).toArray();
+  const courses = await db.collection('courses').find({ ...cf, $or: [{ facultyId: fid }, { facultyId: facultyId }] }).toArray();
   const courseIds = courses.map(c => c._id);
 
   const totalStudents = courseIds.length
-    ? await db.collection('course_enrollments').countDocuments({ $or: [{ courseId: { $in: courseIds } }, { courseId: { $in: courseIds.map(String) } }] })
+    ? await db.collection('course_enrollments').countDocuments({ ...cf, $or: [{ courseId: { $in: courseIds } }, { courseId: { $in: courseIds.map(String) } }] })
     : 0;
 
   const assignments = courseIds.length
-    ? await db.collection('assignments').find({ courseId: { $in: courseIds } }).toArray()
+    ? await db.collection('assignments').find({ ...cf, courseId: { $in: courseIds } }).toArray()
     : [];
 
   return {
@@ -107,11 +110,12 @@ async function buildFacultyDashboard(facultyId) {
   };
 }
 
-async function buildParentDashboard(parentId) {
+async function buildParentDashboard(parentId, req) {
   const db = getDB();
   const pid = oid(parentId);
+  const cf = collegeFilter(req);
 
-  const children = await db.collection('users').find({ parentId: pid }).toArray();
+  const children = await db.collection('users').find({ ...cf, parentId: pid }).toArray();
   if (!children.length) return { children: [] };
 
   const results = [];
@@ -119,16 +123,16 @@ async function buildParentDashboard(parentId) {
     const cid = child._id;
     const attendance = await buildStudentAttendance(cid);
 
-    const enrollments = await db.collection('course_enrollments').find({ studentId: cid }).toArray();
+    const enrollments = await db.collection('course_enrollments').find({ ...cf, studentId: cid }).toArray();
     const courseIds = enrollments.map(e => e.courseId);
 
     const examResults = courseIds.length
       ? await db.collection('exam_results')
-          .find({ studentId: cid, courseId: { $in: courseIds } })
+          .find({ ...cf, studentId: cid, courseId: { $in: courseIds } })
           .toArray()
       : [];
 
-    const fees = await db.collection('fees').find({ userId: cid }).toArray();
+    const fees = await db.collection('fees').find({ ...cf, userId: cid }).toArray();
 
     const cgpa = examResults.length
       ? Number((examResults.reduce((sum, r) => sum + (r.marks || 0), 0) / examResults.length).toFixed(2))
@@ -159,17 +163,21 @@ async function buildParentDashboard(parentId) {
   return { children: results };
 }
 
-async function buildAdminDashboard() {
+async function buildAdminDashboard(req) {
   const db = getDB();
+  const cf = collegeFilter(req);
 
-  const [students, faculty, parents, courses, colleges, pendingFees] = await Promise.all([
-    db.collection('users').countDocuments({ role: 'student' }),
-    db.collection('users').countDocuments({ role: 'faculty' }),
-    db.collection('users').countDocuments({ role: 'parent' }),
-    db.collection('courses').countDocuments(),
-    db.collection('colleges').countDocuments(),
-    db.collection('fees').countDocuments({ status: { $ne: 'paid' } }),
+  const [students, faculty, parents, courses, pendingFees] = await Promise.all([
+    db.collection('users').countDocuments({ ...cf, role: 'student' }),
+    db.collection('users').countDocuments({ ...cf, role: 'faculty' }),
+    db.collection('users').countDocuments({ ...cf, role: 'parent' }),
+    db.collection('courses').countDocuments(cf),
+    db.collection('fees').countDocuments({ ...cf, status: { $ne: 'paid' } }),
   ]);
+
+  const colleges = req.isSuperAdmin
+    ? await db.collection('colleges').countDocuments()
+    : 1;
 
   return {
     students,
@@ -184,7 +192,7 @@ async function buildAdminDashboard() {
 router.get('/dashboard/student', requireRole('student'), async (req, res) => {
   try {
     const user = await authUser(req);
-    const data = await buildStudentDashboard(String(user._id));
+    const data = await buildStudentDashboard(String(user._id), req);
     res.json(data);
   } catch (e) {
     sendError(res, e.message, 500);
@@ -194,7 +202,7 @@ router.get('/dashboard/student', requireRole('student'), async (req, res) => {
 router.get('/dashboard/faculty', requireRole('faculty'), async (req, res) => {
   try {
     const user = await authUser(req);
-    const data = await buildFacultyDashboard(String(user._id));
+    const data = await buildFacultyDashboard(String(user._id), req);
     res.json(data);
   } catch (e) {
     sendError(res, e.message, 500);
@@ -204,16 +212,16 @@ router.get('/dashboard/faculty', requireRole('faculty'), async (req, res) => {
 router.get('/dashboard/parent', requireRole('parent'), async (req, res) => {
   try {
     const user = await authUser(req);
-    const data = await buildParentDashboard(String(user._id));
+    const data = await buildParentDashboard(String(user._id), req);
     res.json(data);
   } catch (e) {
     sendError(res, e.message, 500);
   }
 });
 
-router.get('/dashboard/admin', requireRole('college_admin', 'super_admin'), async (_req, res) => {
+router.get('/dashboard/admin', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
   try {
-    const data = await buildAdminDashboard();
+    const data = await buildAdminDashboard(req);
     res.json(data);
   } catch (e) {
     sendError(res, e.message, 500);
@@ -225,20 +233,21 @@ router.get('/analytics/student', requireRole('student'), async (req, res) => {
     const user = await authUser(req);
     const db = getDB();
     const sid = String(user._id);
+    const cf = collegeFilter(req);
 
     const attendance = await buildStudentAttendance(sid);
 
-    const enrollments = await db.collection('course_enrollments').find({ studentId: oid(sid) }).toArray();
+    const enrollments = await db.collection('course_enrollments').find({ ...cf, studentId: oid(sid) }).toArray();
     const courseIds = enrollments.map(e => e.courseId);
 
     const attendanceByCourse = [];
     for (const cid of courseIds) {
       const records = await db.collection('attendance_records')
-        .find({ studentId: oid(sid), courseId: cid })
+        .find({ ...cf, studentId: oid(sid), courseId: cid })
         .toArray();
       const total = records.length || 0;
       const present = records.filter(r => r.status === 'present').length;
-      const course = await db.collection('courses').findOne({ _id: cid });
+      const course = await db.collection('courses').findOne({ ...cf, _id: cid });
       attendanceByCourse.push({
         course_id: String(cid),
         course_name: course ? course.name : null,
@@ -247,12 +256,12 @@ router.get('/analytics/student', requireRole('student'), async (req, res) => {
       });
     }
 
-    const results = await db.collection('exam_results').find({ studentId: oid(sid) }).toArray();
+    const results = await db.collection('exam_results').find({ ...cf, studentId: oid(sid) }).toArray();
     const avgMarks = results.length
       ? Math.round(results.reduce((sum, r) => sum + (r.marks || 0), 0) / results.length)
       : 0;
 
-    const bookIssues = await db.collection('book_issues').find({ userId: oid(sid) }).toArray();
+    const bookIssues = await db.collection('book_issues').find({ ...cf, userId: oid(sid) }).toArray();
 
     res.json({
       attendance: attendance.rate,
@@ -271,25 +280,27 @@ router.get('/analytics/faculty', requireRole('faculty'), async (req, res) => {
     const user = await authUser(req);
     const db = getDB();
     const fid = oid(String(user._id));
+    const cf = collegeFilter(req);
 
-  const courses = await db.collection('courses').find({ $or: [{ facultyId: fid }, { facultyId: facultyId }] }).toArray();
+  const courses = await db.collection('courses').find({ ...cf, $or: [{ facultyId: fid }, { facultyId: facultyId }] }).toArray();
     const courseIds = courses.map(c => c._id);
 
     const totalStudents = courseIds.length
-      ? await db.collection('course_enrollments').countDocuments({ courseId: { $in: courseIds } })
+      ? await db.collection('course_enrollments').countDocuments({ ...cf, courseId: { $in: courseIds } })
       : 0;
 
     const totalAssignments = courseIds.length
-      ? await db.collection('assignments').countDocuments({ courseId: { $in: courseIds } })
+      ? await db.collection('assignments').countDocuments({ ...cf, courseId: { $in: courseIds } })
       : 0;
 
     const totalSubmissions = courseIds.length
       ? await db.collection('submissions')
           .countDocuments({
+            ...cf,
             assignmentId: {
               $in: (
                 await db.collection('assignments')
-                  .find({ courseId: { $in: courseIds } })
+                  .find({ ...cf, courseId: { $in: courseIds } })
                   .toArray()
               ).map(a => a._id),
             },
@@ -312,23 +323,25 @@ router.get('/analytics/faculty', requireRole('faculty'), async (req, res) => {
   }
 });
 
-router.get('/analytics/admin', requireRole('college_admin', 'super_admin'), async (_req, res) => {
+router.get('/analytics/admin', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
   try {
-    const base = await buildAdminDashboard();
+    const base = await buildAdminDashboard(req);
     const db = getDB();
+    const cf = collegeFilter(req);
 
     const [totalStudents, totalFaculty, allRecords, presentRecords] = await Promise.all([
-      db.collection('users').countDocuments({ role: 'student' }),
-      db.collection('users').countDocuments({ role: 'faculty' }),
-      db.collection('attendance_records').countDocuments(),
-      db.collection('attendance_records').countDocuments({ status: 'present' }),
+      db.collection('users').countDocuments({ ...cf, role: 'student' }),
+      db.collection('users').countDocuments({ ...cf, role: 'faculty' }),
+      db.collection('attendance_records').countDocuments(cf),
+      db.collection('attendance_records').countDocuments({ ...cf, status: 'present' }),
     ]);
 
-    const totalBooks = await db.collection('books').countDocuments();
-    const totalBookIssues = await db.collection('book_issues').countDocuments();
+    const totalBooks = await db.collection('books').countDocuments(cf);
+    const totalBookIssues = await db.collection('book_issues').countDocuments(cf);
 
     const departmentBreakdown = await db.collection('courses')
       .aggregate([
+        { $match: cf },
         { $group: { _id: '$department', count: { $sum: 1 } } },
       ])
       .toArray();
@@ -353,8 +366,9 @@ router.get('/reminders', async (req, res) => {
   try {
     const db = getDB();
     const user = await authUser(req);
+    const cf = collegeFilter(req);
     const reminders = await db.collection('reminders')
-      .find({ userId: oid(String(user._id)) })
+      .find({ ...cf, userId: oid(String(user._id)) })
       .sort({ priority: 1 })
       .toArray();
     res.json(reminders);

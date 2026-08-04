@@ -1,4 +1,5 @@
 const { getDB, oid } = require('../db');
+const { collegeFilter, requireCollegeAccess } = require('../auth');
 const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated, roomForUser } = require('../utils');
 
 function notificationVisibleToUser(notification, user) {
@@ -14,11 +15,11 @@ function createNotificationsRouter(io) {
   const { Router } = require('express');
   const router = Router();
 
-  router.get('/notifications', async (req, res) => {
+  router.get('/notifications', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const all = await db.collection('notifications')
-        .find({})
+        .find({ ...collegeFilter(req) })
         .sort({ createdAt: -1 })
         .toArray();
       const visible = all.filter(n => notificationVisibleToUser(n, req.user));
@@ -28,15 +29,15 @@ function createNotificationsRouter(io) {
     }
   });
 
-  router.post('/notifications/read/:id', async (req, res) => {
+  router.post('/notifications/read/:id', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const userId = oid(req.user._id);
       await db.collection('notifications').updateOne(
-        { _id: oid(req.params.id) },
+        { _id: oid(req.params.id), ...collegeFilter(req) },
         { $addToSet: { readBy: userId } }
       );
-      const updated = await db.collection('notifications').findOne({ _id: oid(req.params.id) });
+      const updated = await db.collection('notifications').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
       if (io) io.to(roomForUser(req.user._id)).emit('notifications:update', updated);
       res.json(updated);
     } catch (e) {
@@ -44,12 +45,12 @@ function createNotificationsRouter(io) {
     }
   });
 
-  router.post('/notifications/read-all', async (req, res) => {
+  router.post('/notifications/read-all', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const userId = oid(req.user._id);
       await db.collection('notifications').updateMany(
-        { readBy: { $ne: userId } },
+        { readBy: { $ne: userId }, ...collegeFilter(req) },
         { $addToSet: { readBy: userId } }
       );
       res.json({ ok: true });
@@ -58,11 +59,11 @@ function createNotificationsRouter(io) {
     }
   });
 
-  router.get('/announcements', async (req, res) => {
+  router.get('/announcements', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const announcements = await db.collection('announcements')
-        .find({})
+        .find({ ...collegeFilter(req) })
         .sort({ createdAt: -1 })
         .toArray();
       res.json(announcements);
@@ -71,7 +72,7 @@ function createNotificationsRouter(io) {
     }
   });
 
-  router.post('/announcements', async (req, res) => {
+  router.post('/announcements', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { title, body, audience } = req.body;
@@ -80,21 +81,27 @@ function createNotificationsRouter(io) {
         title,
         body,
         audience,
+        collegeId: oid(req.userCollegeId),
         createdById: oid(req.user._id),
         createdAt: nowIso(),
       };
       const annResult = await db.collection('announcements').insertOne(announcement);
       announcement._id = annResult.insertedId;
 
+      let recipientFilter = {};
+      if (req.userCollegeId && !req.isSuperAdmin) {
+        recipientFilter.collegeId = oid(req.userCollegeId);
+      }
+
       let recipientIds = [];
       if (audience === 'all') {
-        const users = await db.collection('users').find({}).project({ _id: 1 }).toArray();
+        const users = await db.collection('users').find(recipientFilter).project({ _id: 1 }).toArray();
         recipientIds = users.map(u => u._id);
       } else {
         const roleMap = { students: 'student', faculty: 'faculty', admins: 'admin' };
         const role = roleMap[audience];
         if (role) {
-          const users = await db.collection('users').find({ role }).project({ _id: 1 }).toArray();
+          const users = await db.collection('users').find({ role, ...recipientFilter }).project({ _id: 1 }).toArray();
           recipientIds = users.map(u => u._id);
         }
       }
@@ -103,6 +110,7 @@ function createNotificationsRouter(io) {
         audience: audience === 'all' ? 'all' : 'individual',
         title,
         body,
+        collegeId: oid(req.userCollegeId),
         recipientIds,
         readBy: [],
         createdAt: nowIso(),

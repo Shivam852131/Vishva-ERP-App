@@ -2,7 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { sendError } = require('../utils');
 const { getDB, oid } = require('../db');
-const { issueToken } = require('../auth');
+const { issueToken, collegeFilter } = require('../auth');
 
 const router = express.Router();
 
@@ -111,6 +111,7 @@ router.post('/auth/verify-otp', async (req, res) => {
       passwordHash: await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10),
       role: 'student',
       phone: `+91${phone}`,
+      collegeId: null,
       college: 'Vishva Institute of Technology',
       department: 'Computer Science',
       studentCode: `VIT-P${phone.slice(-4)}`,
@@ -192,6 +193,7 @@ router.post('/twilio/whatsapp/broadcast', async (req, res) => {
   const roles = roleMap[audience] || ['student'];
   const db = getDB();
   const users = await db.collection('users').find({
+    ...collegeFilter(req),
     role: { $in: roles }, phone: { $ne: null }
   }).project({ phone: 1, name: 1 }).toArray();
 

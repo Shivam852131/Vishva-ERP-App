@@ -22,7 +22,11 @@ function comparePassword(password, hash) {
 }
 
 function issueToken(user) {
-  return jwt.sign({ sub: String(user._id || user.id), role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(
+    { sub: String(user._id || user.id), role: user.role, collegeId: user.collegeId ? String(user.collegeId) : null },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN },
+  );
 }
 
 async function userFromToken(token) {
@@ -47,6 +51,8 @@ async function authMiddleware(req, res, next) {
   if (user.status === 'suspended' || user.isActive === false) return sendError(res, 'This account is suspended.', 403);
   req.token = token;
   req.user = user;
+  req.userCollegeId = user.collegeId || null;
+  req.isSuperAdmin = user.role === 'super_admin' || user.role === 'superadmin';
   next();
 }
 
@@ -66,6 +72,25 @@ function requireRole(...roles) {
   };
 }
 
+function requireCollegeAccess(req, res, next) {
+  if (req.isSuperAdmin) return next();
+  if (!req.userCollegeId) return sendError(res, 'No college assigned to your account.', 403);
+  next();
+}
+
+function collegeFilter(req) {
+  if (req.isSuperAdmin) return {};
+  return { collegeId: oid(req.userCollegeId) };
+}
+
+function collegeIdOrThrow(req) {
+  if (req.isSuperAdmin) {
+    const requested = req.query.collegeId || req.body?.collegeId;
+    return requested ? oid(requested) : null;
+  }
+  return oid(req.userCollegeId);
+}
+
 module.exports = {
   hashPassword,
   comparePassword,
@@ -74,4 +99,7 @@ module.exports = {
   authMiddleware,
   authUser,
   requireRole,
+  requireCollegeAccess,
+  collegeFilter,
+  collegeIdOrThrow,
 };

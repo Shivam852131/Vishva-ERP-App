@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser } = require('../utils');
-const { requireRole } = require('../auth');
+const { requireRole, collegeFilter } = require('../auth');
 const { ensureCareerSeed, SKILL_BY_KEY, PLACEMENT_ROUNDS, departmentMatches } = require('../careerData');
 const { getSkillMap } = require('../skillProfile');
 
@@ -170,7 +170,7 @@ function createPlacementRouter(io) {
     await ensureCareerSeed(db);
 
     const { status, jobType, sector, minPackage, search, eligibleOnly } = req.query;
-    const filter = {};
+    const filter = { ...collegeFilter(req) };
     if (status) filter.status = status;
     if (jobType) filter.jobType = jobType;
     if (sector) filter.sector = sector;
@@ -187,7 +187,7 @@ function createPlacementRouter(io) {
     const [skillMap, academics, myApplications] = await Promise.all([
       getSkillMap(req.user._id),
       loadAcademics(req.user),
-      db.collection('placement_applications').find({ studentId: oid(req.user._id) }).toArray(),
+      db.collection('placement_applications').find({ studentId: oid(req.user._id), ...collegeFilter(req) }).toArray(),
     ]);
 
     const appliedMap = new Map(myApplications.map(a => [String(a.driveId), a]));
@@ -212,13 +212,13 @@ function createPlacementRouter(io) {
 
   router.get('/drives/:id', async (req, res) => {
     const db = getDB();
-    const drive = await db.collection('placement_drives').findOne({ _id: oid(req.params.id) });
+    const drive = await db.collection('placement_drives').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!drive) return sendError(res, 'Drive not found.', 404);
 
     const [skillMap, academics, application] = await Promise.all([
       getSkillMap(req.user._id),
       loadAcademics(req.user),
-      db.collection('placement_applications').findOne({ driveId: drive._id, studentId: oid(req.user._id) }),
+      db.collection('placement_applications').findOne({ driveId: drive._id, studentId: oid(req.user._id), ...collegeFilter(req) }),
     ]);
 
     const eligibility = await evaluateEligibility(drive, req.user, skillMap, academics);
@@ -257,6 +257,7 @@ function createPlacementRouter(io) {
       status: 'open',
       applicationCount: 0,
       createdBy: oid(req.user._id),
+      collegeId: oid(req.userCollegeId),
       createdAt: nowIso(),
     };
 
@@ -275,7 +276,7 @@ function createPlacementRouter(io) {
     }
     if (!Object.keys(patch).length) return sendError(res, 'Nothing to update.', 400);
 
-    const result = await db.collection('placement_drives').updateOne({ _id: oid(req.params.id) }, { $set: patch });
+    const result = await db.collection('placement_drives').updateOne({ _id: oid(req.params.id), ...collegeFilter(req) }, { $set: patch });
     if (!result.matchedCount) return sendError(res, 'Drive not found.', 404);
 
     const updated = await db.collection('placement_drives').findOne({ _id: oid(req.params.id) });
@@ -284,7 +285,7 @@ function createPlacementRouter(io) {
 
   router.delete('/drives/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const result = await db.collection('placement_drives').deleteOne({ _id: oid(req.params.id) });
+    const result = await db.collection('placement_drives').deleteOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!result.deletedCount) return sendError(res, 'Drive not found.', 404);
     await db.collection('placement_applications').deleteMany({ driveId: oid(req.params.id) });
     res.json({ success: true });
@@ -326,6 +327,7 @@ function createPlacementRouter(io) {
       coverNote: req.body?.coverNote || null,
       snapshot: { cgpa: academics.cgpa, attendance: academics.attendance, skill_readiness: eligibility.skill_readiness },
       timeline: [{ event: 'Applied', at: nowIso(), note: null }],
+      collegeId: oid(req.userCollegeId),
       appliedAt: nowIso(),
       updatedAt: nowIso(),
     };
@@ -342,7 +344,7 @@ function createPlacementRouter(io) {
     const db = getDB();
     const isStaff = ['college_admin', 'super_admin', 'collegeAdmin', 'superadmin'].includes(req.user.role);
 
-    const filter = isStaff && req.query.scope === 'all' ? {} : { studentId: oid(req.user._id) };
+    const filter = isStaff && req.query.scope === 'all' ? { ...collegeFilter(req) } : { studentId: oid(req.user._id), ...collegeFilter(req) };
     if (req.query.driveId) filter.driveId = oid(req.query.driveId);
     if (req.query.status) filter.status = req.query.status;
 
@@ -357,7 +359,7 @@ function createPlacementRouter(io) {
 
   router.get('/applications/:id', async (req, res) => {
     const db = getDB();
-    const application = await db.collection('placement_applications').findOne({ _id: oid(req.params.id) });
+    const application = await db.collection('placement_applications').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!application) return sendError(res, 'Application not found.', 404);
 
     const isStaff = ['college_admin', 'super_admin', 'collegeAdmin', 'superadmin'].includes(req.user.role);
@@ -374,6 +376,7 @@ function createPlacementRouter(io) {
     const application = await db.collection('placement_applications').findOne({
       _id: oid(req.params.id),
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (!application) return sendError(res, 'Application not found.', 404);
     if (['offered', 'accepted'].includes(application.status)) {
@@ -395,7 +398,7 @@ function createPlacementRouter(io) {
     const db = getDB();
     const { status, roundIndex, roundStatus, feedback, scheduledAt, offer, note } = req.body || {};
 
-    const application = await db.collection('placement_applications').findOne({ _id: oid(req.params.id) });
+    const application = await db.collection('placement_applications').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!application) return sendError(res, 'Application not found.', 404);
 
     const update = { updatedAt: nowIso() };
@@ -451,11 +454,11 @@ function createPlacementRouter(io) {
     await ensureCareerSeed(db);
 
     const isStaff = ['college_admin', 'super_admin', 'collegeAdmin', 'superadmin'].includes(req.user.role);
-    const filter = isStaff ? {} : { studentId: oid(req.user._id) };
+    const filter = isStaff ? { ...collegeFilter(req) } : { studentId: oid(req.user._id), ...collegeFilter(req) };
 
     const [applications, drives] = await Promise.all([
       db.collection('placement_applications').find(filter).toArray(),
-      db.collection('placement_drives').find({}).toArray(),
+      db.collection('placement_drives').find({ ...collegeFilter(req) }).toArray(),
     ]);
 
     const offers = applications.filter(a => ['offered', 'accepted'].includes(a.status));

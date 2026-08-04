@@ -1,17 +1,21 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { serializeUser, sendError, makeCode, nowIso, roomForUser } = require('../utils');
+const { collegeFilter, requireCollegeAccess } = require('../auth');
 
 function createChatRouter(io) {
   const router = express.Router();
 
-  router.get('/users', async (req, res) => {
+  router.get('/users', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const currentUserId = req.user._id;
 
       const users = await db.collection('users')
-        .find({ _id: { $ne: oid(currentUserId) } })
+        .find({
+          _id: { $ne: oid(currentUserId) },
+          ...collegeFilter(req),
+        })
         .project({ name: 1, role: 1 })
         .toArray();
 
@@ -43,7 +47,7 @@ function createChatRouter(io) {
     }
   });
 
-  router.get('/messages/:userId', async (req, res) => {
+  router.get('/messages/:userId', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const currentUserId = req.user._id;
@@ -51,6 +55,7 @@ function createChatRouter(io) {
 
       const messages = await db.collection('chat_messages')
         .find({
+          ...collegeFilter(req),
           $or: [
             { senderId: oid(currentUserId), receiverId: oid(otherUserId) },
             { senderId: oid(otherUserId), receiverId: oid(currentUserId) },
@@ -70,13 +75,14 @@ function createChatRouter(io) {
     }
   });
 
-  router.post('/messages', async (req, res) => {
+  router.post('/messages', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const currentUserId = req.user._id;
       const { receiverId, content } = req.body;
 
       const message = {
+        collegeId: oid(req.userCollegeId),
         senderId: oid(currentUserId),
         receiverId: oid(receiverId),
         content,
@@ -102,6 +108,7 @@ function createChatRouter(io) {
 
       if (receiver) {
         await db.collection('notifications').insertOne({
+          collegeId: oid(req.userCollegeId),
           audience: 'individual',
           title: 'New Message',
           body: `${sender?.name || 'Someone'} sent you a message`,

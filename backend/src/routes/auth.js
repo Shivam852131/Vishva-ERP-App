@@ -1,7 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
 const { getDB, oid } = require('../db');
-const { hashPassword, comparePassword, issueToken, authUser } = require('../auth');
+const { hashPassword, comparePassword, issueToken, authUser, collegeFilter, requireCollegeAccess } = require('../auth');
 const { serializeUser, sendError } = require('../utils');
 
 const router = express.Router();
@@ -66,6 +66,7 @@ router.post('/auth/register', async (req, res) => {
     role: resolvedRole,
     phone: phone || null,
     college: 'Vishva Institute of Technology',
+    collegeId: null,
     department: resolvedRole === 'student' ? 'Computer Science' : null,
     studentCode: resolvedRole === 'student' ? `VIT-${String(Math.floor(1000 + Math.random() * 9000))}` : null,
     year: resolvedRole === 'student' ? 1 : null,
@@ -87,7 +88,7 @@ router.get('/auth/me', async (req, res) => {
   res.json(serializeUser(user));
 });
 
-router.put('/auth/profile', async (req, res) => {
+router.put('/auth/profile', requireCollegeAccess, async (req, res) => {
   const user = await authUser(req);
   if (!user) return sendError(res, 'Authentication required.', 401);
 

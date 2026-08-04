@@ -3,6 +3,7 @@ const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser } = require('../utils');
 const { ensureCareerSeed, SKILL_BY_KEY, CAREER_BY_KEY } = require('../careerData');
 const { getSkillMap } = require('../skillProfile');
+const { collegeFilter, requireCollegeAccess } = require('../auth');
 
 function serializeMentor(doc, extra = {}) {
   return {
@@ -109,9 +110,10 @@ function createMentorshipRouter(io) {
       ];
     }
 
+    const collegeQ = collegeFilter(req);
     const [mentors, connections, skillMap] = await Promise.all([
-      db.collection('mentors').find(filter).toArray(),
-      db.collection('mentorship_connections').find({ studentId: oid(req.user._id) }).toArray(),
+      db.collection('mentors').find({ ...filter, ...collegeQ }).toArray(),
+      db.collection('mentorship_connections').find({ studentId: oid(req.user._id), ...collegeQ }).toArray(),
       getSkillMap(req.user._id),
     ]);
 
@@ -184,6 +186,7 @@ function createMentorshipRouter(io) {
     if (!goal) return sendError(res, 'Tell the mentor what you want help with.', 400);
 
     const doc = {
+      collegeId: oid(req.userCollegeId),
       mentorId: mentor._id,
       mentorName: mentor.name,
       mentorHeadline: mentor.headline,
@@ -206,7 +209,7 @@ function createMentorshipRouter(io) {
 
   router.get('/connections', async (req, res) => {
     const db = getDB();
-    const filter = { studentId: oid(req.user._id) };
+    const filter = { studentId: oid(req.user._id), ...collegeFilter(req) };
     if (req.query.status) filter.status = req.query.status;
 
     const connections = await db.collection('mentorship_connections')
@@ -269,7 +272,7 @@ function createMentorshipRouter(io) {
   // ── Sessions ───────────────────────────────────────────────────────────────
   router.get('/sessions', async (req, res) => {
     const db = getDB();
-    const filter = { studentId: oid(req.user._id) };
+    const filter = { studentId: oid(req.user._id), ...collegeFilter(req) };
     if (req.query.status) filter.status = req.query.status;
     if (req.query.connectionId) filter.connectionId = oid(req.query.connectionId);
 
@@ -303,6 +306,7 @@ function createMentorshipRouter(io) {
     if (clash) return sendError(res, 'A session is already booked at that time.', 409);
 
     const doc = {
+      collegeId: oid(req.userCollegeId),
       connectionId: connection._id,
       mentorId: connection.mentorId,
       mentorName: connection.mentorName,
@@ -402,7 +406,7 @@ function createMentorshipRouter(io) {
   router.get('/goals', async (req, res) => {
     const db = getDB();
     const goals = await db.collection('mentorship_goals')
-      .find({ studentId: oid(req.user._id) })
+      .find({ studentId: oid(req.user._id), ...collegeFilter(req) })
       .sort({ createdAt: -1 })
       .toArray();
     res.json(goals.map(serializeGoal));
@@ -414,6 +418,7 @@ function createMentorshipRouter(io) {
     if (!title) return sendError(res, 'title is required.', 400);
 
     const doc = {
+      collegeId: oid(req.userCollegeId),
       studentId: oid(req.user._id),
       connectionId: connectionId ? oid(connectionId) : null,
       title,
@@ -493,11 +498,12 @@ function createMentorshipRouter(io) {
     const db = getDB();
     await ensureCareerSeed(db);
     const studentId = oid(req.user._id);
+    const collegeQ = collegeFilter(req);
 
     const [connections, sessions, goals] = await Promise.all([
-      db.collection('mentorship_connections').find({ studentId }).toArray(),
-      db.collection('mentorship_sessions').find({ studentId }).sort({ scheduledAt: 1 }).toArray(),
-      db.collection('mentorship_goals').find({ studentId }).toArray(),
+      db.collection('mentorship_connections').find({ studentId, ...collegeQ }).toArray(),
+      db.collection('mentorship_sessions').find({ studentId, ...collegeQ }).sort({ scheduledAt: 1 }).toArray(),
+      db.collection('mentorship_goals').find({ studentId, ...collegeQ }).toArray(),
     ]);
 
     const upcoming = sessions.filter(s => s.status === 'scheduled' && new Date(s.scheduledAt) >= new Date());

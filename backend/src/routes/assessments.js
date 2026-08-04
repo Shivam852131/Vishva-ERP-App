@@ -3,6 +3,7 @@ const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser } = require('../utils');
 const { ensureCareerSeed, QUESTION_BANK, SKILL_BY_KEY } = require('../careerData');
 const { applyAssessmentResult } = require('../skillProfile');
+const { collegeFilter } = require('../auth');
 
 // Grace window so a slow network round-trip on submit doesn't fail a student
 // who answered inside the limit.
@@ -47,7 +48,7 @@ function createAssessmentsRouter(io) {
     const db = getDB();
     await ensureCareerSeed(db);
 
-    const filter = { isActive: { $ne: false } };
+    const filter = { ...collegeFilter(req), isActive: { $ne: false } };
     if (req.query.category) filter.category = req.query.category;
     if (req.query.skillKey) filter.skillKey = req.query.skillKey;
     if (req.query.difficulty) filter.difficulty = req.query.difficulty;
@@ -55,7 +56,7 @@ function createAssessmentsRouter(io) {
     const assessments = await db.collection('assessments').find(filter).sort({ category: 1, title: 1 }).toArray();
 
     const myAttempts = await db.collection('assessment_attempts')
-      .find({ studentId: oid(req.user._id), status: 'submitted' })
+      .find({ studentId: oid(req.user._id), status: 'submitted', ...collegeFilter(req) })
       .sort({ submittedAt: -1 })
       .toArray();
 
@@ -67,7 +68,7 @@ function createAssessmentsRouter(io) {
     }
 
     const inProgress = await db.collection('assessment_attempts')
-      .find({ studentId: oid(req.user._id), status: 'in_progress' })
+      .find({ studentId: oid(req.user._id), status: 'in_progress', ...collegeFilter(req) })
       .toArray();
     const inProgressMap = new Map(inProgress.map(a => [String(a.assessmentId), a]));
 
@@ -92,7 +93,7 @@ function createAssessmentsRouter(io) {
     const _id = oid(req.params.id);
     if (!_id) return sendError(res, 'Invalid assessment id.', 400);
 
-    const existing = await db.collection('assessments').findOne({ _id });
+    const existing = await db.collection('assessments').findOne({ _id, ...collegeFilter(req) });
     if (!existing) return sendError(res, 'Assessment not found.', 404);
 
     await db.collection('assessments').deleteOne({ _id });
@@ -103,7 +104,7 @@ function createAssessmentsRouter(io) {
   router.get('/history', async (req, res) => {
     const db = getDB();
     const attempts = await db.collection('assessment_attempts')
-      .find({ studentId: oid(req.user._id), status: 'submitted' })
+      .find({ studentId: oid(req.user._id), status: 'submitted', ...collegeFilter(req) })
       .sort({ submittedAt: -1 })
       .limit(50)
       .toArray();
@@ -124,7 +125,7 @@ function createAssessmentsRouter(io) {
 
   router.get('/leaderboard', async (req, res) => {
     const db = getDB();
-    const filter = { status: 'submitted' };
+    const filter = { ...collegeFilter(req), status: 'submitted' };
     if (req.query.assessmentId) filter.assessmentId = oid(req.query.assessmentId);
 
     const rows = await db.collection('assessment_attempts').aggregate([
@@ -160,7 +161,7 @@ function createAssessmentsRouter(io) {
     const db = getDB();
     await ensureCareerSeed(db);
 
-    const assessment = await db.collection('assessments').findOne({ _id: oid(req.params.id) });
+    const assessment = await db.collection('assessments').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!assessment) return sendError(res, 'Assessment not found.', 404);
 
     const existing = await db.collection('assessment_attempts').findOne({
@@ -196,6 +197,7 @@ function createAssessmentsRouter(io) {
       totalQuestions: Math.min(assessment.totalQuestions, bank.length),
       startedAt: startedAt.toISOString(),
       expiresAt: expiresAt.toISOString(),
+      collegeId: oid(req.userCollegeId),
     };
 
     const { insertedId } = await db.collection('assessment_attempts').insertOne(doc);
@@ -362,6 +364,7 @@ function createAssessmentsRouter(io) {
         source: 'assessment',
         attemptId: attempt._id,
         scorePercent,
+        collegeId: oid(req.userCollegeId),
         createdAt: submittedAt,
       };
       const existingCert = await db.collection('student_certifications').findOne({ attemptId: attempt._id });

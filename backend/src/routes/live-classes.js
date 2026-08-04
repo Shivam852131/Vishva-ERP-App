@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser } = require('../utils');
-const { requireRole } = require('../auth');
+const { requireRole, collegeFilter } = require('../auth');
 
 function roomForLive(sessionId) {
   return `live:${String(sessionId)}`;
@@ -67,7 +67,7 @@ function createLiveClassesRouter(io) {
     const db = getDB();
     const { status, courseId, scope } = req.query;
 
-    const filter = {};
+    const filter = { ...collegeFilter(req) };
     if (status) filter.status = status;
     if (courseId) filter.courseId = oid(courseId);
     if (scope === 'mine' && isHostRole(req.user)) filter.hostId = oid(req.user._id);
@@ -82,7 +82,7 @@ function createLiveClassesRouter(io) {
     const [participants, myEnrollments] = await Promise.all([
       ids.length
         ? db.collection('live_participants').aggregate([
-            { $match: { sessionId: { $in: ids } } },
+            { $match: { sessionId: { $in: ids }, ...collegeFilter(req) } },
             { $group: { _id: '$sessionId', total: { $sum: 1 }, active: { $sum: { $cond: [{ $ifNull: ['$leftAt', false] }, 0, 1] } } } },
           ]).toArray()
         : [],
@@ -131,6 +131,7 @@ function createLiveClassesRouter(io) {
       year: year ?? null,
       tags: Array.isArray(tags) ? tags : [],
       materials: Array.isArray(materials) ? materials : [],
+      collegeId: oid(req.userCollegeId),
       createdAt: nowIso(),
     };
 
@@ -146,9 +147,9 @@ function createLiveClassesRouter(io) {
     if (!session) return sendError(res, 'Live class not found.', 404);
 
     const [participants, questions, polls, mine] = await Promise.all([
-      db.collection('live_participants').find({ sessionId: session._id }).sort({ joinedAt: 1 }).toArray(),
-      db.collection('live_questions').find({ sessionId: session._id }).sort({ upvotes: -1, createdAt: -1 }).toArray(),
-      db.collection('live_polls').find({ sessionId: session._id }).sort({ createdAt: -1 }).toArray(),
+      db.collection('live_participants').find({ sessionId: session._id, ...collegeFilter(req) }).sort({ joinedAt: 1 }).toArray(),
+      db.collection('live_questions').find({ sessionId: session._id, ...collegeFilter(req) }).sort({ upvotes: -1, createdAt: -1 }).toArray(),
+      db.collection('live_polls').find({ sessionId: session._id, ...collegeFilter(req) }).sort({ createdAt: -1 }).toArray(),
       db.collection('live_participants').findOne({ sessionId: session._id, studentId: oid(req.user._id) }),
     ]);
 
@@ -294,8 +295,8 @@ function createLiveClassesRouter(io) {
         leftAt: null,
         handRaised: false,
         attentionSeconds: 0,
-        // Joining while the class is live counts as attendance.
         present: session.status === 'live',
+        collegeId: oid(req.userCollegeId),
       };
       const { insertedId } = await db.collection('live_participants').insertOne(doc);
       participant = { ...doc, _id: insertedId };
@@ -349,7 +350,7 @@ function createLiveClassesRouter(io) {
     const db = getDB();
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100));
     const messages = await db.collection('live_messages')
-      .find({ sessionId: oid(req.params.id) })
+      .find({ sessionId: oid(req.params.id), ...collegeFilter(req) })
       .sort({ createdAt: -1 })
       .limit(limit)
       .toArray();
@@ -382,6 +383,7 @@ function createLiveClassesRouter(io) {
       authorId: oid(req.user._id),
       authorName: req.user.name,
       authorRole: req.user.role,
+      collegeId: oid(req.userCollegeId),
       createdAt: nowIso(),
     };
     const { insertedId } = await db.collection('live_messages').insertOne(doc);
@@ -417,6 +419,7 @@ function createLiveClassesRouter(io) {
       upvoters: [],
       answer: null,
       answeredAt: null,
+      collegeId: oid(req.userCollegeId),
       createdAt: nowIso(),
     };
     const { insertedId } = await db.collection('live_questions').insertOne(doc);
@@ -500,6 +503,7 @@ function createLiveClassesRouter(io) {
       votes: [],
       status: 'open',
       createdBy: oid(req.user._id),
+      collegeId: oid(req.userCollegeId),
       createdAt: nowIso(),
     };
     const { insertedId } = await db.collection('live_polls').insertOne(doc);
@@ -570,7 +574,7 @@ function createLiveClassesRouter(io) {
     if (!ensureHost(session, req.user)) return sendError(res, 'Only the host can view attendance.', 403);
 
     const participants = await db.collection('live_participants')
-      .find({ sessionId: session._id })
+      .find({ sessionId: session._id, ...collegeFilter(req) })
       .sort({ joinedAt: 1 })
       .toArray();
 
@@ -629,7 +633,7 @@ function createLiveClassesRouter(io) {
         { studentId: p.studentId, courseId: session.courseId, date },
         {
           $set: { status: 'present', method: 'live_class', sessionId: session._id, markedAt: nowIso() },
-          $setOnInsert: { studentId: p.studentId, courseId: session.courseId, date },
+          $setOnInsert: { studentId: p.studentId, courseId: session.courseId, date, collegeId: oid(req.userCollegeId) },
         },
         { upsert: true },
       );

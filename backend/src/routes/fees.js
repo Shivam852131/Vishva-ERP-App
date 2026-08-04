@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { getDB, oid } = require('../db');
-const { requireRole } = require('../auth');
+const { requireRole, collegeFilter, collegeIdOrThrow, requireCollegeAccess } = require('../auth');
 const { encrypt, decrypt } = require('../encryption');
 const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated, roomForUser } = require('../utils');
 const { getCollegePaymentConfig, getCollegeId } = require('./payment-config');
@@ -28,13 +28,13 @@ function createFeesRouter(io) {
   const { Router } = require('express');
   const router = Router();
 
-  router.get('/fees/me', async (req, res) => {
+  router.get('/fees/me', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const uid = oid(req.user._id);
       const userId = String(req.user._id);
       const fees = await db.collection('fees')
-        .find({ $or: [{ userId: uid }, { userId }] })
+        .find({ $or: [{ userId: uid }, { userId }], ...collegeFilter(req) })
         .sort({ createdAt: -1 })
         .toArray();
       res.json(fees);
@@ -43,13 +43,13 @@ function createFeesRouter(io) {
     }
   });
 
-  router.get('/fees/my', async (req, res) => {
+  router.get('/fees/my', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const uid = oid(req.user._id);
       const userId = String(req.user._id);
       const fees = await db.collection('fees')
-        .find({ $or: [{ userId: uid }, { userId }] })
+        .find({ $or: [{ userId: uid }, { userId }], ...collegeFilter(req) })
         .sort({ createdAt: -1 })
         .toArray();
       res.json(fees);
@@ -58,16 +58,11 @@ function createFeesRouter(io) {
     }
   });
 
-  router.get('/fees', async (req, res) => {
+  router.get('/fees', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const filter = {};
+      const filter = { ...collegeFilter(req) };
       if (req.query.status) filter.status = req.query.status;
-
-      if (req.user.role === 'college_admin') {
-        const collegeId = await resolveCollegeId(req.user);
-        if (collegeId) filter.collegeId = collegeId;
-      }
 
       const fees = await db.collection('fees')
         .find(filter)
@@ -79,12 +74,12 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/fees', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.post('/fees', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { userId, type, amount, dueDate, semester } = req.body;
 
-      const collegeId = await resolveCollegeId(req.user);
+      const collegeId = collegeIdOrThrow(req) || await resolveCollegeId(req.user);
       if (!collegeId) return sendError(res, 'College not found.', 404);
 
       const fee = {
@@ -107,12 +102,12 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/fees/pay', async (req, res) => {
+  router.post('/fees/pay', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { feeId } = req.body;
 
-      const fee = await db.collection('fees').findOne({ _id: oid(feeId) });
+      const fee = await db.collection('fees').findOne({ _id: oid(feeId), ...collegeFilter(req) });
       if (!fee) return sendError(res, 'Fee not found', 404);
 
       const studentCollegeId = fee.collegeId || await resolveCollegeId(req.user);
@@ -171,7 +166,7 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/fees/verify', async (req, res) => {
+  router.post('/fees/verify', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { feeId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
@@ -180,7 +175,7 @@ function createFeesRouter(io) {
         return sendError(res, 'Missing required payment verification fields.');
       }
 
-      const fee = await db.collection('fees').findOne({ _id: oid(feeId) });
+      const fee = await db.collection('fees').findOne({ _id: oid(feeId), ...collegeFilter(req) });
       if (!fee) return sendError(res, 'Fee not found', 404);
 
       const studentCollegeId = fee.collegeId || await resolveCollegeId(req.user);
@@ -259,15 +254,10 @@ function createFeesRouter(io) {
     }
   });
 
-  router.get('/fees/all', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.get('/fees/all', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const filter = {};
-
-      if (req.user.role === 'college_admin') {
-        const collegeId = await resolveCollegeId(req.user);
-        if (collegeId) filter.collegeId = collegeId;
-      }
+      const filter = { ...collegeFilter(req) };
 
       const fees = await db.collection('fees')
         .find(filter)
@@ -279,12 +269,12 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/fees/create', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.post('/fees/create', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { student_id, type, amount, due_date, semester } = req.body;
 
-      const collegeId = await resolveCollegeId(req.user);
+      const collegeId = collegeIdOrThrow(req) || await resolveCollegeId(req.user);
       if (!collegeId) return sendError(res, 'College not found.', 404);
 
       const fee = {
@@ -307,10 +297,10 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/fees/:id/remind', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.post('/fees/:id/remind', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const fee = await db.collection('fees').findOne({ _id: oid(req.params.id) });
+      const fee = await db.collection('fees').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
       if (!fee) return sendError(res, 'Fee not found', 404);
 
       const notification = {
@@ -335,11 +325,11 @@ function createFeesRouter(io) {
     }
   });
 
-  router.get('/fees/receipts', async (req, res) => {
+  router.get('/fees/receipts', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const receipts = await db.collection('payment_receipts')
-        .find({ userId: oid(req.user._id) })
+        .find({ userId: oid(req.user._id), ...collegeFilter(req) })
         .sort({ createdAt: -1 })
         .toArray();
       res.json(receipts);
@@ -348,7 +338,7 @@ function createFeesRouter(io) {
     }
   });
 
-  router.get('/fees/reminders', async (req, res) => {
+  router.get('/fees/reminders', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const now = new Date();
@@ -358,6 +348,7 @@ function createFeesRouter(io) {
           userId: oid(req.user._id),
           status: 'pending',
           dueDate: { $gte: now.toISOString(), $lte: in7.toISOString() },
+          ...collegeFilter(req),
         })
         .sort({ dueDate: 1 })
         .toArray();
@@ -367,15 +358,10 @@ function createFeesRouter(io) {
     }
   });
 
-  router.get('/fees/payments/all', requireRole('college_admin', 'super_admin'), async (req, res) => {
+  router.get('/fees/payments/all', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const filter = {};
-
-      if (req.user.role === 'college_admin') {
-        const collegeId = await resolveCollegeId(req.user);
-        if (collegeId) filter.collegeId = collegeId;
-      }
+      const filter = { ...collegeFilter(req) };
 
       const payments = await db.collection('fee_payments')
         .find(filter)
@@ -387,12 +373,12 @@ function createFeesRouter(io) {
     }
   });
 
-  router.get('/subscription/current', async (req, res) => {
+  router.get('/subscription/current', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const sub = await db.collection('subscriptions')
         .findOne(
-          { userId: oid(req.user._id), status: 'active' },
+          { userId: oid(req.user._id), status: 'active', ...collegeFilter(req) },
           { sort: { endDate: -1 } }
         );
       res.json(sub || null);
@@ -401,7 +387,7 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/subscription/create-order', async (req, res) => {
+  router.post('/subscription/create-order', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { plan } = req.body;
@@ -452,7 +438,7 @@ function createFeesRouter(io) {
     }
   });
 
-  router.post('/subscription/verify', async (req, res) => {
+  router.post('/subscription/verify', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const { plan, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
@@ -475,6 +461,7 @@ function createFeesRouter(io) {
 
       const subscription = {
         userId: oid(req.user._id),
+        collegeId: oid(req.userCollegeId),
         plan,
         status: 'active',
         startDate: now.toISOString(),
@@ -486,7 +473,7 @@ function createFeesRouter(io) {
       };
 
       await db.collection('subscriptions').updateMany(
-        { userId: oid(req.user._id), status: 'active' },
+        { userId: oid(req.user._id), status: 'active', ...collegeFilter(req) },
         { $set: { status: 'expired' } }
       );
 
