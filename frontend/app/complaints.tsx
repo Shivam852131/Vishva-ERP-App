@@ -28,8 +28,8 @@ export default function ComplaintManagement() {
   const [newComplaint, setNewComplaint] = useState({ title: '', category: 'maintenance', priority: 'medium', description: '' });
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const { data: complaints, loading, refresh, setData } = useFetch<any[]>('/campus/grievances');
-  const { mutate } = useMutate('/campus/grievances');
+  const { data: complaints, loading, refresh, setData } = useFetch<any[]>('/grievances');
+  const { mutate } = useMutate('/grievances');
 
   const stats = useMemo(() => {
     const items = complaints || [];
@@ -48,7 +48,7 @@ export default function ComplaintManagement() {
   const handleSubmit = async () => {
     if (!newComplaint.title.trim()) return Alert.alert('Error', 'Enter complaint title');
     try {
-      await mutate('POST', newComplaint);
+      await mutate(newComplaint);
       Alert.alert('Complaint Filed', 'Your complaint has been submitted.');
       setNewComplaint({ title: '', category: 'maintenance', priority: 'medium', description: '' });
       setActiveTab('list');

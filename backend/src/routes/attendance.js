@@ -281,14 +281,14 @@ function createAttendanceRouter(io) {
           collegeId: oid(req.userCollegeId),
         };
         if (faceProfile) {
-          await db.collection('face_profiles').updateOne({ _id: faceProfile._id }, { $set: faceDoc });
+          await db.collection('face_profiles').updateOne({ _id: faceProfile._id, ...collegeFilter(req) }, { $set: faceDoc });
         } else {
           await db.collection('face_profiles').insertOne(faceDoc);
         }
       } else {
         // Update last verified and count
         await db.collection('face_profiles').updateOne(
-          { _id: faceProfile._id },
+          { _id: faceProfile._id, ...collegeFilter(req) },
           { $set: { lastVerified: new Date() }, $inc: { verificationCount: 1 } }
         );
       }
@@ -339,7 +339,7 @@ function createAttendanceRouter(io) {
     if (!session) return sendError(res, 'Session not found.', 404);
     const db = getDB();
     const now = new Date();
-    await db.collection('attendance_sessions').updateOne({ _id: session._id }, { $set: { isActive: false, endTime: now } });
+    await db.collection('attendance_sessions').updateOne({ _id: session._id, ...collegeFilter(req) }, { $set: { isActive: false, endTime: now } });
     const enrolledStudents = await studentsForCourse(req, session.courseId);
     const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
     const checkedInIds = new Set(entries.map((e) => String(e.studentId)));
@@ -620,7 +620,7 @@ function createAttendanceRouter(io) {
     if (req.body.latitude !== undefined) update.latitude = Number(req.body.latitude);
     if (req.body.longitude !== undefined) update.longitude = Number(req.body.longitude);
     if (req.body.radius !== undefined) update.radius = Number(req.body.radius);
-    const { matchedCount } = await db.collection('classrooms').updateOne({ _id: id }, { $set: update });
+    const { matchedCount } = await db.collection('classrooms').updateOne({ _id: id, ...collegeFilter(req) }, { $set: update });
     if (!matchedCount) return sendError(res, 'Classroom not found.', 404);
     const updated = await db.collection('classrooms').findOne({ _id: id, ...collegeFilter(req) });
     res.json({ id: String(updated._id), ...updated });
@@ -630,7 +630,7 @@ function createAttendanceRouter(io) {
     const db = getDB();
     const id = oid(req.params.id);
     if (!id) return sendError(res, 'Classroom not found.', 404);
-    const { deletedCount } = await db.collection('classrooms').deleteOne({ _id: id });
+    const { deletedCount } = await db.collection('classrooms').deleteOne({ _id: id, ...collegeFilter(req) });
     if (!deletedCount) return sendError(res, 'Classroom not found.', 404);
     res.json({ ok: true });
   });
@@ -705,7 +705,7 @@ function createAttendanceRouter(io) {
     const db = getDB();
     const id = oid(req.params.id);
     if (!id) return sendError(res, 'Schedule not found.', 404);
-    const { deletedCount } = await db.collection('schedules').deleteOne({ _id: id });
+    const { deletedCount } = await db.collection('schedules').deleteOne({ _id: id, ...collegeFilter(req) });
     if (!deletedCount) return sendError(res, 'Schedule not found.', 404);
     res.json({ ok: true });
   });
@@ -759,7 +759,7 @@ function createAttendanceRouter(io) {
     };
 
     if (existing) {
-      await db.collection('face_profiles').updateOne({ _id: existing._id }, { $set: faceDoc });
+      await db.collection('face_profiles').updateOne({ _id: existing._id, ...collegeFilter(req) }, { $set: faceDoc });
     } else {
       await db.collection('face_profiles').insertOne(faceDoc);
     }
@@ -788,7 +788,7 @@ function createAttendanceRouter(io) {
 
     // Update verification stats
     await db.collection('face_profiles').updateOne(
-      { _id: profile._id },
+      { _id: profile._id, ...collegeFilter(req) },
       { $set: { lastVerified: new Date() }, $inc: { verificationCount: 1 } }
     );
 
@@ -804,7 +804,7 @@ function createAttendanceRouter(io) {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    await db.collection('face_profiles').deleteOne({ userId: oid(user._id) });
+    await db.collection('face_profiles').deleteOne({ userId: oid(user._id), ...collegeFilter(req) });
     res.json({ ok: true, message: 'Face profile deleted' });
   });
 

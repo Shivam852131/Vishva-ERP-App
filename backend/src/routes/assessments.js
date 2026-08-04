@@ -3,7 +3,7 @@ const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser } = require('../utils');
 const { ensureCareerSeed, QUESTION_BANK, SKILL_BY_KEY } = require('../careerData');
 const { applyAssessmentResult } = require('../skillProfile');
-const { collegeFilter } = require('../auth');
+const { collegeFilter, requireRole } = require('../auth');
 
 // Grace window so a slow network round-trip on submit doesn't fail a student
 // who answered inside the limit.
@@ -82,6 +82,35 @@ function createAssessmentsRouter(io) {
         in_progress_attempt_id: active ? String(active._id) : null,
       });
     }));
+  });
+
+  router.post('/', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const body = req.body || {};
+    const title = String(body.title || '').trim();
+    if (!title) return sendError(res, 'title is required.', 400);
+
+    const skillKey = body.skill_key || body.skillKey || 'general';
+    const doc = {
+      collegeId: oid(req.userCollegeId),
+      key: body.key || `${skillKey}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+      title,
+      description: body.description || '',
+      skillKey,
+      skillName: body.skill_name || SKILL_BY_KEY.get(skillKey)?.name || skillKey,
+      category: body.category || 'general',
+      durationMinutes: Number(body.duration_minutes || body.durationMinutes || 30),
+      totalQuestions: Number(body.total_questions || body.totalQuestions || 10),
+      passScore: Number(body.pass_score || body.passScore || 60),
+      difficulty: body.difficulty || 'medium',
+      attempts: 0,
+      isActive: true,
+      createdById: oid(req.user._id),
+      createdAt: nowIso(),
+    };
+
+    const { insertedId } = await db.collection('assessments').insertOne(doc);
+    res.status(201).json(serializeAssessment({ ...doc, _id: insertedId }));
   });
 
   router.delete('/:id', async (req, res) => {

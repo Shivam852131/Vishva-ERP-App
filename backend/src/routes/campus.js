@@ -2,6 +2,61 @@ const { getDB, oid } = require('../db');
 const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated } = require('../utils');
 const { requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
 
+function serializeAsset(asset) {
+  return {
+    id: String(asset._id),
+    name: asset.name || '',
+    category: asset.category || 'Other',
+    location: asset.location || '',
+    status: asset.status || 'active',
+    assignee: asset.assignee || asset.assignedTo || '',
+    condition: asset.condition || 'good',
+    lastMaint: asset.lastMaint || asset.lastMaintenance || asset.updatedAt || '',
+  };
+}
+
+function serializeMaintenance(item, assetMap = new Map()) {
+  const asset = item.assetId ? assetMap.get(String(item.assetId)) : null;
+  return {
+    id: String(item._id),
+    asset: item.asset || asset?.name || '',
+    issue: item.issue || item.description || '',
+    status: item.status || 'pending',
+    date: item.date || item.createdAt || '',
+    technician: item.technician || item.assignedTo || '',
+  };
+}
+
+function serializeGrievance(item) {
+  return {
+    id: String(item._id),
+    ticketId: item.ticketId || `GR-${String(item._id).slice(-6).toUpperCase()}`,
+    title: item.title || item.subject || '',
+    subject: item.subject || item.title || '',
+    category: item.category || 'other',
+    priority: item.priority || 'medium',
+    description: item.description || '',
+    status: item.status === 'open' ? 'pending' : (item.status || 'pending'),
+    date: item.createdAt || '',
+    updates: item.responses || [],
+  };
+}
+
+function serializeVisitor(visitor) {
+  return {
+    id: String(visitor._id),
+    name: visitor.name || '',
+    purpose: visitor.purpose || '',
+    type: visitor.type || 'guest',
+    who: visitor.who || visitor.meetingWith || '',
+    phone: visitor.phone || '',
+    status: visitor.status || 'pending_approval',
+    inTime: visitor.inTime || visitor.checkedInAt || '',
+    outTime: visitor.outTime || visitor.checkedOutAt || '',
+    expectedTime: visitor.expectedTime || visitor.expectedAt || '',
+  };
+}
+
 function createCampusRouter(io) {
   const { Router } = require('express');
   const router = Router();
@@ -431,6 +486,37 @@ function createCampusRouter(io) {
     }
   });
 
+  router.get('/assets', requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const assets = await db.collection('assets')
+        .find({ ...collegeFilter(req) })
+        .sort({ name: 1 })
+        .toArray();
+      res.json(assets.map(serializeAsset));
+    } catch (e) {
+      sendError(res, e.message, 500);
+    }
+  });
+
+  router.get('/maintenance', requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const maintenance = await db.collection('asset_maintenance')
+        .find({ ...collegeFilter(req) })
+        .sort({ createdAt: -1 })
+        .toArray();
+      const assetIds = [...new Set(maintenance.map(m => String(m.assetId)).filter(Boolean))];
+      const assets = assetIds.length
+        ? await db.collection('assets').find({ _id: { $in: assetIds.map(id => oid(id)).filter(Boolean) }, ...collegeFilter(req) }).toArray()
+        : [];
+      const assetMap = new Map(assets.map(a => [String(a._id), a]));
+      res.json(maintenance.map(m => serializeMaintenance(m, assetMap)));
+    } catch (e) {
+      sendError(res, e.message, 500);
+    }
+  });
+
   router.get('/grievances', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
@@ -442,7 +528,7 @@ function createCampusRouter(io) {
         .find(filter)
         .sort({ createdAt: -1 })
         .toArray();
-      res.json(grievances);
+      res.json(grievances.map(serializeGrievance));
     } catch (e) {
       sendError(res, e);
     }
@@ -451,17 +537,19 @@ function createCampusRouter(io) {
   router.post('/grievances', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const { category, subject, description, priority, anonymous } = req.body;
+      const { category, subject, title, description, priority, anonymous } = req.body;
 
       const grievance = {
         collegeId: oid(req.userCollegeId),
         userId: oid(req.user._id),
         category,
-        subject,
+        subject: subject || title || '',
+        title: title || subject || '',
         description,
         status: 'open',
         priority: priority || 'medium',
         responses: [],
+        ticketId: `GR-${makeCode()}`,
         createdAt: nowIso(),
       };
 
@@ -472,7 +560,7 @@ function createCampusRouter(io) {
       const result = await db.collection('grievances').insertOne(grievance);
       grievance._id = result.insertedId;
 
-      res.json(grievance);
+      res.json(serializeGrievance(grievance));
     } catch (e) {
       sendError(res, e);
     }
@@ -499,10 +587,49 @@ function createCampusRouter(io) {
 
       if (result.matchedCount === 0) return sendError(res, 'Grievance not found', 404);
 
-      const updated = await db.collection('grievances').findOne({ _id: oid(req.params.id) });
-      res.json(updated);
+      const updated = await db.collection('grievances').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
+      res.json(serializeGrievance(updated));
     } catch (e) {
       sendError(res, e);
+    }
+  });
+
+  router.get('/visitors', requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const visitors = await db.collection('visitors')
+        .find({ ...collegeFilter(req) })
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(visitors.map(serializeVisitor));
+    } catch (e) {
+      sendError(res, e.message, 500);
+    }
+  });
+
+  router.post('/visitors', requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const { name, purpose, who, phone, type, expectedTime } = req.body || {};
+      if (!name || !String(name).trim()) return sendError(res, 'Visitor name is required.');
+
+      const visitor = {
+        collegeId: oid(req.userCollegeId),
+        name: String(name).trim(),
+        purpose: purpose || '',
+        who: who || '',
+        phone: phone || '',
+        type: type || 'guest',
+        status: 'pending_approval',
+        expectedTime: expectedTime || '',
+        createdById: oid(req.user._id),
+        createdAt: nowIso(),
+      };
+      const result = await db.collection('visitors').insertOne(visitor);
+      visitor._id = result.insertedId;
+      res.json(serializeVisitor(visitor));
+    } catch (e) {
+      sendError(res, e.message, 500);
     }
   });
 
@@ -613,7 +740,7 @@ function createCampusRouter(io) {
       );
       if (result.matchedCount === 0) return sendError(res, 'Gate pass not found', 404);
 
-      const updated = await db.collection('gate_passes').findOne({ _id: oid(req.params.id) });
+      const updated = await db.collection('gate_passes').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
       if (io) io.emit('gate_pass:updated', { id: req.params.id, status: 'approved' });
       res.json({ id: String(updated._id), status: updated.status, reviewed_at: updated.reviewed_at });
     } catch (e) {
@@ -631,7 +758,7 @@ function createCampusRouter(io) {
       );
       if (result.matchedCount === 0) return sendError(res, 'Gate pass not found', 404);
 
-      const updated = await db.collection('gate_passes').findOne({ _id: oid(req.params.id) });
+      const updated = await db.collection('gate_passes').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
       if (io) io.emit('gate_pass:updated', { id: req.params.id, status: 'rejected' });
       res.json({ id: String(updated._id), status: updated.status, reviewed_at: updated.reviewed_at });
     } catch (e) {

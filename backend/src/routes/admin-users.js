@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { hashPassword, requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
-const { sendError, serializeUser, parseCsv } = require('../utils');
+const { sendError, serializeUserWithCollege, parseCsv } = require('../utils');
 
 const router = express.Router();
 
@@ -14,7 +14,7 @@ router.get('/', requireCollegeAccess, async (req, res) => {
   const filter = { ...collegeFilter(req) };
   if (req.query.role) filter.role = req.query.role;
   const users = await db.collection('users').find(filter).toArray();
-  res.json(users.map(serializeUser));
+  res.json(await Promise.all(users.map(user => serializeUserWithCollege(db, user))));
 });
 
 router.get('/emails', requireCollegeAccess, async (req, res) => {
@@ -47,7 +47,6 @@ router.post('/', requireCollegeAccess, async (req, res) => {
     role,
     phone: req.body.phone || null,
     department: req.body.department || null,
-    college: req.body.college || null,
     collegeId: assignedCollegeId,
     studentCode: req.body.student_id || null,
     year: req.body.year || null,
@@ -67,7 +66,6 @@ router.post('/', requireCollegeAccess, async (req, res) => {
       passwordHash: await hashPassword(req.body.parent_password || 'parent123'),
       role: 'parent',
       phone: req.body.parent_phone || null,
-      college: doc.college,
       collegeId: assignedCollegeId,
       department: null,
       studentCode: null,
@@ -82,7 +80,7 @@ router.post('/', requireCollegeAccess, async (req, res) => {
     parentDoc._id = parentResult.insertedId;
   }
 
-  res.json(serializeUser(doc));
+  res.json(await serializeUserWithCollege(db, doc));
 });
 
 router.put('/:id', requireCollegeAccess, async (req, res) => {
@@ -103,7 +101,6 @@ router.put('/:id', requireCollegeAccess, async (req, res) => {
   if (req.body.role) update.role = req.body.role;
   if (req.body.phone !== undefined) update.phone = req.body.phone || null;
   if (req.body.status) update.status = req.body.status;
-  if (req.body.college) update.college = req.body.college;
   if (req.body.department !== undefined) update.department = req.body.department || null;
   if (req.body.student_id !== undefined) update.studentCode = req.body.student_id || null;
   if (req.body.year !== undefined) update.year = req.body.year;
@@ -116,7 +113,7 @@ router.put('/:id', requireCollegeAccess, async (req, res) => {
 
   await db.collection('users').updateOne({ _id: user._id }, { $set: update });
   const updated = await db.collection('users').findOne({ _id: user._id });
-  res.json(serializeUser(updated));
+  res.json(await serializeUserWithCollege(db, updated));
 });
 
 router.post('/:id/toggle-status', requireCollegeAccess, async (req, res) => {
@@ -202,7 +199,6 @@ router.post('/bulk-import', requireCollegeAccess, async (req, res) => {
       studentCode: row.student_id || null,
       year: row.year ? Number(row.year) : null,
       cgpa: null,
-      college: null,
       collegeId: assignedCollegeId,
       status: 'active',
       parentId: null,
@@ -221,7 +217,6 @@ router.post('/bulk-import', requireCollegeAccess, async (req, res) => {
         passwordHash: await hashPassword('parent123'),
         role: 'parent',
         phone: row.parent_phone || null,
-        college: null,
         collegeId: assignedCollegeId,
         department: null,
         studentCode: null,

@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { authUser, requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
-const { serializeUser, sendError, nowIso } = require('../utils');
+const { serializeUserWithCollege, sendError, nowIso } = require('../utils');
 
 const router = express.Router();
 
@@ -139,7 +139,7 @@ async function buildParentDashboard(parentId, req) {
       : null;
 
     results.push({
-      user: serializeUser(child),
+      user: await serializeUserWithCollege(db, child),
       attendance: attendance.rate,
       cgpa,
       results: examResults.map(r => ({

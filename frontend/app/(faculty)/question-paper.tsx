@@ -39,7 +39,7 @@ export default function QuestionPaperGenerator() {
   const [selectedTypes, setSelectedTypes] = useState(['mcq', 'short', 'long']);
   const [generating, setGenerating] = useState(false);
   const [generatedPaper, setGeneratedPaper] = useState<GeneratedPaper | null>(null);
-  const { data: subjects } = useFetch<string[]>('/academics/question-bank/subjects');
+  const { data: subjects } = useFetch<string[]>('/question-bank/subjects');
   const [history, setHistory] = useState<GeneratedPaper[]>([]);
   const [showSubjects, setShowSubjects] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -83,7 +83,7 @@ ${qsHTML}</body></html>`;
     if (selectedTypes.length === 0) return Alert.alert('Select Types', 'Choose at least one question type');
     setGenerating(true);
     try {
-      const data = await api('/academics/question-bank/generate', {
+      const data = await api('/question-bank/generate', {
         method: 'POST',
         body: JSON.stringify({ subject, difficulty, questionCount, totalMarks, types: selectedTypes }),
       });

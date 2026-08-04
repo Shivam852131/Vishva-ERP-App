@@ -22,8 +22,8 @@ export default function AssetManagement() {
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const { data: assets, loading } = useFetch<any[]>('/campus/assets');
-  const { data: maintenanceLog } = useFetch<any[]>('/campus/maintenance');
+  const { data: assets, loading } = useFetch<any[]>('/assets');
+  const { data: maintenanceLog } = useFetch<any[]>('/maintenance');
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();

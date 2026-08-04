@@ -10,7 +10,7 @@ import {
   Users, UserPlus, Clock, CheckCircle, AlertTriangle, Phone,
   ChevronRight, Shield, Car, BookOpen, Camera,
 } from 'lucide-react-native';
-import { useFetch } from '@/src/hooks/useFetch';
+import { useFetch, useMutate } from '@/src/hooks/useFetch';
 
 const VISITOR_TYPE_META = [
   { type: 'parent', label: 'Parent', icon: Users, color: '#4F46E5' },
@@ -24,7 +24,8 @@ export default function VisitorManagement() {
   const [newVisitor, setNewVisitor] = useState({ name: '', purpose: '', who: '', phone: '' });
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const { data: visitors, loading } = useFetch<any[]>('/campus/visitors');
+  const { data: visitors, loading, refresh } = useFetch<any[]>('/visitors');
+  const { mutate: registerVisitor, loading: registering } = useMutate('/visitors');
 
   const visitorTypes = useMemo(() => {
     const items = visitors || [];
@@ -41,10 +42,16 @@ export default function VisitorManagement() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!newVisitor.name.trim()) return Alert.alert('Error', 'Enter visitor name');
-    Alert.alert('Visitor Registered', `${newVisitor.name} has been registered. A notification will be sent.`);
-    setNewVisitor({ name: '', purpose: '', who: '', phone: '' });
+    try {
+      await registerVisitor(newVisitor);
+      Alert.alert('Visitor Registered', `${newVisitor.name} has been registered. A notification will be sent.`);
+      setNewVisitor({ name: '', purpose: '', who: '', phone: '' });
+      refresh();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to register visitor.');
+    }
   };
 
   return (
@@ -169,7 +176,7 @@ export default function VisitorManagement() {
                     placeholder="Whom to meet" placeholderTextColor={theme.colors.muted} />
                   <TextInput style={styles.input} value={newVisitor.phone} onChangeText={v => setNewVisitor(p => ({ ...p, phone: v }))}
                     placeholder="Phone Number" placeholderTextColor={theme.colors.muted} keyboardType="phone-pad" />
-                  <GradientButton label="Register Visitor" onPress={handleRegister} />
+                  <GradientButton label={registering ? 'Registering...' : 'Register Visitor'} onPress={handleRegister} loading={registering} />
                 </Card>
 
                 <Card style={{ padding: 14, backgroundColor: theme.colors.brandTertiary, borderColor: theme.colors.brand + '30' }}>

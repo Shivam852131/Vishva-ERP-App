@@ -184,7 +184,6 @@ router.put('/courses/:id', requireRole('college_admin', 'super_admin', 'faculty'
     if (req.body.department) update.department = req.body.department;
     if (req.body.credits) update.credits = Number(req.body.credits);
     if (req.body.semester) update.semester = req.body.semester;
-    if (req.body.college) update.college = req.body.college;
     if (req.body.faculty_id) update.facultyId = oid(req.body.faculty_id);
 
     await db.collection('courses').updateOne({ _id }, { $set: update });
@@ -896,6 +895,52 @@ router.post('/question-bank', requireRole('faculty', 'college_admin', 'super_adm
       marks: doc.marks,
       type: doc.type,
     });
+  } catch (e) {
+    sendError(res, e.message, 500);
+  }
+});
+
+router.post('/question-bank/generate', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+  try {
+    const db = getDB();
+    const { subject, difficulty, questionCount, totalMarks, types } = req.body || {};
+    if (!subject) return sendError(res, 'subject is required.');
+
+    const filter = { subject, ...collegeFilter(req) };
+    const normalizedDifficulty = String(difficulty || '').toLowerCase();
+    if (normalizedDifficulty && normalizedDifficulty !== 'mixed') filter.difficulty = normalizedDifficulty;
+    if (Array.isArray(types) && types.length) filter.type = { $in: types };
+
+    const limit = Math.min(100, Math.max(1, Number(questionCount || 20)));
+    const bank = await db.collection('question_bank_items')
+      .find(filter)
+      .limit(limit)
+      .toArray();
+
+    const marksPerQuestion = Math.max(1, Math.round(Number(totalMarks || 100) / Math.max(bank.length || limit, 1)));
+    const questions = bank.map((q, index) => ({
+      id: index + 1,
+      q: q.question,
+      options: q.options || [],
+      type: q.type || 'short',
+      marks: q.marks || marksPerQuestion,
+      difficulty: q.difficulty || 'medium',
+    }));
+
+    const paper = {
+      collegeId: oid(req.userCollegeId),
+      subject,
+      difficulty: difficulty || 'Mixed',
+      totalMarks: Number(totalMarks || 100),
+      questionCount: questions.length,
+      types: Array.isArray(types) ? types : [],
+      questions,
+      createdById: oid(req.user._id),
+      createdAt: nowIso(),
+    };
+
+    const result = await db.collection('generated_question_papers').insertOne(paper);
+    res.json({ id: String(result.insertedId), ...paper, collegeId: String(paper.collegeId), createdById: String(paper.createdById) });
   } catch (e) {
     sendError(res, e.message, 500);
   }

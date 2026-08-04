@@ -27,7 +27,20 @@ export default function ReportCardAnalysis() {
       if (!grouped[sem]) grouped[sem] = [];
       grouped[sem].push(r);
     });
-    return Object.entries(grouped).map(([name, subjects]) => ({ name, subjects }));
+    return Object.entries(grouped).map(([name, subjects]) => {
+      const avgMarks = subjects.length
+        ? Math.round(subjects.reduce((sum: number, subject: any) => sum + Number(subject.marks || 0), 0) / subjects.length)
+        : 0;
+      const avgAttendance = subjects.length
+        ? Math.round(subjects.reduce((sum: number, subject: any) => sum + Number(subject.attendance || 0), 0) / subjects.length)
+        : 0;
+      return {
+        name,
+        subjects,
+        gpa: subjects.find((subject: any) => subject.gpa)?.gpa || (avgMarks ? (avgMarks / 10).toFixed(1) : '—'),
+        attendance: avgAttendance || '—',
+      };
+    });
   }, [results]);
 
   useEffect(() => {

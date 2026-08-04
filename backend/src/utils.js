@@ -1,4 +1,4 @@
-const { ObjectId } = require('mongodb');
+const { oid } = require('./db');
 
 function nowIso() {
   return new Date().toISOString();
@@ -33,18 +33,23 @@ function sendPaginated(res, items, total) {
   res.json(items);
 }
 
-function serializeUser(user) {
+function serializeUser(user, college = null) {
   if (!user) return null;
   const role = user.role === 'collegeAdmin' ? 'college_admin'
     : user.role === 'superadmin' ? 'super_admin'
     : user.role || 'student';
+  const collegeName = college?.name || undefined;
   return {
     id: String(user._id),
     name: user.name,
     email: user.email,
     role,
     phone: user.phone || undefined,
-    college: user.college || user.collegeId || undefined,
+    college: collegeName,
+    collegeName,
+    collegeId: user.collegeId ? String(user.collegeId) : undefined,
+    collegeCode: college?.code || undefined,
+    collegeLogo: college?.logo || undefined,
     department: user.department || undefined,
     student_id: user.studentCode || user.studentId || undefined,
     year: user.year ?? undefined,
@@ -52,6 +57,18 @@ function serializeUser(user) {
     avatar: user.avatar || undefined,
     status: user.isActive !== undefined ? (user.isActive ? 'active' : 'suspended') : (user.status || 'active'),
   };
+}
+
+async function serializeUserWithCollege(db, user) {
+  if (!user) return null;
+  const collegeId = oid(user.collegeId);
+  const college = collegeId
+    ? await db.collection('colleges').findOne(
+        { _id: collegeId },
+        { projection: { name: 1, code: 1, logo: 1 } },
+      )
+    : null;
+  return serializeUser(user, college);
 }
 
 function sendError(res, message, status = 400) {
@@ -74,6 +91,7 @@ module.exports = {
   paginationParams,
   sendPaginated,
   serializeUser,
+  serializeUserWithCollege,
   sendError,
   parseCsv,
 };

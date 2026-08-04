@@ -27,7 +27,7 @@ export default function AdminDashboard() {
   const { data: subscription, loading: subLoading, refresh: refreshSub } = useFetch<any>('/subscription/current');
   const { data: notifications = [] } = useFetch<any[]>('/notifications');
   const { data: attendanceData } = useFetch<any>('/attendance/daily');
-  const { data: schedules = [] } = useFetch<any[]>('/admin/schedules');
+  const { data: schedules = [] } = useFetch<any[]>('/schedules');
   const { mutate: sendAnnouncement, loading: annBusy } = useMutate();
   const [refreshing, setRefreshing] = useState(false);
   const [annVisible, setAnnVisible] = useState(false);

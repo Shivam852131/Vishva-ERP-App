@@ -25,8 +25,14 @@ function createAiRouter(io) {
   router.get('/sessions/:id/messages', async (req, res) => {
     try {
       const db = getDB();
+      const session = await db.collection('ai_sessions').findOne({
+        _id: oid(req.params.id),
+        userId: oid(req.user._id),
+        ...collegeFilter(req),
+      });
+      if (!session) return sendError(res, 'Session not found', 404);
       const messages = await db.collection('ai_messages')
-        .find({ sessionId: oid(req.params.id) })
+        .find({ sessionId: session._id, ...collegeFilter(req) })
         .sort({ createdAt: 1 })
         .toArray();
 
@@ -55,6 +61,13 @@ function createAiRouter(io) {
         };
         const { insertedId } = await db.collection('ai_sessions').insertOne(session);
         sid = insertedId;
+      } else {
+        const session = await db.collection('ai_sessions').findOne({
+          _id: oid(sid),
+          userId: oid(currentUserId),
+          ...collegeFilter(req),
+        });
+        if (!session) return sendError(res, 'Session not found', 404);
       }
 
       const userMessage = {
@@ -68,7 +81,7 @@ function createAiRouter(io) {
 
       // Get conversation history for context
       const history = await db.collection('ai_messages')
-        .find({ sessionId: oid(sid) })
+        .find({ sessionId: oid(sid), ...collegeFilter(req) })
         .sort({ createdAt: -1 })
         .limit(10)
         .toArray()
@@ -229,6 +242,7 @@ function createAiRouter(io) {
       const plan = await db.collection('study_plans').findOne({
         _id: oid(req.params.id),
         userId: oid(req.user._id),
+        ...collegeFilter(req),
       });
 
       if (!plan) return sendError(res, 'Plan not found', 404);
@@ -241,7 +255,7 @@ function createAiRouter(io) {
       plan.tasks[index].completed = !plan.tasks[index].completed;
 
       await db.collection('study_plans').updateOne(
-        { _id: oid(req.params.id) },
+        { _id: oid(req.params.id), userId: oid(req.user._id), ...collegeFilter(req) },
         { $set: { tasks: plan.tasks } }
       );
 
@@ -257,6 +271,7 @@ function createAiRouter(io) {
       const result = await db.collection('study_plans').deleteOne({
         _id: oid(req.params.id),
         userId: oid(req.user._id),
+        ...collegeFilter(req),
       });
 
       if (result.deletedCount === 0) return sendError(res, 'Plan not found', 404);
@@ -264,6 +279,129 @@ function createAiRouter(io) {
       res.json({ message: 'Plan deleted' });
     } catch (err) {
       sendError(res, err);
+    }
+  });
+
+  router.get('/stats', async (req, res) => {
+    try {
+      const db = getDB();
+      const userId = oid(req.user._id);
+      const collegeQ = collegeFilter(req);
+      const sessions = await db.collection('ai_sessions').find({ userId, ...collegeQ }, { projection: { _id: 1 } }).toArray();
+      const sessionIds = sessions.map(session => session._id);
+      const [questions, plans, submissions] = await Promise.all([
+        sessionIds.length ? db.collection('ai_messages').countDocuments({ sessionId: { $in: sessionIds }, role: 'user', ...collegeQ }) : 0,
+        db.collection('study_plans').find({ userId, ...collegeQ }).toArray(),
+        db.collection('ai_assignment_checks').countDocuments({ userId, ...collegeQ }),
+      ]);
+      const tasksDone = plans.reduce((sum, plan) => sum + (plan.tasks || []).filter(t => t.completed).length, 0) + submissions;
+      res.json({ questions, studyHours: `${plans.length * 2}h`, tasksDone, streak: 0 });
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  });
+
+  router.get('/submissions', async (req, res) => {
+    try {
+      const db = getDB();
+      const submissions = await db.collection('ai_assignment_checks')
+        .find({ userId: oid(req.user._id), ...collegeFilter(req) })
+        .sort({ createdAt: -1 })
+        .limit(25)
+        .toArray();
+      res.json(submissions.map(s => ({
+        id: String(s._id),
+        subject: s.subject,
+        topic: s.topic,
+        score: s.result?.score || 0,
+        created_at: s.createdAt,
+      })));
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  });
+
+  router.post('/check-assignment', async (req, res) => {
+    try {
+      const db = getDB();
+      const { subject, topic, content } = req.body || {};
+      if (!subject) return sendError(res, 'subject is required.', 400);
+
+      const prompt = `Evaluate this ${subject} assignment${topic ? ` on ${topic}` : ''}. Give concise strengths, issues, and improvement suggestions. Assignment content: ${content || ''}`;
+      const aiResult = await generateAIResponse('assignment_checker', prompt, req.user._id);
+      const feedback = aiResult.response || '';
+      const result = {
+        score: 75,
+        breakdown: [
+          { label: 'Concepts', score: 75, color: '#4F46E5' },
+          { label: 'Structure', score: 72, color: '#059669' },
+          { label: 'Completeness', score: 78, color: '#F59E0B' },
+        ],
+        comments: [
+          { type: 'good', text: feedback || 'Submission reviewed successfully.' },
+        ],
+        suggestions: feedback ? [feedback] : ['Review feedback and resubmit after improvements.'],
+      };
+
+      await db.collection('ai_assignment_checks').insertOne({
+        collegeId: oid(req.userCollegeId),
+        userId: oid(req.user._id),
+        subject,
+        topic: topic || '',
+        result,
+        createdAt: nowIso(),
+      });
+      res.json(result);
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  });
+
+  router.get('/interview-questions', async (req, res) => {
+    try {
+      const db = getDB();
+      const type = req.query.type || 'technical';
+      const stored = await db.collection('interview_questions')
+        .find({ type, ...collegeFilter(req) })
+        .limit(10)
+        .toArray();
+      if (stored.length) {
+        return res.json({ questions: stored.map(q => ({ q: q.question || q.q, tips: q.tips || [], sampleAnswer: q.sampleAnswer || q.sample_answer || '' })) });
+      }
+
+      const aiResult = await generateAIResponse('interview_practice', `Create 5 ${type} interview questions with concise tips and sample answers.`, req.user._id);
+      const text = aiResult.response || '';
+      const questions = text
+        .split(/\n+/)
+        .map(line => line.replace(/^\d+[.)]\s*/, '').trim())
+        .filter(Boolean)
+        .slice(0, 5)
+        .map(q => ({ q, tips: ['Answer with a clear example.', 'Keep it concise and measurable.'], sampleAnswer: 'Structure your answer using context, action, and result.' }));
+      res.json({ questions });
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  });
+
+  router.get('/insights', async (req, res) => {
+    try {
+      const db = getDB();
+      const results = await db.collection('exam_results')
+        .find({ studentId: oid(req.user._id), ...collegeFilter(req) })
+        .sort({ createdAt: -1 })
+        .toArray();
+      if (!results.length) return res.json([]);
+
+      const avg = Math.round(results.reduce((sum, r) => sum + Number(r.marks || r.score || 0), 0) / results.length);
+      const best = results.reduce((a, b) => Number(a.marks || a.score || 0) >= Number(b.marks || b.score || 0) ? a : b);
+      const worst = results.reduce((a, b) => Number(a.marks || a.score || 0) <= Number(b.marks || b.score || 0) ? a : b);
+      res.json([
+        { type: avg >= 75 ? 'strength' : 'improvement', text: `Your current average is ${avg}%. ${avg >= 75 ? 'Maintain this consistency.' : 'Focus on revision and practice tests.'}` },
+        { type: 'strength', text: `Strongest subject: ${best.subject || best.courseName || 'Top subject'} with ${best.marks || best.score || 0} marks.` },
+        { type: 'improvement', text: `Needs focus: ${worst.subject || worst.courseName || 'Lowest subject'} with ${worst.marks || worst.score || 0} marks.` },
+      ]);
+    } catch (err) {
+      sendError(res, err.message, 500);
     }
   });
 

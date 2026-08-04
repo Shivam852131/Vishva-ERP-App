@@ -116,7 +116,7 @@ export default function EmailIntegration() {
               <Card style={{ padding: 16, gap: 12 }}>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: theme.colors.text }}>{selected.subject}</Text>
                 <Text style={{ fontSize: 13, color: theme.colors.muted, lineHeight: 20 }}>
-                  {selected.preview}{'\n\n'}This is to provide you with a detailed update regarding your child's academic progress and important campus notifications. Please review the attached documents for complete information.{'\n\n'}If you have any questions, please don't hesitate to reach out to the administration office.{'\n\n'}Best regards,{'\n'}Vishva University Administration
+                  {selected.preview}
                 </Text>
                 {selected.hasAttachment && (
                   <View style={styles.attachment}>

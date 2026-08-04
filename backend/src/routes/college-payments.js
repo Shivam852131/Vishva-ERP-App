@@ -53,7 +53,9 @@ router.post('/college-payments/create-order', requireRole('student', 'college_ad
     let receiptFeeId = feeId;
 
     if (feeId) {
-      const fee = await db.collection('fees').findOne({ _id: oid(feeId) });
+      const feeFilter = { _id: oid(feeId), collegeId };
+      if (req.user.role === 'student') feeFilter.userId = oid(req.user._id);
+      const fee = await db.collection('fees').findOne(feeFilter);
       if (!fee) return sendError(res, 'Fee record not found.', 404);
       resolvedAmount = fee.amount;
       receiptFeeId = String(fee._id);
@@ -149,10 +151,13 @@ router.post('/college-payments/verify', requireRole('student', 'college_admin'),
     await db.collection('fee_payments').insertOne(feePayment);
 
     if (feeId) {
-      await db.collection('fees').updateOne(
-        { _id: oid(feeId) },
+      const feeFilter = { _id: oid(feeId), collegeId };
+      if (req.user.role === 'student') feeFilter.userId = oid(req.user._id);
+      const feeUpdate = await db.collection('fees').updateOne(
+        feeFilter,
         { $set: { status: 'paid', paidAt: now, receiptId: paymentId } }
       );
+      if (!feeUpdate.matchedCount) return sendError(res, 'Fee record not found.', 404);
     }
 
     const existingReceipt = await db.collection('payment_receipts').findOne({
@@ -179,9 +184,10 @@ router.post('/college-payments/verify', requireRole('student', 'college_admin'),
       body: `Payment of ₹${(feePayment.amount / 100).toFixed(2)} received for ${feePayment.feeType}.`,
       recipientIds: [oid(req.user._id)],
       readBy: [],
+      collegeId,
       createdAt: now,
     };
-    const notifResult = await db.collection('notifications').insertOne(notification);
+    await db.collection('notifications').insertOne(notification);
 
     res.json({
       verified: true,
@@ -248,7 +254,7 @@ router.get('/college-payments/stats', requireRole('college_admin'), async (req, 
       .toArray();
 
     const pendingFees = await db.collection('fees')
-      .countDocuments({ status: 'pending' });
+      .countDocuments({ collegeId, status: 'pending' });
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);

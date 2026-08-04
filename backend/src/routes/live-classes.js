@@ -52,9 +52,9 @@ function createLiveClassesRouter(io) {
   const router = express.Router();
   const isHostRole = user => ['faculty', 'college_admin', 'super_admin', 'collegeAdmin', 'superadmin'].includes(user.role);
 
-  async function loadSession(id) {
+  async function loadSession(id, req) {
     const db = getDB();
-    const session = await db.collection('live_sessions').findOne({ _id: oid(id) });
+    const session = await db.collection('live_sessions').findOne({ _id: oid(id), ...collegeFilter(req) });
     return session;
   }
 
@@ -87,7 +87,7 @@ function createLiveClassesRouter(io) {
           ]).toArray()
         : [],
       ids.length
-        ? db.collection('live_participants').find({ sessionId: { $in: ids }, studentId: oid(req.user._id) }).toArray()
+        ? db.collection('live_participants').find({ sessionId: { $in: ids }, studentId: oid(req.user._id), ...collegeFilter(req) }).toArray()
         : [],
     ]);
 
@@ -109,7 +109,7 @@ function createLiveClassesRouter(io) {
 
     let courseName = null;
     if (courseId) {
-      const course = await db.collection('courses').findOne({ _id: oid(courseId) });
+      const course = await db.collection('courses').findOne({ _id: oid(courseId), ...collegeFilter(req) });
       courseName = course?.name || null;
     }
 
@@ -143,7 +143,7 @@ function createLiveClassesRouter(io) {
 
   router.get('/:id', async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
 
     const [participants, questions, polls, mine] = await Promise.all([
@@ -188,7 +188,7 @@ function createLiveClassesRouter(io) {
 
   router.patch('/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (!ensureHost(session, req.user)) return sendError(res, 'Only the host can edit this class.', 403);
 
@@ -199,8 +199,8 @@ function createLiveClassesRouter(io) {
     }
     if (!Object.keys(patch).length) return sendError(res, 'Nothing to update.', 400);
 
-    await db.collection('live_sessions').updateOne({ _id: session._id }, { $set: patch });
-    const updated = await loadSession(req.params.id);
+    await db.collection('live_sessions').updateOne({ _id: session._id, ...collegeFilter(req) }, { $set: patch });
+    const updated = await loadSession(req.params.id, req);
     const payload = serializeSession(updated);
     io.to(roomForLive(session._id)).emit('live:updated', payload);
     res.json(payload);
@@ -208,7 +208,7 @@ function createLiveClassesRouter(io) {
 
   router.post('/:id/start', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (!ensureHost(session, req.user)) return sendError(res, 'Only the host can start this class.', 403);
     if (session.status === 'live') return sendError(res, 'This class is already live.', 409);
@@ -227,7 +227,7 @@ function createLiveClassesRouter(io) {
 
   router.post('/:id/end', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (!ensureHost(session, req.user)) return sendError(res, 'Only the host can end this class.', 403);
 
@@ -237,11 +237,11 @@ function createLiveClassesRouter(io) {
       { $set: { status: 'ended', endedAt, recordingUrl: req.body?.recordingUrl || session.recordingUrl || null } },
     );
     await db.collection('live_participants').updateMany(
-      { sessionId: session._id, leftAt: null },
+      { sessionId: session._id, leftAt: null, ...collegeFilter(req) },
       { $set: { leftAt: endedAt } },
     );
     await db.collection('live_polls').updateMany(
-      { sessionId: session._id, status: 'open' },
+      { sessionId: session._id, status: 'open', ...collegeFilter(req) },
       { $set: { status: 'closed' } },
     );
 
@@ -252,17 +252,17 @@ function createLiveClassesRouter(io) {
 
   router.delete('/:id', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (!ensureHost(session, req.user)) return sendError(res, 'Only the host can delete this class.', 403);
     if (session.status === 'live') return sendError(res, 'End the class before deleting it.', 409);
 
     await Promise.all([
-      db.collection('live_sessions').deleteOne({ _id: session._id }),
-      db.collection('live_participants').deleteMany({ sessionId: session._id }),
-      db.collection('live_messages').deleteMany({ sessionId: session._id }),
-      db.collection('live_questions').deleteMany({ sessionId: session._id }),
-      db.collection('live_polls').deleteMany({ sessionId: session._id }),
+      db.collection('live_sessions').deleteOne({ _id: session._id, ...collegeFilter(req) }),
+      db.collection('live_participants').deleteMany({ sessionId: session._id, ...collegeFilter(req) }),
+      db.collection('live_messages').deleteMany({ sessionId: session._id, ...collegeFilter(req) }),
+      db.collection('live_questions').deleteMany({ sessionId: session._id, ...collegeFilter(req) }),
+      db.collection('live_polls').deleteMany({ sessionId: session._id, ...collegeFilter(req) }),
     ]);
     res.json({ success: true });
   });
@@ -270,19 +270,20 @@ function createLiveClassesRouter(io) {
   // ── Join / leave ───────────────────────────────────────────────────────────
   router.post('/:id/join', async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (session.status === 'ended') return sendError(res, 'This class has ended.', 409);
 
     const existing = await db.collection('live_participants').findOne({
       sessionId: session._id,
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
 
     let participant;
     if (existing) {
       await db.collection('live_participants').updateOne(
-        { _id: existing._id },
+        { _id: existing._id, ...collegeFilter(req) },
         { $set: { leftAt: null, rejoinedAt: nowIso() } },
       );
       participant = { ...existing, leftAt: null };
@@ -309,12 +310,12 @@ function createLiveClassesRouter(io) {
 
   router.post('/:id/leave', async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
 
     const leftAt = nowIso();
     const result = await db.collection('live_participants').findOneAndUpdate(
-      { sessionId: session._id, studentId: oid(req.user._id) },
+      { sessionId: session._id, studentId: oid(req.user._id), ...collegeFilter(req) },
       { $set: { leftAt, handRaised: false }, $inc: { attentionSeconds: Number(req.body?.attentionSeconds) || 0 } },
       { returnDocument: 'after' },
     );
@@ -327,12 +328,12 @@ function createLiveClassesRouter(io) {
 
   router.post('/:id/hand', async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
 
     const raised = !!req.body?.raised;
     const result = await db.collection('live_participants').updateOne(
-      { sessionId: session._id, studentId: oid(req.user._id), leftAt: null },
+      { sessionId: session._id, studentId: oid(req.user._id), leftAt: null, ...collegeFilter(req) },
       { $set: { handRaised: raised, handRaisedAt: raised ? nowIso() : null } },
     );
     if (!result.matchedCount) return sendError(res, 'Join the class before raising your hand.', 409);
@@ -367,7 +368,7 @@ function createLiveClassesRouter(io) {
 
   router.post('/:id/messages', async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (session.allowChat === false && !ensureHost(session, req.user)) {
       return sendError(res, 'Chat is disabled for this class.', 403);
@@ -403,7 +404,7 @@ function createLiveClassesRouter(io) {
   // ── Q&A ────────────────────────────────────────────────────────────────────
   router.post('/:id/questions', async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (session.allowQuestions === false) return sendError(res, 'Q&A is disabled for this class.', 403);
 
@@ -442,12 +443,12 @@ function createLiveClassesRouter(io) {
 
   router.post('/:id/questions/:questionId/upvote', async (req, res) => {
     const db = getDB();
-    const question = await db.collection('live_questions').findOne({ _id: oid(req.params.questionId) });
+    const question = await db.collection('live_questions').findOne({ _id: oid(req.params.questionId), sessionId: oid(req.params.id), ...collegeFilter(req) });
     if (!question) return sendError(res, 'Question not found.', 404);
 
     const already = (question.upvoters || []).some(u => String(u) === String(req.user._id));
     await db.collection('live_questions').updateOne(
-      { _id: question._id },
+      { _id: question._id, ...collegeFilter(req) },
       already
         ? { $pull: { upvoters: oid(req.user._id) } }
         : { $addToSet: { upvoters: oid(req.user._id) } },
@@ -463,7 +464,7 @@ function createLiveClassesRouter(io) {
 
   router.post('/:id/questions/:questionId/answer', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (!ensureHost(session, req.user)) return sendError(res, 'Only the host can answer questions.', 403);
 
@@ -472,7 +473,7 @@ function createLiveClassesRouter(io) {
 
     const answeredAt = nowIso();
     const result = await db.collection('live_questions').updateOne(
-      { _id: oid(req.params.questionId), sessionId: session._id },
+      { _id: oid(req.params.questionId), sessionId: session._id, ...collegeFilter(req) },
       { $set: { answer, answeredAt } },
     );
     if (!result.matchedCount) return sendError(res, 'Question not found.', 404);
@@ -488,7 +489,7 @@ function createLiveClassesRouter(io) {
   // ── Polls ──────────────────────────────────────────────────────────────────
   router.post('/:id/polls', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (!ensureHost(session, req.user)) return sendError(res, 'Only the host can create polls.', 403);
 
@@ -524,7 +525,7 @@ function createLiveClassesRouter(io) {
 
   router.post('/:id/polls/:pollId/vote', async (req, res) => {
     const db = getDB();
-    const poll = await db.collection('live_polls').findOne({ _id: oid(req.params.pollId) });
+    const poll = await db.collection('live_polls').findOne({ _id: oid(req.params.pollId), sessionId: oid(req.params.id), ...collegeFilter(req) });
     if (!poll) return sendError(res, 'Poll not found.', 404);
     if (poll.status !== 'open') return sendError(res, 'This poll is closed.', 409);
 
@@ -535,15 +536,15 @@ function createLiveClassesRouter(io) {
 
     // One vote per user — replace any previous choice.
     await db.collection('live_polls').updateOne(
-      { _id: poll._id },
+      { _id: poll._id, ...collegeFilter(req) },
       { $pull: { votes: { userId: oid(req.user._id) } } },
     );
     await db.collection('live_polls').updateOne(
-      { _id: poll._id },
+      { _id: poll._id, ...collegeFilter(req) },
       { $push: { votes: { userId: oid(req.user._id), optionIndex, at: nowIso() } } },
     );
 
-    const updated = await db.collection('live_polls').findOne({ _id: poll._id });
+    const updated = await db.collection('live_polls').findOne({ _id: poll._id, ...collegeFilter(req) });
     const counts = updated.options.map((_, i) => updated.votes.filter(v => v.optionIndex === i).length);
 
     io.to(roomForLive(req.params.id)).emit('live:poll-update', {
@@ -557,7 +558,7 @@ function createLiveClassesRouter(io) {
   router.post('/:id/polls/:pollId/close', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
     const result = await db.collection('live_polls').updateOne(
-      { _id: oid(req.params.pollId), sessionId: oid(req.params.id) },
+      { _id: oid(req.params.pollId), sessionId: oid(req.params.id), ...collegeFilter(req) },
       { $set: { status: 'closed' } },
     );
     if (!result.matchedCount) return sendError(res, 'Poll not found.', 404);
@@ -569,7 +570,7 @@ function createLiveClassesRouter(io) {
   // ── Attendance ─────────────────────────────────────────────────────────────
   router.get('/:id/attendance', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (!ensureHost(session, req.user)) return sendError(res, 'Only the host can view attendance.', 403);
 
@@ -613,12 +614,12 @@ function createLiveClassesRouter(io) {
 
   router.post('/:id/attendance/sync', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const session = await loadSession(req.params.id);
+    const session = await loadSession(req.params.id, req);
     if (!session) return sendError(res, 'Live class not found.', 404);
     if (!ensureHost(session, req.user)) return sendError(res, 'Only the host can sync attendance.', 403);
     if (!session.courseId) return sendError(res, 'This class is not linked to a course.', 400);
 
-    const participants = await db.collection('live_participants').find({ sessionId: session._id }).toArray();
+    const participants = await db.collection('live_participants').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
     const durationMs = session.durationMinutes * 60000;
     const date = (session.startedAt || session.scheduledAt).slice(0, 10);
 
@@ -630,7 +631,7 @@ function createLiveClassesRouter(io) {
       if (coverage < 0.6) continue;
 
       await db.collection('attendance_records').updateOne(
-        { studentId: p.studentId, courseId: session.courseId, date },
+        { studentId: p.studentId, courseId: session.courseId, date, ...collegeFilter(req) },
         {
           $set: { status: 'present', method: 'live_class', sessionId: session._id, markedAt: nowIso() },
           $setOnInsert: { studentId: p.studentId, courseId: session.courseId, date, collegeId: oid(req.userCollegeId) },

@@ -90,6 +90,10 @@ function displayIdFor(user: any): string {
   return `${initials}-${raw.slice(-6).toUpperCase()}`;
 }
 
+function collegeNameFor(user: any): string {
+  return user?.collegeName || user?.college || 'College not assigned';
+}
+
 function detailRowsFor(user: any): { label: string; value: string }[] {
   const role = user?.role;
   const rows: { label: string; value: string }[] = [];
@@ -109,7 +113,7 @@ function detailRowsFor(user: any): { label: string; value: string }[] {
     if (user?.department) rows.push({ label: 'Department', value: user.department });
   }
 
-  if (user?.college) rows.push({ label: 'Institute', value: user.college });
+  rows.push({ label: 'Institute', value: collegeNameFor(user) });
   return rows.slice(0, 4);
 }
 
@@ -180,6 +184,7 @@ function FrontCard({ user, cardRef }: { user: any; cardRef: React.RefObject<View
   const RoleIcon = roleTheme.Icon;
   const displayId = displayIdFor(user);
   const rows = detailRowsFor(user);
+  const collegeName = collegeNameFor(user);
 
   return (
     <View ref={cardRef} style={s.card}>
@@ -189,9 +194,7 @@ function FrontCard({ user, cardRef }: { user: any; cardRef: React.RefObject<View
           <View style={[s.instituteMark, { backgroundColor: roleTheme.accent }]}>
             <RoleIcon size={16} color="#fff" />
           </View>
-          <Text style={s.universityHeaderText} numberOfLines={1}>
-            VISHVA UNIVERSITY
-          </Text>
+          <Text style={s.universityHeaderText} numberOfLines={1}>{collegeName.toUpperCase()}</Text>
         </View>
       </View>
 
@@ -267,6 +270,7 @@ function BackCard({ user }: { user: any }) {
   const roleTheme = themeForRole(user?.role);
   const RoleIcon = roleTheme.Icon;
   const displayId = displayIdFor(user);
+  const collegeName = collegeNameFor(user);
 
   return (
     <View style={s.card}>
@@ -277,7 +281,7 @@ function BackCard({ user }: { user: any }) {
             <View style={[s.instituteMarkSmall, { backgroundColor: roleTheme.accent }]}>
               <RoleIcon size={12} color="#fff" />
             </View>
-            <Text style={s.backHeaderText} numberOfLines={1}>VISHVA UNIVERSITY</Text>
+            <Text style={s.backHeaderText} numberOfLines={1}>{collegeName.toUpperCase()}</Text>
           </View>
           <Text style={s.backSubText}>DIGITAL IDENTITY CARD</Text>
         </View>
@@ -287,12 +291,13 @@ function BackCard({ user }: { user: any }) {
           <View style={[s.backQrBorder, { borderColor: roleTheme.accent }]}>
             <QRCode
               value={JSON.stringify({
-                v: 'VU',
+                v: user?.collegeCode || user?.collegeId || 'ID',
                 id: user?.id,
                 n: user?.name,
                 s: displayId,
                 e: user?.email,
                 r: user?.role,
+                c: collegeName,
               })}
               size={120}
               backgroundColor="#fff"
@@ -330,7 +335,7 @@ function BackCard({ user }: { user: any }) {
         {/* Magnetic Stripe */}
         <View style={s.magneticStripe}>
           <Text style={s.magneticText} numberOfLines={1}>
-            VISHVA UNIVERSITY • CAMPUS ERP • DIGITAL ID
+            {collegeName.toUpperCase()} • CAMPUS ERP • DIGITAL ID
           </Text>
         </View>
 
@@ -338,7 +343,7 @@ function BackCard({ user }: { user: any }) {
         <View style={s.backFooter}>
           <Lock size={8} color="#94A3B8" />
           <Text style={s.termsText}>
-            This card is property of Vishva University. If found, return to admin office.
+            This card is property of {collegeName}. If found, return to admin office.
             Non-transferable. Must present upon request.
           </Text>
         </View>
@@ -417,7 +422,7 @@ export default function IdCardScreen() {
       setSharing(true);
       const uri = await captureRef(cardFrontRef, { format: 'png', quality: 1 });
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share Vishva ID Card' });
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share Digital ID Card' });
       }
     } catch (err) {
       console.warn('Share failed:', err);
@@ -455,7 +460,7 @@ export default function IdCardScreen() {
           <div>
             <img class="card" src="${base64}" />
             <div class="footer">
-              <strong>Vishva University</strong> — Digital Identity Card<br/>
+              <strong>${collegeName}</strong> — Digital Identity Card<br/>
               Generated on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
             </div>
           </div>
@@ -472,6 +477,7 @@ export default function IdCardScreen() {
   const roleTheme = themeForRole(user?.role);
   const accent = roleTheme.accent;
   const displayId = displayIdFor(user);
+  const collegeName = collegeNameFor(user);
 
   const detailItems = [
     { label: 'Full Name', value: user?.name },
@@ -480,7 +486,7 @@ export default function IdCardScreen() {
     { label: 'Phone', value: user?.phone },
     { label: 'Department', value: user?.department },
     { label: 'Year of Study', value: user?.year ? `Year ${user.year}` : undefined },
-    { label: 'College', value: user?.college },
+    { label: 'College', value: collegeName },
     { label: 'Role', value: user?.role?.replace(/_/g, ' ') },
     { label: 'CGPA', value: user?.cgpa?.toString() },
   ].filter(i => i.value);
@@ -594,7 +600,7 @@ export default function IdCardScreen() {
               <View style={[s.verifyQrContainer, { borderColor: accent }]}>
                 <View style={s.verifyQrBorder}>
                   <QRCode
-                    value={JSON.stringify({ v: 'VU', id: user?.id, n: user?.name, s: displayId, r: user?.role })}
+                    value={JSON.stringify({ v: user?.collegeCode || user?.collegeId || 'ID', id: user?.id, n: user?.name, s: displayId, r: user?.role, c: collegeName })}
                     size={200}
                     backgroundColor="#fff"
                     color={accent}
@@ -608,7 +614,7 @@ export default function IdCardScreen() {
               <View style={s.verifyBadgeRow}>
                 <View style={[s.verifiedBadge, { backgroundColor: accent }]}>
                   <Check size={14} color="#fff" />
-                  <Text style={s.verifiedBadgeText}>VISHVA VERIFIED</Text>
+                  <Text style={s.verifiedBadgeText}>ID VERIFIED</Text>
                 </View>
               </View>
 

@@ -44,9 +44,9 @@ router.get('/my-issues', requireCollegeAccess, async (req, res) => {
       .sort({ issueDate: -1 })
       .toArray();
 
-    const bookIds = [...new Set(issues.map(i => i.bookId))];
+    const bookIds = [...new Set(issues.map(i => i.bookId).filter(Boolean))];
     const books = await db.collection('books')
-      .find({ _id: { $in: bookIds } })
+      .find({ _id: { $in: bookIds }, ...collegeFilter(req) })
       .toArray();
 
     const bookMap = {};
@@ -67,20 +67,29 @@ router.post('/issue', requireCollegeAccess, async (req, res) => {
   try {
     const db = getDB();
     const { bookId, userId, dueDate } = req.body;
+    const targetUserId = oid(userId) || oid(req.user._id);
 
-    const book = await db.collection('books').findOne({ _id: oid(bookId) });
+    const book = await db.collection('books').findOne({ _id: oid(bookId), ...collegeFilter(req) });
     if (!book) return sendError(res, 'Book not found', 404);
     if (book.available <= 0) return sendError(res, 'Book not available', 400);
 
+    const existingIssue = await db.collection('book_issues').findOne({
+      bookId: oid(bookId),
+      userId: targetUserId,
+      status: 'issued',
+      ...collegeFilter(req),
+    });
+    if (existingIssue) return sendError(res, 'You already have this book issued.', 409);
+
     await db.collection('books').updateOne(
-      { _id: oid(bookId) },
+      { _id: oid(bookId), ...collegeFilter(req) },
       { $inc: { available: -1 } }
     );
 
     const issue = {
       collegeId: oid(req.userCollegeId),
       bookId: oid(bookId),
-      userId: oid(userId),
+      userId: targetUserId,
       issueDate: nowIso(),
       dueDate,
       returnDate: null,
@@ -101,8 +110,10 @@ router.post('/return/:issueId', requireCollegeAccess, async (req, res) => {
     const db = getDB();
     const { issueId } = req.params;
 
-    const issue = await db.collection('book_issues').findOne({ _id: oid(issueId) });
+    const issue = await db.collection('book_issues').findOne({ _id: oid(issueId), ...collegeFilter(req) });
     if (!issue) return sendError(res, 'Issue not found', 404);
+    const isStaff = ['college_admin', 'super_admin', 'faculty', 'collegeAdmin', 'superadmin'].includes(req.user.role);
+    if (!isStaff && String(issue.userId) !== String(req.user._id)) return sendError(res, 'Issue not found', 404);
     if (issue.status === 'returned') return sendError(res, 'Already returned', 400);
 
     const returnDate = nowIso();
@@ -116,12 +127,12 @@ router.post('/return/:issueId', requireCollegeAccess, async (req, res) => {
     }
 
     await db.collection('book_issues').updateOne(
-      { _id: oid(issueId) },
+      { _id: oid(issueId), ...collegeFilter(req) },
       { $set: { returnDate, fine, status: 'returned' } }
     );
 
     await db.collection('books').updateOne(
-      { _id: issue.bookId },
+      { _id: issue.bookId, ...collegeFilter(req) },
       { $inc: { available: 1 } }
     );
 

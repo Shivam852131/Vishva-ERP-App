@@ -7,6 +7,7 @@ import { Card, SectionTitle, GradientButton, EmptyState } from '@/src/ui';
 import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch } from '@/src/hooks/useFetch';
+import { api } from '@/src/api';
 import {
   Sparkles, Compass, Briefcase, GraduationCap, TrendingUp,
   Code, FlaskConical, Palette, BookOpen, ChevronRight, Star,
@@ -42,14 +43,8 @@ export default function CareerAdvisor() {
     if (Object.keys(answers).length < QUESTIONS.length) return;
     setAnalyzing(true);
     try {
-      const res = await fetch('/api/skills/career-recommendations', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setRecommendations(data.recommendations || data || []);
-      }
+      const data = await api('/skills/career-recommendations');
+      setRecommendations(data.recommendations || data || []);
     } catch {}
     setStep('results');
     setAnalyzing(false);

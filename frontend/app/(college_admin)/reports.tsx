@@ -27,7 +27,7 @@ export default function Reports() {
   const { data: fees } = useFetch<any[]>('/fees/all');
   const { data: users = [] } = useFetch<any[]>('/admin/users');
   const { data: courses = [] } = useFetch<any[]>('/courses');
-  const { data: schedules = [] } = useFetch<any[]>('/admin/schedules');
+  const { data: schedules = [] } = useFetch<any[]>('/schedules');
   const [refreshing, setRefreshing] = useState(false);
   const [dateRange, setDateRange] = useState('month');
   const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'finance' | 'users'>('overview');

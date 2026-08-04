@@ -138,10 +138,11 @@ async function loadAcademics(student) {
   const db = getDB();
   const studentId = student._id;
   const sid = oid(studentId);
+  const collegeQ = student.collegeId ? { collegeId: oid(student.collegeId) } : {};
 
   const [records, results] = await Promise.all([
-    db.collection('attendance_records').find({ $or: [{ studentId: sid }, { studentId: String(studentId) }] }).toArray(),
-    db.collection('exam_results').find({ $or: [{ studentId: sid }, { studentId: String(studentId) }] }).toArray(),
+    db.collection('attendance_records').find({ $or: [{ studentId: sid }, { studentId: String(studentId) }], ...collegeQ }).toArray(),
+    db.collection('exam_results').find({ $or: [{ studentId: sid }, { studentId: String(studentId) }], ...collegeQ }).toArray(),
   ]);
 
   const attendance = records.length
@@ -279,7 +280,7 @@ function createPlacementRouter(io) {
     const result = await db.collection('placement_drives').updateOne({ _id: oid(req.params.id), ...collegeFilter(req) }, { $set: patch });
     if (!result.matchedCount) return sendError(res, 'Drive not found.', 404);
 
-    const updated = await db.collection('placement_drives').findOne({ _id: oid(req.params.id) });
+    const updated = await db.collection('placement_drives').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     res.json(serializeDrive(updated));
   });
 
@@ -287,14 +288,14 @@ function createPlacementRouter(io) {
     const db = getDB();
     const result = await db.collection('placement_drives').deleteOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!result.deletedCount) return sendError(res, 'Drive not found.', 404);
-    await db.collection('placement_applications').deleteMany({ driveId: oid(req.params.id) });
+    await db.collection('placement_applications').deleteMany({ driveId: oid(req.params.id), ...collegeFilter(req) });
     res.json({ success: true });
   });
 
   // ── Applications ───────────────────────────────────────────────────────────
   router.post('/drives/:id/apply', async (req, res) => {
     const db = getDB();
-    const drive = await db.collection('placement_drives').findOne({ _id: oid(req.params.id) });
+    const drive = await db.collection('placement_drives').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!drive) return sendError(res, 'Drive not found.', 404);
     if (drive.status !== 'open') return sendError(res, 'This drive is no longer accepting applications.', 409);
     if (new Date(drive.deadline) < new Date()) return sendError(res, 'The application deadline has passed.', 409);
@@ -302,6 +303,7 @@ function createPlacementRouter(io) {
     const existing = await db.collection('placement_applications').findOne({
       driveId: drive._id,
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (existing) return sendError(res, 'You have already applied to this drive.', 409);
 
@@ -333,7 +335,7 @@ function createPlacementRouter(io) {
     };
 
     const { insertedId } = await db.collection('placement_applications').insertOne(doc);
-    await db.collection('placement_drives').updateOne({ _id: drive._id }, { $inc: { applicationCount: 1 } });
+    await db.collection('placement_drives').updateOne({ _id: drive._id, ...collegeFilter(req) }, { $inc: { applicationCount: 1 } });
 
     const payload = serializeApplication({ ...doc, _id: insertedId });
     io.to(roomForUser(req.user._id)).emit('placement:application-created', payload);
@@ -367,7 +369,7 @@ function createPlacementRouter(io) {
       return sendError(res, 'You do not have permission to view this application.', 403);
     }
 
-    const drive = await db.collection('placement_drives').findOne({ _id: application.driveId });
+    const drive = await db.collection('placement_drives').findOne({ _id: application.driveId, ...collegeFilter(req) });
     res.json({ ...serializeApplication(application), drive: drive ? serializeDrive(drive) : null });
   });
 
@@ -390,7 +392,7 @@ function createPlacementRouter(io) {
         $push: { timeline: { event: 'Withdrawn by student', at: nowIso(), note: null } },
       },
     );
-    await db.collection('placement_drives').updateOne({ _id: application.driveId }, { $inc: { applicationCount: -1 } });
+    await db.collection('placement_drives').updateOne({ _id: application.driveId, ...collegeFilter(req) }, { $inc: { applicationCount: -1 } });
     res.json({ success: true });
   });
 
@@ -442,7 +444,7 @@ function createPlacementRouter(io) {
       timeline.length ? { $set: update, $push: { timeline: { $each: timeline } } } : { $set: update },
     );
 
-    const updated = await db.collection('placement_applications').findOne({ _id: application._id });
+    const updated = await db.collection('placement_applications').findOne({ _id: application._id, ...collegeFilter(req) });
     const payload = serializeApplication(updated);
     io.to(roomForUser(application.studentId)).emit('placement:application-updated', payload);
     res.json(payload);

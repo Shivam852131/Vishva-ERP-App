@@ -99,10 +99,12 @@ async function handlePaymentCaptured(db, payment, io, collegeId) {
   const feeId = notes.feeId;
 
   if (feeId) {
-    const fee = await db.collection('fees').findOne({ _id: oid(feeId) });
+    const feeFilter = { _id: oid(feeId) };
+    if (collegeId) feeFilter.collegeId = collegeId;
+    const fee = await db.collection('fees').findOne(feeFilter);
     if (fee && fee.status !== 'paid') {
       await db.collection('fees').updateOne(
-        { _id: fee._id },
+        feeFilter,
         { $set: { status: 'paid', updatedAt: nowIso() } }
       );
 
@@ -140,6 +142,7 @@ async function handlePaymentCaptured(db, payment, io, collegeId) {
         body: `Your payment of ₹${payment.amount / 100} for ${fee.type} has been confirmed.`,
         recipientIds: [fee.userId],
         readBy: [],
+        collegeId: collegeId || fee.collegeId || null,
         createdAt: nowIso(),
       };
       const notifResult = await db.collection('notifications').insertOne(notification);

@@ -145,13 +145,13 @@ function createMentorshipRouter(io) {
 
   router.get('/mentors/:id', async (req, res) => {
     const db = getDB();
-    const mentor = await db.collection('mentors').findOne({ _id: oid(req.params.id) });
+    const mentor = await db.collection('mentors').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!mentor) return sendError(res, 'Mentor not found.', 404);
 
     const [connection, reviews] = await Promise.all([
-      db.collection('mentorship_connections').findOne({ mentorId: mentor._id, studentId: oid(req.user._id) }),
+      db.collection('mentorship_connections').findOne({ mentorId: mentor._id, studentId: oid(req.user._id), ...collegeFilter(req) }),
       db.collection('mentorship_sessions')
-        .find({ mentorId: mentor._id, rating: { $ne: null } })
+        .find({ mentorId: mentor._id, rating: { $ne: null }, ...collegeFilter(req) })
         .sort({ createdAt: -1 })
         .limit(10)
         .toArray(),
@@ -172,13 +172,14 @@ function createMentorshipRouter(io) {
   // ── Connections ────────────────────────────────────────────────────────────
   router.post('/mentors/:id/request', async (req, res) => {
     const db = getDB();
-    const mentor = await db.collection('mentors').findOne({ _id: oid(req.params.id) });
+    const mentor = await db.collection('mentors').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!mentor) return sendError(res, 'Mentor not found.', 404);
 
     const existing = await db.collection('mentorship_connections').findOne({
       mentorId: mentor._id,
       studentId: oid(req.user._id),
       status: { $in: ['pending', 'active'] },
+      ...collegeFilter(req),
     });
     if (existing) return sendError(res, 'You already have a request with this mentor.', 409);
 
@@ -225,6 +226,7 @@ function createMentorshipRouter(io) {
     const connection = await db.collection('mentorship_connections').findOne({
       _id: oid(req.params.id),
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (!connection) return sendError(res, 'Connection not found.', 404);
 
@@ -241,8 +243,8 @@ function createMentorshipRouter(io) {
     if (Array.isArray(focusSkills)) patch.focusSkills = focusSkills;
     if (!Object.keys(patch).length) return sendError(res, 'Nothing to update.', 400);
 
-    await db.collection('mentorship_connections').updateOne({ _id: connection._id }, { $set: patch });
-    const updated = await db.collection('mentorship_connections').findOne({ _id: connection._id });
+    await db.collection('mentorship_connections').updateOne({ _id: connection._id, ...collegeFilter(req) }, { $set: patch });
+    const updated = await db.collection('mentorship_connections').findOne({ _id: connection._id, ...collegeFilter(req) });
     res.json(serializeConnection(updated));
   });
 
@@ -250,7 +252,7 @@ function createMentorshipRouter(io) {
   // the placement cell / admin acting on their behalf.
   router.post('/connections/:id/accept', async (req, res) => {
     const db = getDB();
-    const connection = await db.collection('mentorship_connections').findOne({ _id: oid(req.params.id) });
+    const connection = await db.collection('mentorship_connections').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
     if (!connection) return sendError(res, 'Connection not found.', 404);
 
     const isStaff = ['college_admin', 'super_admin', 'faculty', 'collegeAdmin', 'superadmin'].includes(req.user.role);
@@ -258,7 +260,7 @@ function createMentorshipRouter(io) {
     if (connection.status !== 'pending') return sendError(res, 'This request is not pending.', 409);
 
     await db.collection('mentorship_connections').updateOne(
-      { _id: connection._id },
+      { _id: connection._id, ...collegeFilter(req) },
       { $set: { status: 'active', respondedAt: nowIso() } },
     );
 
@@ -294,6 +296,7 @@ function createMentorshipRouter(io) {
     const connection = await db.collection('mentorship_connections').findOne({
       _id: oid(connectionId),
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (!connection) return sendError(res, 'Connection not found.', 404);
     if (connection.status !== 'active') return sendError(res, 'This mentorship is not active yet.', 409);
@@ -302,6 +305,7 @@ function createMentorshipRouter(io) {
       connectionId: connection._id,
       scheduledAt,
       status: 'scheduled',
+      ...collegeFilter(req),
     });
     if (clash) return sendError(res, 'A session is already booked at that time.', 409);
 
@@ -336,6 +340,7 @@ function createMentorshipRouter(io) {
     const session = await db.collection('mentorship_sessions').findOne({
       _id: oid(req.params.id),
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (!session) return sendError(res, 'Session not found.', 404);
 
@@ -354,20 +359,20 @@ function createMentorshipRouter(io) {
     if (meetingUrl !== undefined) patch.meetingUrl = meetingUrl;
     if (!Object.keys(patch).length) return sendError(res, 'Nothing to update.', 400);
 
-    await db.collection('mentorship_sessions').updateOne({ _id: session._id }, { $set: patch });
+    await db.collection('mentorship_sessions').updateOne({ _id: session._id, ...collegeFilter(req) }, { $set: patch });
 
     if (patch.status === 'completed' && session.status !== 'completed') {
       await db.collection('mentorship_connections').updateOne(
-        { _id: session.connectionId },
+        { _id: session.connectionId, ...collegeFilter(req) },
         { $inc: { sessionsCount: 1 } },
       );
       await db.collection('mentors').updateOne(
-        { _id: session.mentorId },
+        { _id: session.mentorId, ...collegeFilter(req) },
         { $inc: { sessionsCompleted: 1 } },
       );
     }
 
-    const updated = await db.collection('mentorship_sessions').findOne({ _id: session._id });
+    const updated = await db.collection('mentorship_sessions').findOne({ _id: session._id, ...collegeFilter(req) });
     res.json(serializeSession(updated));
   });
 
@@ -376,6 +381,7 @@ function createMentorshipRouter(io) {
     const session = await db.collection('mentorship_sessions').findOne({
       _id: oid(req.params.id),
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (!session) return sendError(res, 'Session not found.', 404);
     if (session.status !== 'completed') return sendError(res, 'Rate the session after it is completed.', 409);
@@ -392,12 +398,12 @@ function createMentorshipRouter(io) {
 
     // Recompute the mentor's rating from all rated sessions.
     const rated = await db.collection('mentorship_sessions')
-      .find({ mentorId: session.mentorId, rating: { $ne: null } })
+      .find({ mentorId: session.mentorId, rating: { $ne: null }, ...collegeFilter(req) })
       .toArray();
     const avg = rated.length
       ? Number((rated.reduce((sum, r) => sum + (r.rating || 0), 0) / rated.length).toFixed(1))
       : rating;
-    await db.collection('mentors').updateOne({ _id: session.mentorId }, { $set: { rating: avg } });
+    await db.collection('mentors').updateOne({ _id: session.mentorId, ...collegeFilter(req) }, { $set: { rating: avg } });
 
     res.json({ success: true, rating, mentor_rating: avg });
   });
@@ -443,6 +449,7 @@ function createMentorshipRouter(io) {
     const goal = await db.collection('mentorship_goals').findOne({
       _id: oid(req.params.id),
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (!goal) return sendError(res, 'Goal not found.', 404);
 
@@ -479,8 +486,8 @@ function createMentorshipRouter(io) {
 
     if (!Object.keys(patch).length) return sendError(res, 'Nothing to update.', 400);
 
-    await db.collection('mentorship_goals').updateOne({ _id: goal._id }, { $set: patch });
-    const updated = await db.collection('mentorship_goals').findOne({ _id: goal._id });
+    await db.collection('mentorship_goals').updateOne({ _id: goal._id, ...collegeFilter(req) }, { $set: patch });
+    const updated = await db.collection('mentorship_goals').findOne({ _id: goal._id, ...collegeFilter(req) });
     res.json(serializeGoal(updated));
   });
 
@@ -489,6 +496,7 @@ function createMentorshipRouter(io) {
     const result = await db.collection('mentorship_goals').deleteOne({
       _id: oid(req.params.id),
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (!result.deletedCount) return sendError(res, 'Goal not found.', 404);
     res.json({ success: true });

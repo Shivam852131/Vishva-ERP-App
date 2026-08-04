@@ -142,7 +142,7 @@ export default function Colleges() {
                 testID="college-name"
                 value={f.name}
                 onChangeText={v => setF(p => ({ ...p, name: v }))}
-                placeholder="Vishva University"
+                placeholder="College name"
                 placeholderTextColor={theme.colors.muted}
                 style={styles.input}
                 accessibilityLabel="College name"

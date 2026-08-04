@@ -7,6 +7,10 @@ export interface AuthUser {
   role: UserRole;
   phone?: string;
   college?: string;
+  collegeName?: string;
+  collegeId?: string;
+  collegeCode?: string;
+  collegeLogo?: string;
   department?: string;
   student_id?: string;
   year?: number;
