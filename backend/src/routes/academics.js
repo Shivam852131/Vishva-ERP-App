@@ -115,14 +115,18 @@ router.get('/courses', async (req, res) => {
 
     if (user.role === 'student') {
       const courseIds = await getUserCourseIds(db, String(user._id), 'student', req);
-      const oids = courseIds.map(id => oid(id)).filter(Boolean);
-      if (oids.length) filter._id = { $in: oids };
-      else filter._id = { $in: courseIds };
+      if (courseIds.length) {
+        const oids = courseIds.map(id => oid(id)).filter(Boolean);
+        if (oids.length) filter._id = { $in: oids };
+        else filter._id = { $in: courseIds };
+      }
     } else if (user.role === 'faculty') {
       const courseIds = await getUserCourseIds(db, String(user._id), 'faculty', req);
-      const oids = courseIds.map(id => oid(id)).filter(Boolean);
-      if (oids.length) filter._id = { $in: oids };
-      else filter._id = { $in: courseIds };
+      if (courseIds.length) {
+        const oids = courseIds.map(id => oid(id)).filter(Boolean);
+        if (oids.length) filter._id = { $in: oids };
+        else filter._id = { $in: courseIds };
+      }
     }
 
     const courses = await db.collection('courses').find({ ...filter, ...collegeFilter(req) }).toArray();
@@ -221,7 +225,9 @@ router.get('/timetable', async (req, res) => {
 
     if (user.role === 'student' || user.role === 'faculty') {
       const courseIds = await getUserCourseIds(db, String(user._id), user.role, req);
-      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+      if (courseIds.length) {
+        filter.courseId = { $in: courseIds };
+      }
     }
 
     const slots = await db.collection('timetable_slots').find({ ...filter, ...collegeFilter(req) }).toArray();
@@ -329,10 +335,14 @@ router.get('/assignments', async (req, res) => {
 
     if (user.role === 'student') {
       const courseIds = await getUserCourseIds(db, String(user._id), 'student', req);
-      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+      if (courseIds.length) {
+        filter.courseId = { $in: courseIds };
+      }
     } else if (user.role === 'faculty') {
       const courseIds = await getUserCourseIds(db, String(user._id), 'faculty', req);
-      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+      if (courseIds.length) {
+        filter.courseId = { $in: courseIds };
+      }
     }
 
     const assignments = await db.collection('assignments').find({ ...filter, ...collegeFilter(req) }).toArray();
@@ -541,7 +551,9 @@ router.get('/notes', async (req, res) => {
 
     if (user.role === 'student' || user.role === 'faculty') {
       const courseIds = await getUserCourseIds(db, String(user._id), user.role, req);
-      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+      if (courseIds.length) {
+        filter.courseId = { $in: courseIds };
+      }
     }
 
     const notes = await db.collection('notes').find({ ...filter, ...collegeFilter(req) }).sort({ createdAt: -1 }).toArray();
@@ -622,7 +634,9 @@ router.get('/exams', async (req, res) => {
 
     if (user.role === 'student' || user.role === 'faculty') {
       const courseIds = await getUserCourseIds(db, String(user._id), user.role, req);
-      filter.courseId = { $in: courseIds.length ? courseIds : [] };
+      if (courseIds.length) {
+        filter.courseId = { $in: courseIds };
+      }
     }
 
     const exams = await db.collection('exams').find({ ...filter, ...collegeFilter(req) }).toArray();

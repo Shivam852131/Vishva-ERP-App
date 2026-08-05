@@ -80,7 +80,9 @@ function requireCollegeAccess(req, res, next) {
 
 function collegeFilter(req) {
   if (req.isSuperAdmin) return {};
-  return { collegeId: oid(req.userCollegeId) };
+  const cid = oid(req.userCollegeId);
+  if (!cid) return {};
+  return { $or: [{ collegeId: cid }, { collegeId: String(cid) }, { collegeId: req.userCollegeId }] };
 }
 
 function collegeIdOrThrow(req) {

@@ -26,7 +26,7 @@ async function buildStudentDashboard(studentId, req) {
 
   const courses = courseIds.length
     ? await db.collection('courses').find({ ...cf, _id: { $in: courseIds } }).toArray()
-    : [];
+    : await db.collection('courses').find(cf).toArray();
 
   const attendance = await buildStudentAttendance(studentId);
 
@@ -42,7 +42,12 @@ async function buildStudentDashboard(studentId, req) {
           _id: { $nin: submittedAssignmentIds },
         })
         .toArray()
-    : [];
+    : await db.collection('assignments')
+        .find({
+          ...cf,
+          _id: { $nin: submittedAssignmentIds },
+        })
+        .toArray();
 
   const pendingFees = await db.collection('fees')
     .find({ ...cf, $or: [{ userId: sid }, { userId: studentId }], status: { $ne: 'paid' } })
@@ -50,7 +55,7 @@ async function buildStudentDashboard(studentId, req) {
 
   const upcomingClasses = courseIds.length
     ? await db.collection('timetable_slots').find({ ...cf, $or: [{ courseId: { $in: courseIds } }, { courseId: { $in: courseIds.map(String) } }] }).toArray()
-    : [];
+    : await db.collection('timetable_slots').find(cf).toArray();
 
   const results = await db.collection('exam_results').find({ ...cf, $or: [{ studentId: sid }, { studentId: studentId }] }).toArray();
   const cgpa = results.length
