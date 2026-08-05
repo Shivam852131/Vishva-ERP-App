@@ -214,17 +214,17 @@ export default function ChatTab() {
   const [image, setImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [sessionId, setSessionId] = useState(`ai_${user?.id || 'anon'}_${Date.now()}`);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [retryMsg, setRetryMsg] = useState<LocalMsg | null>(null);
 
-  const sessionRef = useRef(sessionId);
+  const sessionRef = useRef<string | null>(sessionId);
   const scrollRef = useRef<FlatList<LocalMsg>>(null);
   const inputRef = useRef<TextInput>(null);
 
-  const { mutate: sendMsg, loading } = useMutate<{ reply: string }>();
-  const { data: historyData, loading: historyLoading, refresh: refreshHistory } = useFetch<HistoryEntry[]>(
-    showHistory ? `/ai/sessions/${sessionRef.current}/messages` : null,
+  const { mutate: sendMsg, loading } = useMutate<any>();
+  const { data: historyData, loading: historyLoading, refresh: refreshHistory } = useFetch<any[]>(
+    showHistory && sessionRef.current ? `/ai/sessions/${sessionRef.current}/messages` : null,
   );
   const { data: sessionsData, refresh: refreshSessions } = useFetch<ChatSession[]>('/ai/sessions');
 
@@ -302,23 +302,21 @@ export default function ChatTab() {
         const r = await sendMsg('/ai/doubt-solver', {
           method: 'POST',
           body: JSON.stringify({
-            session_id: sessionRef.current,
-            message: q,
-            image_base64: img,
-            course: undefined,
+            question: q,
           }),
         });
-        reply = r?.reply || 'No response from AI.';
+        reply = r?.answer || r?.reply || 'No response from AI.';
       } else {
         const r = await sendMsg('/ai/chat', {
           method: 'POST',
           body: JSON.stringify({
-            session_id: sessionRef.current,
+            sessionId: sessionRef.current,
             message: q,
-            context: persona,
+            type: persona,
           }),
         });
-        reply = r?.reply || 'No response from AI.';
+        reply = r?.message?.content || r?.reply || 'No response from AI.';
+        if (r?.sessionId) sessionRef.current = r.sessionId;
       }
       setMessages((m) => [
         ...m,
@@ -410,6 +408,26 @@ export default function ChatTab() {
 
   const keyExtractor = (item: LocalMsg) => item.id;
 
+  // Transform backend messages into paired history entries
+  const historyEntries = React.useMemo(() => {
+    if (!historyData || !Array.isArray(historyData)) return [];
+    const entries: { id: string; user_msg: string; ai_msg: string; created_at: string }[] = [];
+    for (let i = 0; i < historyData.length; i++) {
+      const msg = historyData[i] as any;
+      if (msg.role === 'user') {
+        const next = historyData[i + 1] as any;
+        entries.push({
+          id: msg._id || String(i),
+          user_msg: msg.content,
+          ai_msg: next?.role === 'assistant' ? next.content : '',
+          created_at: msg.createdAt,
+        });
+        if (next?.role === 'assistant') i++;
+      }
+    }
+    return entries;
+  }, [historyData]);
+
   if (showHistory) {
     return (
       <ErrorBoundary>
@@ -437,14 +455,14 @@ export default function ChatTab() {
             <View style={styles.centered}>
               <ActivityIndicator size="large" color={theme.colors.brandPrimary} />
             </View>
-          ) : !historyData || historyData.length === 0 ? (
+          ) : historyEntries.length === 0 ? (
             <View style={styles.centered}>
               <History size={48} color={theme.colors.muted} />
               <Text style={styles.emptyHistoryTxt}>No conversation history yet</Text>
             </View>
           ) : (
             <FlatList
-              data={historyData}
+              data={historyEntries}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <View style={styles.historyItem}>
