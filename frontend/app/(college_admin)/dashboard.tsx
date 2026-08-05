@@ -36,7 +36,7 @@ export default function AdminDashboard() {
   const [annAudience, setAnnAudience] = useState('all');
   const [annErr, setAnnErr] = useState('');
   const [annSuccess, setAnnSuccess] = useState(false);
-  const [showAllLinks, setShowAllLinks] = useState(false);
+  const [showAllLinks, setShowAllLinks] = useState(true);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
 
   const loading = dashLoading || anaLoading || (subLoading && !subscription);

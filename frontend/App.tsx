@@ -48,6 +48,11 @@ import CollegeAdminPaymentsScreen from './app/(college_admin)/payments';
 import CollegeAdminSubscriptionScreen from './app/(college_admin)/subscription';
 import CollegeAdminHostelAdminScreen from './app/(college_admin)/hostel-admin';
 import CollegeAdminPaymentSettingsScreen from './app/(college_admin)/payment-settings';
+import CollegeAdminCareerHubScreen from './app/(college_admin)/career-hub';
+import CollegeAdminPlacementsScreen from './app/(college_admin)/placements';
+import CollegeAdminAssessmentsAdminScreen from './app/(college_admin)/assessments-admin';
+import CollegeAdminMentorshipAdminScreen from './app/(college_admin)/mentorship-admin';
+import CollegeAdminSkillAdminScreen from './app/(college_admin)/skill-admin';
 import SuperAdminDashboardScreen from './app/(super_admin)/dashboard';
 import SuperAdminCollegesScreen from './app/(super_admin)/colleges';
 import SuperAdminUsersScreen from './app/(super_admin)/users';
@@ -333,6 +338,11 @@ export default function App() {
                   <RootStack.Screen name="/(college_admin)/payment-settings" component={CollegeAdminPaymentSettingsScreen} />
                   <RootStack.Screen name="/(college_admin)/subscription" component={CollegeAdminSubscriptionScreen} />
                   <RootStack.Screen name="/(college_admin)/hostel-admin" component={CollegeAdminHostelAdminScreen} />
+                  <RootStack.Screen name="/(college_admin)/career-hub" component={CollegeAdminCareerHubScreen} />
+                  <RootStack.Screen name="/(college_admin)/placements" component={CollegeAdminPlacementsScreen} />
+                  <RootStack.Screen name="/(college_admin)/assessments-admin" component={CollegeAdminAssessmentsAdminScreen} />
+                  <RootStack.Screen name="/(college_admin)/mentorship-admin" component={CollegeAdminMentorshipAdminScreen} />
+                  <RootStack.Screen name="/(college_admin)/skill-admin" component={CollegeAdminSkillAdminScreen} />
                   <RootStack.Screen name="/analytics" component={AnalyticsScreen} />
                   <RootStack.Screen name="/attendance" component={AttendanceScreen} />
                   <RootStack.Screen name="/attendance-live" component={AttendanceLiveScreen} />
