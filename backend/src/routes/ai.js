@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { serializeUser, sendError, makeCode, nowIso, roomForUser } = require('../utils');
-const { generateAIResponse, generateStudyPlanWithAI } = require('../ml/llmService');
+const { generateAIResponse, generateStudyPlanWithAI, checkProviderHealth } = require('../ml/llmService');
 const { getPerformanceInsights } = require('../ml/performancePredictor');
 const { collegeFilter, requireCollegeAccess } = require('../auth');
 
@@ -433,6 +433,15 @@ Provide specific study recommendations. Include:
         recommendations: result.response,
         source: result.source,
       });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  router.get('/providers', async (req, res) => {
+    try {
+      const providers = await checkProviderHealth();
+      res.json({ providers });
     } catch (err) {
       sendError(res, err);
     }
