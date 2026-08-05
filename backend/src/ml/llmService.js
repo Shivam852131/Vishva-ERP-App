@@ -4,24 +4,29 @@
  * Provider priority:
  *   1. Ollama (free, local — no API key needed)
  *   2. Groq (free tier — Llama/Mixtral models, fast)
- *   3. OpenAI (paid — GPT-3.5/GPT-4)
- *   4. Mock fallback (always works, no external calls)
+ *   3. Google Gemini (free tier — 1500 req/day)
+ *   4. OpenAI (paid — GPT-3.5/GPT-4)
+ *   5. Mock fallback (always works, no external calls)
  * 
  * Configure in .env:
  *   OLLAMA_BASE_URL=http://localhost:11434
  *   OLLAMA_MODEL=llama3.2
  *   GROQ_API_KEY=gsk_...
+ *   GEMINI_API_KEY=AIza...
  *   OPENAI_API_KEY=sk-...
  */
 
 // ─── Provider config ───────────────────────────────────────────
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || '';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2';
-const OLLAMA_TIMEOUT = parseInt(process.env.OLLAMA_TIMEOUT || '60000', 10); // 60s
+const OLLAMA_TIMEOUT = parseInt(process.env.OLLAMA_TIMEOUT || '60000', 10);
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 const GROQ_BASE_URL = process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
@@ -175,7 +180,51 @@ async function generateWithGroq(type, message, conversationHistory = []) {
   return data.choices[0]?.message?.content || 'I could not generate a response.';
 }
 
-// ─── Provider 3: OpenAI (paid) ─────────────────────────────────
+// ─── Provider 3: Google Gemini (free tier, 1500 req/day) ───────
+async function generateWithGemini(type, message, conversationHistory = []) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+  
+  const systemPrompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.general;
+  
+  // Build conversation contents for Gemini format
+  const contents = [];
+  for (const msg of conversationHistory.slice(-10)) {
+    contents.push({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }],
+    });
+  }
+  contents.push({ role: 'user', parts: [{ text: message }] });
+  
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.9,
+          maxOutputTokens: 512,
+        },
+      }),
+    }
+  );
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error?.message || `Gemini API error ${response.status}`);
+  }
+  
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || 'I could not generate a response.';
+}
+
+// ─── Provider 4: OpenAI (paid) ─────────────────────────────────
 async function generateWithOpenAI(type, message, conversationHistory = []) {
   if (!OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY not configured');
@@ -390,7 +439,18 @@ async function generateAIResponse(type, message, userId, conversationHistory = [
     }
   }
   
-  // Provider 3: OpenAI (paid)
+  // Provider 3: Google Gemini (free tier, 1500 req/day)
+  if (GEMINI_API_KEY) {
+    try {
+      const response = await generateWithGemini(type, message, conversationHistory);
+      console.log(`[LLMService] Gemini responded (${GEMINI_MODEL})`);
+      return { success: true, response, source: 'ai', model: `gemini/${GEMINI_MODEL}` };
+    } catch (error) {
+      console.warn(`[LLMService] Gemini failed: ${error.message}`);
+    }
+  }
+  
+  // Provider 4: OpenAI (paid)
   if (OPENAI_API_KEY) {
     try {
       const response = await generateWithOpenAI(type, message, conversationHistory);
@@ -401,7 +461,7 @@ async function generateAIResponse(type, message, userId, conversationHistory = [
     }
   }
   
-  // Provider 4: Mock fallback (always works)
+  // Provider 5: Mock fallback (always works)
   console.log(`[LLMService] All providers unavailable, using mock responses`);
   const response = generateMockResponse(type, message);
   return { success: true, response, source: 'mock', model: 'mock' };
@@ -472,6 +532,7 @@ async function checkProviderHealth() {
   }
   
   providers.push({ name: 'groq', status: GROQ_API_KEY ? 'configured' : 'not_configured' });
+  providers.push({ name: 'gemini', status: GEMINI_API_KEY ? 'configured' : 'not_configured' });
   providers.push({ name: 'openai', status: OPENAI_API_KEY ? 'configured' : 'not_configured' });
   providers.push({ name: 'mock', status: 'always_available' });
   
