@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, StyleSheet, Animated } from 'react-native';
 import { LinearGradient } from '@/src/components/LinearGradient';
+import { AppImage as Image } from '@/src/components/AppImage';
 
 interface ViLogoProps {
   size?: number;
@@ -184,49 +185,16 @@ export function ViLogo({ size = 120, animate = true }: ViLogoProps) {
           ]}
         />
 
-        {/* Vi mark */}
-        <View style={styles.textContainer}>
-          <Text
-            style={[
-              styles.vText,
-              {
-                fontSize: size * 0.44,
-                textShadowColor: 'rgba(0,0,0,0.3)',
-                textShadowOffset: { width: 0, height: size * 0.015 },
-                textShadowRadius: size * 0.03,
-              },
-            ]}
-          >
-            V
-          </Text>
-          <View style={styles.iContainer}>
-            <View
-              style={[
-                styles.iDot,
-                {
-                  width: size * 0.09,
-                  height: size * 0.09,
-                  borderRadius: size * 0.045,
-                  shadowColor: '#fff',
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.4,
-                  shadowRadius: 2,
-                  elevation: 3,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.iBar,
-                {
-                  width: size * 0.085,
-                  height: size * 0.17,
-                  borderRadius: size * 0.02,
-                },
-              ]}
-            />
-          </View>
-        </View>
+        {/* Logo image */}
+        <Image
+          source={require('../../assets/images/icon.png')}
+          style={{
+            width: size * 0.7,
+            height: size * 0.7,
+            borderRadius: size * 0.12,
+          }}
+          contentFit="contain"
+        />
       </LinearGradient>
     </Animated.View>
   );
@@ -266,26 +234,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',
-  },
-  textContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  vText: {
-    color: '#fff',
-    fontWeight: '900',
-    letterSpacing: -2,
-  },
-  iContainer: {
-    alignItems: 'center',
-    marginLeft: -2,
-    marginBottom: 5,
-  },
-  iDot: {
-    backgroundColor: '#fff',
-    marginBottom: 4,
-  },
-  iBar: {
-    backgroundColor: '#fff',
   },
 });

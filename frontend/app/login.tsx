@@ -2,16 +2,15 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, Pressable, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView,
-  ActivityIndicator, Animated, Dimensions, StatusBar,
+  ActivityIndicator, Animated, StatusBar,
 } from 'react-native';
 import { LinearGradient } from '@/src/components/LinearGradient';
-import { BlurView } from '@/src/components/BlurView';
 import { AppImage as Image } from '@/src/components/AppImage';
 import { router } from '@/src/navigation/router';
 import {
   LogIn, UserPlus, Sparkles,
   Mail, Lock, User, ChevronRight, Shield, Eye, EyeOff,
-  BookOpen, Users, Building2, Crown, Smartphone, AlertCircle,
+  Smartphone, AlertCircle,
 } from 'lucide-react-native';
 import { theme } from '@/src/theme';
 import { useAuth } from '@/src/providers/AuthContext';
@@ -20,23 +19,13 @@ import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { ViLogo } from '@/src/components/ViLogo';
 import { LOGIN, REGISTER } from '@/constants/testIds';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN = 8;
 
-const DEMO: { role: UserRole; email: string; label: string; icon: React.ReactNode; color: string }[] = [
-  { role: 'student', email: 'aarav@campus.edu', label: 'Student', icon: <BookOpen size={14} />, color: '#059669' },
-  { role: 'faculty', email: 'meera@campus.edu', label: 'Faculty', icon: <Users size={14} />, color: '#3B82F6' },
-  { role: 'parent', email: 'rohit@campus.edu', label: 'Parent', icon: <Users size={14} />, color: '#8B5CF6' },
-  { role: 'college_admin', email: 'ananya@campus.edu', label: 'Admin', icon: <Building2 size={14} />, color: '#F59E0B' },
-  { role: 'super_admin', email: 'vikram@campus.edu', label: 'Super', icon: <Crown size={14} />, color: '#EF4444' },
-];
-
 export default function Login() {
   const { user, login, register, loading: authLoading } = useAuth();
-  const [email, setEmail] = useState('aarav@campus.edu');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
@@ -406,43 +395,7 @@ export default function Login() {
                 )}
               </View>
 
-              {/* Demo Accounts */}
-              {mode === 'login' && (
-                <View style={styles.demoSection}>
-                  <View style={styles.dividerRow}>
-                    <View style={styles.dividerLine} />
-                    <Text style={styles.dividerText}>Quick Demo Access</Text>
-                    <View style={styles.dividerLine} />
-                  </View>
 
-                  <View style={styles.demoGrid}>
-                    {DEMO.map((d) => (
-                      <Pressable
-                        key={d.email}
-                        style={({ pressed }) => [
-                          styles.demoCard,
-                          pressed && styles.demoCardPressed,
-                        ]}
-                        onPress={() => { setEmail(d.email); setPassword('password123'); }}
-                        testID={`demo-${d.role}`}
-                        accessibilityLabel={`Demo login as ${d.label}`}
-                      >
-                        <View style={[styles.demoIcon, { backgroundColor: d.color + '18' }]}>
-                          {d.icon}
-                        </View>
-                        <Text style={styles.demoLabel}>{d.label}</Text>
-                        <Text style={styles.demoEmail} numberOfLines={1}>
-                          {d.email.split('@')[0]}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  <Text style={styles.demoHint}>
-                    All demo accounts use password: password123
-                  </Text>
-                </View>
-              )}
             </View>
           </View>
 
@@ -699,70 +652,6 @@ const styles = StyleSheet.create({
   },
   phoneBtnPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
   phoneBtnText: { color: '#4F46E5', fontSize: 14, fontWeight: '700' },
-  demoSection: {
-    paddingHorizontal: theme.spacing.xl,
-    paddingBottom: theme.spacing.xl,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: theme.spacing.lg,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  dividerText: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  demoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  demoCard: {
-    width: (SCREEN_WIDTH - 80) / 3 - 4,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    padding: 12,
-    alignItems: 'center',
-    gap: 6,
-  },
-  demoCardPressed: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderColor: 'rgba(14,165,233,0.3)',
-  },
-  demoIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  demoLabel: {
-    color: '#E2E8F0',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  demoEmail: {
-    color: '#64748B',
-    fontSize: 9,
-    fontWeight: '500',
-  },
-  demoHint: {
-    textAlign: 'center',
-    fontSize: 11,
-    color: '#475569',
-    marginTop: theme.spacing.md,
-  },
   footer: {
     paddingVertical: theme.spacing.xl,
     alignItems: 'center',
