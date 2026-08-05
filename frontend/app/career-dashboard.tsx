@@ -697,8 +697,8 @@ export default function CareerDashboardScreen() {
                 <Text style={styles.heroGrade}>{readinessGrade(score)}</Text>
                 <Text style={styles.heroSubtext}>{readinessMessage(score)}</Text>
                 <View style={styles.trendRow}>
-                  <TrendIndicator value={5} label="vs last month" />
-                  <TrendIndicator value={-2} label="vs peers" />
+                  {data?.trend_month != null && <TrendIndicator value={data.trend_month} label="vs last month" />}
+                  {data?.trend_peers != null && <TrendIndicator value={data.trend_peers} label="vs peers" />}
                 </View>
               </View>
             </View>

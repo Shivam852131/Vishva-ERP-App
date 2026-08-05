@@ -71,7 +71,7 @@ export default function CareerHubAdmin() {
                 <Text style={styles.h1}>Career Hub</Text>
                 <Text style={styles.sub} numberOfLines={1}>Manage career readiness & placement activities</Text>
               </View>
-              <Pressable onPress={() => router.push('/placement' as any)} style={styles.iconBtn}>
+              <Pressable onPress={() => router.push('/(college_admin)/placements' as any)} style={styles.iconBtn}>
                 <Briefcase color={theme.colors.brand} size={18} />
               </Pressable>
             </View>
@@ -245,7 +245,7 @@ export default function CareerHubAdmin() {
               {tab === 'actions' && (
                 <View style={{ padding: theme.spacing.lg }}>
                   <SectionTitle title="Management Actions" />
-                  <Pressable style={styles.actionCard} onPress={() => router.push('/placement' as any)}>
+                  <Pressable style={styles.actionCard} onPress={() => router.push('/(college_admin)/placements' as any)}>
                     <View style={[styles.actionIcon, { backgroundColor: '#3B82F615' }]}>
                       <Briefcase size={20} color="#3B82F6" />
                     </View>
@@ -255,7 +255,7 @@ export default function CareerHubAdmin() {
                     </View>
                     <ChevronRight color={theme.colors.muted} size={16} />
                   </Pressable>
-                  <Pressable style={styles.actionCard} onPress={() => router.push('/skill-assessment' as any)}>
+                  <Pressable style={styles.actionCard} onPress={() => router.push('/(college_admin)/assessments-admin' as any)}>
                     <View style={[styles.actionIcon, { backgroundColor: '#8B5CF615' }]}>
                       <BookOpen size={20} color="#8B5CF6" />
                     </View>
@@ -265,7 +265,7 @@ export default function CareerHubAdmin() {
                     </View>
                     <ChevronRight color={theme.colors.muted} size={16} />
                   </Pressable>
-                  <Pressable style={styles.actionCard} onPress={() => router.push('/mentorship' as any)}>
+                  <Pressable style={styles.actionCard} onPress={() => router.push('/(college_admin)/mentorship-admin' as any)}>
                     <View style={[styles.actionIcon, { backgroundColor: '#EC489915' }]}>
                       <Users size={20} color="#EC4899" />
                     </View>
@@ -275,7 +275,7 @@ export default function CareerHubAdmin() {
                     </View>
                     <ChevronRight color={theme.colors.muted} size={16} />
                   </Pressable>
-                  <Pressable style={styles.actionCard} onPress={() => router.push('/skill-profile' as any)}>
+                  <Pressable style={styles.actionCard} onPress={() => router.push('/(college_admin)/skill-admin' as any)}>
                     <View style={[styles.actionIcon, { backgroundColor: '#10B98115' }]}>
                       <Zap size={20} color="#10B981" />
                     </View>

@@ -116,6 +116,10 @@ function createSkillsRouter(io) {
     const { selfRating } = req.body || {};
     if (typeof selfRating !== 'number') return sendError(res, 'selfRating must be a number 0-100.', 400);
 
+    const db = getDB();
+    const existing = await db.collection('student_skills').findOne({ studentId: oid(req.user._id), skillKey: req.params.skillKey, ...collegeFilter(req) });
+    if (!existing) return sendError(res, 'Unknown skill.', 404);
+
     const updated = await upsertSkill(req.user._id, req.params.skillKey, { selfRating: clamp(selfRating) });
     if (!updated) return sendError(res, 'Unknown skill.', 404);
     io.to(roomForUser(req.user._id)).emit('skills:updated', { skillKey: req.params.skillKey, skill: updated });
@@ -124,7 +128,7 @@ function createSkillsRouter(io) {
 
   router.delete('/profile/:skillKey', async (req, res) => {
     const db = getDB();
-    await db.collection('student_skills').deleteOne({ studentId: oid(req.user._id), skillKey: req.params.skillKey });
+    await db.collection('student_skills').deleteOne({ studentId: oid(req.user._id), skillKey: req.params.skillKey, ...collegeFilter(req) });
     io.to(roomForUser(req.user._id)).emit('skills:removed', { skillKey: req.params.skillKey });
     res.json({ success: true });
   });
@@ -140,6 +144,7 @@ function createSkillsRouter(io) {
       studentId: oid(studentId),
       skillKey,
       endorserId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (existing) return sendError(res, 'You have already endorsed this skill.', 409);
 
@@ -155,7 +160,7 @@ function createSkillsRouter(io) {
     };
     const { insertedId } = await db.collection('skill_endorsements').insertOne(doc);
 
-    const count = await db.collection('skill_endorsements').countDocuments({ studentId: oid(studentId), skillKey });
+    const count = await db.collection('skill_endorsements').countDocuments({ studentId: oid(studentId), skillKey, ...collegeFilter(req) });
     await upsertSkill(studentId, skillKey, { endorsementCount: count });
 
     io.to(roomForUser(studentId)).emit('skills:endorsed', { skillKey, endorserName: req.user.name });
@@ -190,6 +195,7 @@ function createSkillsRouter(io) {
     const result = await db.collection('student_certifications').deleteOne({
       _id: oid(req.params.id),
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (!result.deletedCount) return sendError(res, 'Certification not found.', 404);
     io.to(roomForUser(req.user._id)).emit('skills:certifications-changed', { action: 'removed', certificationId: req.params.id });
@@ -221,6 +227,7 @@ function createSkillsRouter(io) {
     const result = await db.collection('student_projects').deleteOne({
       _id: oid(req.params.id),
       studentId: oid(req.user._id),
+      ...collegeFilter(req),
     });
     if (!result.deletedCount) return sendError(res, 'Project not found.', 404);
     io.to(roomForUser(req.user._id)).emit('skills:projects-changed', { action: 'removed', projectId: req.params.id });

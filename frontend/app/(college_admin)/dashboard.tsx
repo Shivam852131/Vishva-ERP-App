@@ -8,7 +8,7 @@ import {
   Users, Building, Library, Home, BarChart3, MessageSquare, Bus, Bell,
   CreditCard, ShieldCheck, TrendingUp, TrendingDown, Clock, Activity,
   Zap, Target, ArrowRight, Star, Calendar, AlertTriangle, CheckCircle,
-  Eye, ChevronRight, Send, MapPin,
+  Eye, ChevronRight, Send, MapPin, Briefcase,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
@@ -148,6 +148,11 @@ export default function AdminDashboard() {
     { icon: <Activity size={18} color="#fff" />, label: 'Attendance', color: '#EF4444', route: '/(college_admin)/attendance' },
     { icon: <Bell size={18} color="#fff" />, label: 'Notifications', color: '#8B5CF6', route: '/notifications' },
     { icon: <MapPin size={18} color="#fff" />, label: 'Campus', color: '#0891b2', route: '/grievances' },
+    { icon: <Zap size={18} color="#fff" />, label: 'Career Hub', color: '#4F46E5', route: '/(college_admin)/career-hub' },
+    { icon: <Briefcase size={18} color="#fff" />, label: 'Placements', color: '#3B82F6', route: '/(college_admin)/placements' },
+    { icon: <Target size={18} color="#fff" />, label: 'Assessments', color: '#8B5CF6', route: '/(college_admin)/assessments-admin' },
+    { icon: <Users size={18} color="#fff" />, label: 'Mentorship', color: '#EC4899', route: '/(college_admin)/mentorship-admin' },
+    { icon: <Star size={18} color="#fff" />, label: 'Skills', color: '#10B981', route: '/(college_admin)/skill-admin' },
   ];
 
   const visibleLinks = showAllLinks ? quickLinks : quickLinks.slice(0, 8);

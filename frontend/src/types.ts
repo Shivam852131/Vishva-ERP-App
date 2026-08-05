@@ -511,6 +511,8 @@ export interface CareerDashboard {
   top_matches: CareerMatch[];
   skill_gaps: { skill_key: string; name: string; score: number; gap: number }[];
   pipeline: { stage: string; count: number }[];
+  trend_month?: number;
+  trend_peers?: number;
   stats: {
     applications: number; active_applications: number; offers: number;
     assessments_passed: number; assessments_taken: number;

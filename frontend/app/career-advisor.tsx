@@ -20,6 +20,8 @@ export default function CareerAdvisor() {
   const [selectedCareer, setSelectedCareer] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [skillRecs, setSkillRecs] = useState<any[]>([]);
+  const [overallReadiness, setOverallReadiness] = useState(0);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const { data: profile } = useFetch<any>('/skills/profile');
@@ -44,7 +46,10 @@ export default function CareerAdvisor() {
     setAnalyzing(true);
     try {
       const data = await api('/skills/career-recommendations');
-      setRecommendations(data.recommendations || data || []);
+      const matches = data.allMatches || data.topMatches || data.recommendations || [];
+      setRecommendations(Array.isArray(matches) ? matches : []);
+      setSkillRecs(data.skillRecommendations || []);
+      setOverallReadiness(data.overallReadiness || 0);
     } catch {}
     setStep('results');
     setAnalyzing(false);
@@ -117,18 +122,24 @@ export default function CareerAdvisor() {
                   <Compass size={32} color={theme.colors.brand} />
                   <Text style={{ fontWeight: '800', fontSize: 16, color: theme.colors.text }}>Top Career Matches</Text>
                   <Text style={{ fontSize: 12, color: theme.colors.muted }}>Based on your skills, interests & preferences</Text>
+                  {overallReadiness > 0 && (
+                    <View style={{ backgroundColor: theme.colors.brandTertiary, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6, marginTop: 4 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.brand }}>Overall Readiness: {overallReadiness}%</Text>
+                    </View>
+                  )}
                 </Card>
 
                 {careerResults.length === 0 ? (
                   <EmptyState title="No recommendations yet" sub="Complete your skill profile to get personalized career recommendations" />
                 ) : (
                   careerResults.map((career: any, i: number) => {
-                    const matchPct = career.match || career.match_percentage || Math.max(90 - i * 8, 50);
+                    const matchPct = career.matchScore || career.match || career.match_percentage || Math.max(90 - i * 8, 50);
                     const title = career.title || career.name || career.career || `Career ${i + 1}`;
-                    const salary = career.salary || career.salary_range || '';
+                    const salary = career.salaryRange || career.salary || career.salary_range || '';
                     const growth = career.growth || career.growth_rate || '';
-                    const requiredSkills = career.skills || career.required_skills || [];
+                    const requiredSkills = career.gaps?.filter((g: any) => g.gap > 0).map((g: any) => g.skillName) || career.skills || career.required_skills || [];
                     const education = career.education || '';
+                    const readiness = career.readiness || '';
 
                     return (
                       <Pressable key={career.id || career.key || i} onPress={() => setSelectedCareer(selectedCareer === title ? null : title)}>
@@ -184,7 +195,30 @@ export default function CareerAdvisor() {
                   })
                 )}
 
-                <GradientButton label="Retake Assessment" onPress={() => { setStep('assess'); setAnswers({}); setSelectedCareer(null); setRecommendations([]); }} />
+                {skillRecs.length > 0 && (
+                  <>
+                    <SectionTitle>Skill Gaps to Address</SectionTitle>
+                    {skillRecs.map((sr: any, i: number) => (
+                      <Card key={i} style={{ padding: 12, gap: 6 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.text }}>{sr.skill}</Text>
+                          <View style={{ backgroundColor: sr.priority === 'high' ? '#FEE2E2' : sr.priority === 'medium' ? '#FEF3C7' : '#DCFCE7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: sr.priority === 'high' ? '#EF4444' : sr.priority === 'medium' ? '#F59E0B' : '#10B981' }}>
+                              {sr.priority?.toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <Text style={{ fontSize: 11, color: theme.colors.muted }}>Current: {sr.currentScore}%</Text>
+                          <Text style={{ fontSize: 11, color: theme.colors.muted }}>Target: {sr.targetScore}%</Text>
+                          <Text style={{ fontSize: 11, color: '#EF4444', fontWeight: '600' }}>Gap: {sr.gap}%</Text>
+                        </View>
+                      </Card>
+                    ))}
+                  </>
+                )}
+
+                <GradientButton label="Retake Assessment" onPress={() => { setStep('assess'); setAnswers({}); setSelectedCareer(null); setRecommendations([]); setSkillRecs([]); setOverallReadiness(0); }} />
               </>
             )}
           </ScrollView>
