@@ -179,21 +179,34 @@ function generateFallbackEncoding(buffer) {
   if (width < 50 || height < 50) return null;
 
   const encoding = [];
-  const regions = [
-    { cx: 0.5, cy: 0.2 }, { cx: 0.35, cy: 0.35 }, { cx: 0.65, cy: 0.35 },
-    { cx: 0.5, cy: 0.48 }, { cx: 0.3, cy: 0.52 }, { cx: 0.7, cy: 0.52 },
-    { cx: 0.5, cy: 0.65 }, { cx: 0.5, cy: 0.78 }, { cx: 0.25, cy: 0.6 },
-    { cx: 0.75, cy: 0.6 }, { cx: 0.2, cy: 0.35 }, { cx: 0.8, cy: 0.35 },
-  ];
+  // Sample 32 regions in a grid pattern for better accuracy
+  const gridCols = 8;
+  const gridRows = 4;
+  for (let gy = 0; gy < gridRows; gy++) {
+    for (let gx = 0; gx < gridCols; gx++) {
+      const cx = (gx + 0.5) / gridCols;
+      const cy = (gy + 0.5) / gridRows;
+      const px = Math.min(Math.max(0, (cx * width) | 0), width - 1);
+      const py = Math.min(Math.max(0, (cy * height) | 0), height - 1);
+      const offset = (py * width + px) * 4;
+      if (offset + 2 < buffer.length) {
+        encoding.push(buffer[offset] / 255);
+        encoding.push(buffer[offset + 1] / 255);
+        encoding.push(buffer[offset + 2] / 255);
+      }
+    }
+  }
 
-  for (const r of regions) {
-    const px = Math.min(Math.max(0, (r.cx * width) | 0), width - 1);
-    const py = Math.min(Math.max(0, (r.cy * height) | 0), height - 1);
-    const offset = (py * width + px) * 4;
-    if (offset + 2 < buffer.length) {
-      encoding.push(buffer[offset] / 255);
-      encoding.push(buffer[offset + 1] / 255);
-      encoding.push(buffer[offset + 2] / 255);
+  // Add gradient features (horizontal and vertical)
+  for (let y = 0; y < gridRows; y++) {
+    for (let x = 0; x < gridCols - 1; x++) {
+      const idx1 = (y * gridCols + x) * 3;
+      const idx2 = (y * gridCols + x + 1) * 3;
+      if (idx2 + 2 < encoding.length) {
+        encoding.push(encoding[idx1] - encoding[idx2]);
+        encoding.push(encoding[idx1 + 1] - encoding[idx2 + 1]);
+        encoding.push(encoding[idx1 + 2] - encoding[idx2 + 2]);
+      }
     }
   }
 
@@ -202,6 +215,48 @@ function generateFallbackEncoding(buffer) {
 
   const norm = Math.sqrt(encoding.reduce((s, v) => s + v * v, 0)) || 1;
   return encoding.map(v => v / norm);
+}
+
+// ── Encode Face (for enrollment) ──
+
+async function encodeFace(selfieBase64) {
+  const buffer = Buffer.from(selfieBase64, 'base64');
+
+  // Try ML detection first
+  if (modelsLoaded && faceapi) {
+    try {
+      const { createCanvas, Image } = require('canvas');
+      const img = new Image();
+      img.src = buffer;
+      const canvas = createCanvas(img.width, img.height);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      const detections = await faceapi
+        .detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 }))
+        .withFaceLandmarks(true)
+        .withFaceDescriptors()
+        .withFaceExpressions();
+
+      if (detections.length === 1) {
+        const encoding = extractEncoding(detections[0]);
+        if (encoding) {
+          const liveness = detectLiveness(detections, buffer);
+          return { ok: true, encoding, liveness, ml: true };
+        }
+      }
+    } catch (err) {
+      console.warn('[faceVerify] ML encode error, using fallback:', err.message);
+    }
+  }
+
+  // Fallback: pixel-based encoding
+  const encoding = generateFallbackEncoding(buffer);
+  if (!encoding) {
+    return { ok: false, error: 'Could not generate face encoding' };
+  }
+  const liveness = detectLiveness(null, buffer);
+  return { ok: true, encoding, liveness, ml: false };
 }
 
 // ── Face Comparison ──
@@ -300,4 +355,4 @@ async function verifyFace(selfieBase64, enrolledProfile, prevFrameBase64 = null)
     encoding, liveness, comparison, isNewEnrollment: false, ml: usedML };
 }
 
-module.exports = { loadModels, detectLiveness, detectSpoofing, extractEncoding, compareFaces, verifyFace };
+module.exports = { loadModels, detectLiveness, detectSpoofing, extractEncoding, compareFaces, verifyFace, encodeFace };

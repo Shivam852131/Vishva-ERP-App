@@ -736,25 +736,22 @@ function createAttendanceRouter(io) {
     // Check existing profile
     const existing = await db.collection('face_profiles').findOne({ userId: oid(user._id), ...collegeFilter(req) });
 
-    // Run liveness check
-    const { detectLiveness } = require('../faceVerify');
-    const liveness = detectLiveness(selfie);
-    if (!liveness.isLive) {
-      return sendError(res, `Liveness check failed: ${liveness.reasons.join('; ')}`, 400);
-    }
-
-    // Generate encoding
-    const encoding = encodeFace(selfie);
-    if (!encoding) {
+    // Run full encode pipeline (ML or fallback + liveness)
+    const encodeResult = await encodeFace(selfie);
+    if (!encodeResult.ok) {
       return sendError(res, 'Could not detect face. Please ensure your face is clearly visible.', 400);
+    }
+    if (encodeResult.liveness && !encodeResult.liveness.isLive) {
+      return sendError(res, `Liveness check failed: ${encodeResult.liveness.reasons?.join('; ') || 'Motion required'}`, 400);
     }
 
     const faceDoc = {
       userId: oid(user._id),
-      encoding,
+      encoding: encodeResult.encoding,
       enrolledAt: new Date(),
       lastVerified: new Date(),
       verificationCount: 0,
+      livenessHistory: [],
       collegeId: oid(req.userCollegeId),
     };
 
@@ -768,7 +765,31 @@ function createAttendanceRouter(io) {
       ok: true,
       message: 'Face enrolled successfully',
       enrolled_at: faceDoc.enrolledAt,
+      ml_used: encodeResult.ml,
     });
+  });
+
+  router.post('/face/blink-report', requireRole('student'), async (req, res) => {
+    const user = await authUser(req);
+    if (!user) return sendError(res, 'Unauthorized.', 401);
+    const db = getDB();
+    const { eyeAspectRatio, frameIndex } = req.body;
+    if (eyeAspectRatio === undefined) return sendError(res, 'eyeAspectRatio is required.', 400);
+
+    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id), ...collegeFilter(req) });
+    if (!profile) return sendError(res, 'No face profile enrolled.', 400);
+
+    const history = Array.isArray(profile.livenessHistory) ? profile.livenessHistory : [];
+    history.push({ ear: Number(eyeAspectRatio), ts: Date.now(), fi: frameIndex || 0 });
+    // Keep last 60 entries (~2 seconds at 30fps)
+    if (history.length > 60) history.splice(0, history.length - 60);
+
+    await db.collection('face_profiles').updateOne(
+      { _id: profile._id, ...collegeFilter(req) },
+      { $set: { livenessHistory: history } }
+    );
+
+    res.json({ ok: true, history_length: history.length });
   });
 
   router.post('/face/verify', requireRole('student'), async (req, res) => {

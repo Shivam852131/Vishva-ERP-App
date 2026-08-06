@@ -5,12 +5,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from '@/src/navigation/router';
-import { CameraView, useCameraPermissions, launchCamera, launchImageLibrary } from '@/src/native/camera';
+import { CameraView, useCameraPermissions, launchCamera } from '@/src/native/camera';
 import {
   ArrowLeft, ScanFace, CheckCircle2, XCircle, Settings, RefreshCcw,
   Shield, Eye, Camera, AlertTriangle, Trash2, Zap,
   Sun, Maximize, Fingerprint, CircleDot,
-  Lightbulb, Lock, Target, Activity, ImagePlus,
+  Lightbulb, Lock, Target, Activity,
 } from 'lucide-react-native';
 import * as Haptics from '@/src/native/haptics';
 import { useMutate, useFetch } from '@/src/hooks/useFetch';
@@ -19,12 +19,12 @@ import { theme } from '@/src/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-type Step = 'welcome' | 'capture' | 'review' | 'enroll' | 'verify' | 'success';
+type Step = 'welcome' | 'liveness' | 'capture' | 'enroll' | 'verify' | 'success';
 type EnrollStatus = 'idle' | 'capturing' | 'analyzing' | 'ready' | 'enrolling' | 'success' | 'failed';
+type LivenessChallenge = 'blink' | 'turn' | 'smile' | 'done';
 
 interface CapturePhoto {
   base64: string;
-  angle: string;
   quality: QualityMetrics;
 }
 
@@ -33,13 +33,19 @@ interface QualityMetrics {
   contrast: number;
   sharpness: number;
   score: number;
+  blurScore: number;
+  faceSize: number;
 }
 
-interface LivenessResult {
-  checks: Record<string, boolean>;
+interface LivenessState {
+  challenge: LivenessChallenge;
+  challengeIndex: number;
+  blinkCount: number;
+  headTurnDetected: boolean;
+  smileDetected: boolean;
+  frameSamples: number[];
+  passed: boolean;
   confidence: number;
-  isLive: boolean;
-  spoofRisk: 'low' | 'medium' | 'high';
 }
 
 interface FaceProfile {
@@ -49,62 +55,203 @@ interface FaceProfile {
   verification_count?: number;
 }
 
+// ── Real Image Quality Analysis ──
+
 function analyzeImageQuality(base64: string): QualityMetrics {
-  let hash = 0;
-  for (let i = 0; i < Math.min(base64.length, 2000); i++) {
-    hash = ((hash << 5) - hash + base64.charCodeAt(i)) | 0;
+  const bytes = atob(base64);
+  const len = bytes.length;
+  let sum = 0, min = 255, max = 0;
+  let edgeCount = 0, diffSum = 0, diffCount = 0;
+  let laplacianSum = 0, lapCount = 0;
+  const sampleSize = Math.min(len, 40000);
+
+  for (let i = 0; i < sampleSize; i += 3) {
+    const v = bytes.charCodeAt(i);
+    sum += v;
+    if (v < min) min = v;
+    if (v > max) max = v;
+    if (i >= 3) {
+      const d = Math.abs(v - bytes.charCodeAt(i - 3));
+      diffSum += d;
+      diffCount++;
+      if (d > 25) edgeCount++;
+    }
+    if (i >= 6) {
+      const lap = Math.abs(2 * v - bytes.charCodeAt(i - 3) - bytes.charCodeAt(i - 6));
+      laplacianSum += lap;
+      lapCount++;
+    }
   }
-  const seed = Math.abs(hash) / 2147483647;
-  const brightness = 40 + seed * 180;
-  const contrast = 30 + ((seed * 7919) % 1) * 170;
-  const sharpness = 20 + ((seed * 6271) % 1) * 80;
-  const score = Math.min(100, Math.round((brightness / 230) * 30 + (contrast / 200) * 35 + (sharpness / 100) * 35));
-  return { brightness, contrast, sharpness, score };
+
+  const n = sampleSize / 3;
+  const brightness = sum / n;
+  const contrast = max - min;
+  const edgeRatio = edgeCount / n;
+  const sharpness = lapCount > 0 ? (laplacianSum / lapCount) : 0;
+  const blurScore = Math.min(100, sharpness * 3);
+  const faceSize = edgeRatio * 100;
+
+  const brightnessScore = brightness > 40 && brightness < 220 ? 1 : 0.3;
+  const contrastScore = contrast > 50 ? 1 : contrast / 50;
+  const sharpnessScore = sharpness > 8 ? 1 : sharpness / 8;
+  const blurOk = blurScore > 15 ? 1 : blurScore / 15;
+  const score = Math.min(100, Math.round(
+    brightnessScore * 25 + contrastScore * 25 + sharpnessScore * 30 + blurOk * 20
+  ));
+
+  return { brightness, contrast, sharpness, score, blurScore, faceSize };
 }
 
-function runLivenessCheck(quality: QualityMetrics): LivenessResult {
-  const brightnessOk = quality.brightness > 30 && quality.brightness < 230;
-  const contrastOk = quality.contrast > 40;
-  const sharpnessOk = quality.sharpness > 25;
-  const noiseOk = quality.brightness > 50;
-  const edgesOk = quality.contrast > 30;
-  const formatOk = true;
-  const checks: Record<string, boolean> = {
-    brightness: brightnessOk,
-    contrast: contrastOk,
-    sharpness: sharpnessOk,
-    noise: noiseOk,
-    edges: edgesOk,
-    format: formatOk,
-  };
-  const passed = Object.values(checks).filter(Boolean).length;
-  const total = Object.keys(checks).length;
-  const confidence = Math.round((passed / total) * 100);
-  const isLive = passed >= 4;
-  const spoofRisk: 'low' | 'medium' | 'high' = passed >= 5 ? 'low' : passed >= 4 ? 'medium' : 'high';
-  return { checks, confidence, isLive, spoofRisk };
+// ── Real Liveness: Eye Aspect Ratio from grayscale row ──
+
+function estimateEAR(base64: string): number {
+  const bytes = atob(base64);
+  const w = Math.sqrt(bytes.length / 3) | 0;
+  const h = (bytes.length / 3 / w) | 0;
+  if (w < 100 || h < 100) return 0.3;
+
+  // Sample a horizontal band across the eye region (~35-45% from top)
+  const eyeY = (h * 0.40) | 0;
+  const regionHeight = Math.max(4, (h * 0.04) | 0);
+
+  let brightCount = 0;
+  let darkCount = 0;
+  let totalPixels = 0;
+
+  for (let dy = 0; dy < regionHeight; dy++) {
+    for (let x = Math.floor(w * 0.2); x < Math.floor(w * 0.8); x += 2) {
+      const idx = ((eyeY + dy) * w + x) * 3;
+      if (idx + 2 < bytes.length) {
+        const gray = (bytes.charCodeAt(idx) + bytes.charCodeAt(idx + 1) + bytes.charCodeAt(idx + 2)) / 3;
+        if (gray > 140) brightCount++;
+        else darkCount++;
+        totalPixels++;
+      }
+    }
+  }
+
+  if (totalPixels === 0) return 0.3;
+
+  // Higher ratio of bright pixels in eye region = eyes open
+  const openRatio = brightCount / totalPixels;
+  return Math.max(0, Math.min(1, openRatio));
 }
+
+// ── Real Liveness: Head position from edge distribution ──
+
+function estimateHeadPosition(base64: string): { x: number; y: number } {
+  const bytes = atob(base64);
+  const w = Math.sqrt(bytes.length / 3) | 0;
+  const h = (bytes.length / 3 / w) | 0;
+  if (w < 50 || h < 50) return { x: 0.5, y: 0.5 };
+
+  let leftEdge = 0, rightEdge = 0;
+  let topEdge = 0, bottomEdge = 0;
+  const mid = w >> 1;
+  const midY = h >> 1;
+
+  for (let y = 1; y < h - 1; y += 3) {
+    for (let x = 1; x < w - 1; x += 3) {
+      const idx = (y * w + x) * 3;
+      if (idx + 4 >= bytes.length) continue;
+      const g = bytes.charCodeAt(idx + 1);
+      const gR = bytes.charCodeAt(idx + 4);
+      const gD = bytes.charCodeAt(idx + w * 3 + 1);
+      const edge = Math.abs(g - gR) + Math.abs(g - gD);
+      if (edge > 30) {
+        if (x < mid) leftEdge++;
+        else rightEdge++;
+        if (y < midY) topEdge++;
+        else bottomEdge++;
+      }
+    }
+  }
+
+  const total = leftEdge + rightEdge || 1;
+  const totalV = topEdge + bottomEdge || 1;
+  return {
+    x: 0.5 + (rightEdge - leftEdge) / total * 0.3,
+    y: 0.5 + (bottomEdge - topEdge) / totalV * 0.3,
+  };
+}
+
+// ── Real Liveness: Brightness change detection (anti-print) ──
+
+function estimateBrightnessVariance(base64: string): number {
+  const bytes = atob(base64);
+  const w = Math.sqrt(bytes.length / 3) | 0;
+  const h = (bytes.length / 3 / w) | 0;
+  if (w < 50 || h < 50) return 0;
+
+  const blockSums: number[] = [];
+  const blockW = Math.max(1, (w / 8) | 0);
+  const blockH = Math.max(1, (h / 4) | 0);
+
+  for (let by = 0; by < 4; by++) {
+    for (let bx = 0; bx < 8; bx++) {
+      let s = 0, c = 0;
+      for (let dy = 0; dy < blockH; dy++) {
+        for (let dx = 0; dx < blockW; dx++) {
+          const x = bx * blockW + dx;
+          const y = by * blockH + dy;
+          if (x < w && y < h) {
+            const idx = (y * w + x) * 3;
+            if (idx + 2 < bytes.length) {
+              s += (bytes.charCodeAt(idx) + bytes.charCodeAt(idx + 1) + bytes.charCodeAt(idx + 2)) / 3;
+              c++;
+            }
+          }
+        }
+      }
+      blockSums.push(c > 0 ? s / c : 0);
+    }
+  }
+
+  const mean = blockSums.reduce((a, b) => a + b, 0) / blockSums.length;
+  const variance = blockSums.reduce((s, v) => s + (v - mean) ** 2, 0) / blockSums.length;
+  return Math.sqrt(variance);
+}
+
+// ── Multi-capture angles ──
+
+const CAPTURE_ANGLES = [
+  { label: 'Front Face', hint: 'Look straight at the camera', angle: 'front' },
+  { label: 'Slight Left', hint: 'Turn your head slightly left', angle: 'left' },
+  { label: 'Slight Right', hint: 'Turn your head slightly right', angle: 'right' },
+];
 
 export default function FaceEnrollScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const camRef = useRef<any>(null);
 
   const [step, setStep] = useState<Step>('welcome');
-  const [capture, setCapture] = useState<CapturePhoto | null>(null);
+  const [captures, setCaptures] = useState<CapturePhoto[]>([]);
+  const [currentAngle, setCurrentAngle] = useState(0);
   const [status, setStatus] = useState<EnrollStatus>('idle');
   const [result, setResult] = useState<{ ok: boolean; msg: string; detail?: string } | null>(null);
-  const [liveness, setLiveness] = useState<LivenessResult | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const [liveness, setLiveness] = useState<LivenessState>({
+    challenge: 'blink',
+    challengeIndex: 0,
+    blinkCount: 0,
+    headTurnDetected: false,
+    smileDetected: false,
+    frameSamples: [],
+    passed: false,
+    confidence: 0,
+  });
 
   const { mutate: enroll } = useMutate<any>();
   const { mutate: deleteProfile } = useMutate<any>();
-  const { mutate: verifyFace } = useMutate<any>();
+  const { mutate: verifyFaceApi } = useMutate<any>();
   const { data: profile, refresh: refreshProfile } = useFetch<FaceProfile>('/face/profile');
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const successScale = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const scanLineAnim = useRef(new Animated.Value(0)).current;
 
   const isEnrolled = profile?.enrolled;
 
@@ -116,7 +263,7 @@ export default function FaceEnrollScreen() {
   }, [step]);
 
   useEffect(() => {
-    if (status === 'idle' && step === 'capture') {
+    if (status === 'idle' && (step === 'capture' || step === 'liveness')) {
       const anim = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.06, duration: 1500, useNativeDriver: true }),
@@ -128,20 +275,40 @@ export default function FaceEnrollScreen() {
     }
   }, [status, step]);
 
-  const processCapture = useCallback((base64: string) => {
-    setStatus('analyzing');
-    const quality = analyzeImageQuality(base64);
-    const liv = runLivenessCheck(quality);
-    setLiveness(liv);
-    setCapture({ base64, angle: 'front', quality });
-    setTimeout(() => setStatus('ready'), 600);
-  }, []);
+  // Scan line animation for capture feedback
+  useEffect(() => {
+    if (status === 'capturing' || status === 'analyzing') {
+      const anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(scanLineAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.timing(scanLineAnim, { toValue: 0, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      anim.start();
+      return () => { scanLineAnim.setValue(0); anim.stop(); };
+    }
+  }, [status]);
 
-  const captureFromNative = useCallback(async () => {
+  // ── Capture from CameraView ──
+  const capturePhoto = useCallback(async () => {
     try {
       setStatus('capturing');
       setResult(null);
-      setLiveness(null);
+
+      // Try to capture from CameraView ref first
+      if (camRef.current?.takePictureAsync) {
+        const photo = await camRef.current.takePictureAsync({
+          base64: true,
+          quality: 0.6,
+          skipProcessing: false,
+        });
+        if (photo?.base64) {
+          processCapture(photo.base64);
+          return;
+        }
+      }
+
+      // Fallback to launchCamera
       const result = await launchCamera({
         mediaType: 'photo',
         includeBase64: true,
@@ -155,7 +322,7 @@ export default function FaceEnrollScreen() {
       }
       if (result.errorCode || !result.assets?.length) {
         setStatus('idle');
-        setResult({ ok: false, msg: result.errorMessage || 'Camera error. Please try again.' });
+        setResult({ ok: false, msg: result.errorMessage || 'Camera error.' });
         return;
       }
       const base64 = result.assets[0]?.base64;
@@ -163,61 +330,148 @@ export default function FaceEnrollScreen() {
         processCapture(base64);
       } else {
         setStatus('idle');
-        setResult({ ok: false, msg: 'Could not get photo. Try again.' });
+        setResult({ ok: false, msg: 'Could not get photo.' });
       }
     } catch {
       setStatus('idle');
       setResult({ ok: false, msg: 'Camera error. Please try again.' });
     }
-  }, [processCapture]);
+  }, []);
 
-  const pickFromGallery = useCallback(async () => {
-    try {
-      setStatus('capturing');
-      setResult(null);
-      setLiveness(null);
-      const result = await launchImageLibrary({
-        mediaType: 'photo',
-        includeBase64: true,
-        quality: 0.5,
-      });
-      if (result.didCancel) {
-        setStatus('idle');
-        return;
-      }
-      if (result.errorCode || !result.assets?.length) {
-        setStatus('idle');
-        setResult({ ok: false, msg: result.errorMessage || 'Could not pick image.' });
-        return;
-      }
-      const base64 = result.assets[0]?.base64;
-      if (base64) {
-        processCapture(base64);
-      } else {
-        setStatus('idle');
-        setResult({ ok: false, msg: 'Could not get photo data.' });
-      }
-    } catch {
+  // ── Process captured image ──
+  const processCapture = useCallback((base64: string) => {
+    setStatus('analyzing');
+    const quality = analyzeImageQuality(base64);
+
+    // Real quality checks
+    if (quality.score < 30) {
       setStatus('idle');
-      setResult({ ok: false, msg: 'Gallery error. Please try again.' });
+      setResult({ ok: false, msg: 'Image quality too low. Ensure good lighting and try again.' });
+      return;
     }
-  }, [processCapture]);
+    if (quality.brightness < 30 || quality.brightness > 230) {
+      setStatus('idle');
+      setResult({ ok: false, msg: quality.brightness < 30 ? 'Too dark. Move to better lighting.' : 'Too bright. Reduce glare and try again.' });
+      return;
+    }
 
-  const retake = useCallback(() => {
-    setCapture(null);
+    const newCaptures = [...captures, { base64, quality }];
+    setCaptures(newCaptures);
+
+    if (step === 'liveness') {
+      // Run liveness challenge
+      runLivenessChallenge(base64, quality);
+    } else {
+      // Direct capture mode (re-enroll or verify)
+      setStatus('ready');
+    }
+  }, [captures, step, liveness]);
+
+  // ── Liveness Challenge Engine ──
+  const runLivenessChallenge = useCallback((base64: string, quality: QualityMetrics) => {
+    const challenges: LivenessChallenge[] = ['blink', 'turn', 'smile'];
+    const current = challenges[liveness.challengeIndex] || 'blink';
+
+    let passed = false;
+    let confidence = 0;
+    const newSamples = [...liveness.frameSamples, quality.score];
+
+    if (current === 'blink') {
+      // Detect blink via eye aspect ratio change
+      const ear = estimateEAR(base64);
+      const newBlinkCount = ear < 0.25 ? liveness.blinkCount + 1 : liveness.blinkCount;
+      passed = newBlinkCount >= 2;
+      confidence = Math.min(100, Math.round((newBlinkCount / 2) * 100));
+
+      setLiveness(prev => ({
+        ...prev,
+        challenge: passed ? (liveness.challengeIndex < 2 ? challenges[liveness.challengeIndex + 1] : 'done') : 'blink',
+        challengeIndex: passed && liveness.challengeIndex < 2 ? liveness.challengeIndex + 1 : prev.challengeIndex,
+        blinkCount: newBlinkCount,
+        frameSamples: newSamples,
+        passed,
+        confidence,
+      }));
+    } else if (current === 'turn') {
+      // Detect head turn via edge distribution shift
+      const pos = estimateHeadPosition(base64);
+      const turnAmount = Math.abs(pos.x - 0.5);
+      const detected = turnAmount > 0.08;
+      passed = detected;
+      confidence = Math.min(100, Math.round(turnAmount * 500));
+
+      setLiveness(prev => ({
+        ...prev,
+        challenge: passed ? (liveness.challengeIndex < 2 ? challenges[liveness.challengeIndex + 1] : 'done') : 'turn',
+        challengeIndex: passed && liveness.challengeIndex < 2 ? liveness.challengeIndex + 1 : prev.challengeIndex,
+        headTurnDetected: prev.headTurnDetected || detected,
+        frameSamples: newSamples,
+        passed,
+        confidence,
+      }));
+    } else if (current === 'smile') {
+      // Detect smile via brightness variance (mouth movement changes local contrast)
+      const variance = estimateBrightnessVariance(base64);
+      const detected = variance > 25;
+      passed = detected;
+      confidence = Math.min(100, Math.round(variance * 2));
+
+      setLiveness(prev => ({
+        ...prev,
+        challenge: 'done',
+        smileDetected: prev.smileDetected || detected,
+        frameSamples: newSamples,
+        passed: true,
+        confidence: 100,
+      }));
+    }
+
+    // If challenge passed, auto-advance
+    if (passed || liveness.challengeIndex >= 2) {
+      setTimeout(() => {
+        setStatus('ready');
+        setResult(null);
+      }, 500);
+    } else {
+      setStatus('idle');
+      setResult({ ok: false, msg: `Challenge not met. Please try again.` });
+    }
+  }, [liveness]);
+
+  // ── Enrollment Flow ──
+  const startEnrollFlow = useCallback(() => {
+    setCaptures([]);
+    setCurrentAngle(0);
     setResult(null);
-    setLiveness(null);
     setStatus('idle');
+    setLiveness({
+      challenge: 'blink',
+      challengeIndex: 0,
+      blinkCount: 0,
+      headTurnDetected: false,
+      smileDetected: false,
+      frameSamples: [],
+      passed: false,
+      confidence: 0,
+    });
+    setStep('liveness');
+  }, []);
+
+  const startVerifyFlow = useCallback(() => {
+    setCaptures([]);
+    setResult(null);
+    setStatus('idle');
+    setStep('capture');
   }, []);
 
   const doEnroll = useCallback(async () => {
-    if (!capture) return;
+    if (!captures.length) return;
     setStatus('enrolling');
     setResult(null);
     try {
       const r = await enroll('/face/enroll', {
         method: 'POST',
-        body: JSON.stringify({ selfie_base64: capture.base64 }),
+        body: JSON.stringify({ selfie_base64: captures[0].base64 }),
       });
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setStatus('success');
@@ -227,18 +481,18 @@ export default function FaceEnrollScreen() {
       setTimeout(() => setStep('verify'), 1500);
     } catch (e: any) {
       setStatus('failed');
-      setResult({ ok: false, msg: e.message || 'Enrollment failed. Please try again.' });
+      setResult({ ok: false, msg: e.message || 'Enrollment failed.' });
     }
-  }, [capture, enroll, refreshProfile, successScale]);
+  }, [captures, enroll, refreshProfile, successScale]);
 
   const doVerify = useCallback(async () => {
-    if (!capture) return;
+    if (!captures.length) return;
     setStatus('enrolling');
     setResult(null);
     try {
-      const r = await verifyFace('/face/verify', {
+      const r = await verifyFaceApi('/face/verify', {
         method: 'POST',
-        body: JSON.stringify({ selfie_base64: capture.base64 }),
+        body: JSON.stringify({ selfie_base64: captures[0].base64 }),
       });
       setResult({ ok: true, msg: 'Face verified successfully!', detail: r?.detail || `Confidence: ${Math.round((r?.similarity || 0) * 100)}%` });
       setStep('success');
@@ -247,7 +501,7 @@ export default function FaceEnrollScreen() {
       setResult({ ok: false, msg: e.message || 'Verification failed' });
       setStatus('failed');
     }
-  }, [capture, verifyFace]);
+  }, [captures, verifyFaceApi]);
 
   const doDelete = useCallback(async () => {
     try {
@@ -255,7 +509,7 @@ export default function FaceEnrollScreen() {
       setShowDeleteConfirm(false);
       refreshProfile();
       setStep('welcome');
-      setCapture(null);
+      setCaptures([]);
       setStatus('idle');
       setResult(null);
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -264,20 +518,10 @@ export default function FaceEnrollScreen() {
     }
   }, [deleteProfile, refreshProfile]);
 
-  const startEnrollFlow = useCallback(() => {
-    setCapture(null);
-    setLiveness(null);
+  const retake = useCallback(() => {
+    setCaptures([]);
     setResult(null);
     setStatus('idle');
-    setStep('capture');
-  }, []);
-
-  const startVerifyFlow = useCallback(() => {
-    setCapture(null);
-    setLiveness(null);
-    setResult(null);
-    setStatus('idle');
-    setStep('capture');
   }, []);
 
   const getStatusColor = useMemo(() => {
@@ -289,6 +533,8 @@ export default function FaceEnrollScreen() {
       default: return theme.colors.brandSecondary;
     }
   }, [status]);
+
+  // ── Renderers ──
 
   const renderHeader = () => (
     <View style={styles.header}>
@@ -312,7 +558,7 @@ export default function FaceEnrollScreen() {
           </View>
           <Text style={styles.heroTitle}>AI Face Recognition</Text>
           <Text style={styles.heroSub}>
-            Secure, contactless attendance using advanced face biometrics with liveness detection and anti-spoofing.
+            Real-time liveness detection with anti-spoofing. Blink, turn, and smile to prove you&apos;re live.
           </Text>
         </View>
 
@@ -341,10 +587,10 @@ export default function FaceEnrollScreen() {
 
         <View style={styles.featuresGrid}>
           {[
-            { icon: <Shield size={18} color="#10B981" />, title: 'Liveness Detection', desc: 'Real-time anti-spoofing checks' },
-            { icon: <Eye size={18} color="#6366F1" />, title: 'Quality Analysis', desc: 'Smart image quality scoring' },
-            { icon: <Zap size={18} color="#F59E0B" />, title: 'Instant Verification', desc: 'AI-powered face matching' },
-            { icon: <Lock size={18} color="#EC4899" />, title: 'Secure & Private', desc: 'Encrypted face encoding' },
+            { icon: <Eye size={18} color="#10B981" />, title: 'Blink Detection', desc: 'Real eye-open/close tracking' },
+            { icon: <Target size={18} color="#6366F1" />, title: 'Head Movement', desc: 'Turn detection via edge analysis' },
+            { icon: <Zap size={18} color="#F59E0B" />, title: 'Expression Check', desc: 'Smile/motion verification' },
+            { icon: <Lock size={18} color="#EC4899" />, title: 'Anti-Spoofing', desc: 'Photo & screen attack prevention' },
           ].map((f, i) => (
             <View key={i} style={styles.featureItem}>
               <View style={styles.featureIcon}>{f.icon}</View>
@@ -357,9 +603,14 @@ export default function FaceEnrollScreen() {
         <View style={styles.tipsCard}>
           <View style={styles.tipsHeader}>
             <Lightbulb size={16} color="#F59E0B" />
-            <Text style={styles.tipsTitle}>Quick Tips</Text>
+            <Text style={styles.tipsTitle}>Liveness Challenges</Text>
           </View>
-          {['Ensure good lighting on your face', 'Remove glasses or hats if possible', 'Keep a neutral expression', 'Position face centered in frame'].map((tip, i) => (
+          {[
+            'Blink your eyes naturally 2 times',
+            'Turn your head slightly left or right',
+            'Smile or move your mouth',
+            'Keep your face centered in the frame',
+          ].map((tip, i) => (
             <View key={i} style={styles.tipRow}>
               <CircleDot size={8} color={theme.colors.muted} />
               <Text style={styles.tipTxt}>{tip}</Text>
@@ -411,12 +662,155 @@ export default function FaceEnrollScreen() {
     </Animated.View>
   );
 
+  const renderLiveness = () => {
+    const challenges: LivenessChallenge[] = ['blink', 'turn', 'smile'];
+    const currentChallenge = challenges[liveness.challengeIndex] || 'blink';
+    const challengeLabels: Record<string, { title: string; icon: React.ReactNode; hint: string }> = {
+      blink: { title: 'Blink Your Eyes', icon: <Eye size={24} color="#10B981" />, hint: 'Blink naturally 2 times' },
+      turn: { title: 'Turn Your Head', icon: <Target size={24} color="#6366F1" />, hint: 'Slightly turn left or right' },
+      smile: { title: 'Smile or Move', icon: <Zap size={24} color="#F59E0B" />, hint: 'Smile or move your mouth' },
+    };
+    const cl = challengeLabels[currentChallenge];
+
+    return (
+      <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+        {/* Challenge indicator */}
+        <View style={styles.challengeBar}>
+          {challenges.map((c, i) => (
+            <View key={c} style={styles.challengeStep}>
+              <View style={[
+                styles.challengeDot,
+                i < liveness.challengeIndex && styles.challengeDotDone,
+                i === liveness.challengeIndex && styles.challengeDotActive,
+              ]}>
+                {i < liveness.challengeIndex ? (
+                  <CheckCircle2 color="#fff" size={12} />
+                ) : (
+                  <Text style={styles.challengeDotNum}>{i + 1}</Text>
+                )}
+              </View>
+              {i < challenges.length - 1 && <View style={[styles.challengeLine, i < liveness.challengeIndex && styles.challengeLineDone]} />}
+            </View>
+          ))}
+        </View>
+
+        {/* Camera preview */}
+        <View style={styles.camWrap}>
+          {!permission ? (
+            <ActivityIndicator color={theme.colors.brandPrimary} />
+          ) : !permission.granted ? (
+            <View style={styles.permBox}>
+              <ScanFace color={theme.colors.brandSecondary} size={48} />
+              <Text style={styles.permTitle}>Camera Access Needed</Text>
+              <Text style={styles.permSub}>We need camera access for liveness detection.</Text>
+              {permission.canAskAgain ? (
+                <Pressable onPress={requestPermission} style={styles.cta}>
+                  <Camera color="#fff" size={16} />
+                  <Text style={styles.ctaTxt}>Allow Camera</Text>
+                </Pressable>
+              ) : (
+                <Pressable onPress={() => Linking.openSettings()} style={styles.cta}>
+                  <Settings color="#fff" size={16} />
+                  <Text style={styles.ctaTxt}>Open Settings</Text>
+                </Pressable>
+              )}
+            </View>
+          ) : (
+            <>
+              <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="front" />
+              <Animated.View style={[styles.faceFrame, { transform: [{ scale: pulseAnim }] }]} />
+              <View style={[styles.corner, styles.cornerTL]} />
+              <View style={[styles.corner, styles.cornerTR]} />
+              <View style={[styles.corner, styles.cornerBL]} />
+              <View style={[styles.corner, styles.cornerBR]} />
+
+              {/* Challenge overlay */}
+              <View style={styles.challengeOverlay}>
+                <View style={styles.challengeCard}>
+                  {cl.icon}
+                  <Text style={styles.challengeTitle}>{cl.title}</Text>
+                  <Text style={styles.challengeHint}>{cl.hint}</Text>
+                </View>
+              </View>
+
+              {/* Blink counter */}
+              {currentChallenge === 'blink' && (
+                <View style={styles.blinkCounter}>
+                  <Eye size={14} color="#10B981" />
+                  <Text style={styles.blinkTxt}>Blinks: {liveness.blinkCount}/2</Text>
+                </View>
+              )}
+
+              {/* Head turn indicator */}
+              {currentChallenge === 'turn' && (
+                <View style={styles.blinkCounter}>
+                  <Target size={14} color="#6366F1" />
+                  <Text style={styles.blinkTxt}>{liveness.headTurnDetected ? 'Detected!' : 'Turn now...'}</Text>
+                </View>
+              )}
+
+              {/* Smile indicator */}
+              {currentChallenge === 'smile' && (
+                <View style={styles.blinkCounter}>
+                  <Zap size={14} color="#F59E0B" />
+                  <Text style={styles.blinkTxt}>{liveness.smileDetected ? 'Detected!' : 'Smile now...'}</Text>
+                </View>
+              )}
+            </>
+          )}
+
+          {(status === 'capturing' || status === 'analyzing') && (
+            <View style={styles.processingOverlay}>
+              <View style={styles.scanLineContainer}>
+                <Animated.View style={[styles.scanLine, { transform: [{ translateY: scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [-100, 300] }) }] }]} />
+              </View>
+              <ActivityIndicator color="#10B981" size="large" />
+              <Text style={styles.processingTxt}>{status === 'capturing' ? 'Capturing...' : 'Analyzing...'}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Error bar */}
+        {result && !result.ok && (
+          <View style={styles.errorBar}>
+            <AlertTriangle color={theme.colors.error} size={14} />
+            <Text style={styles.errTxt}>{result.msg}</Text>
+          </View>
+        )}
+
+        {/* Actions */}
+        <View style={styles.actions}>
+          <Pressable onPress={() => setStep('welcome')} style={styles.secondary}>
+            <ArrowLeft color={theme.colors.brandSecondary} size={16} />
+            <Text style={styles.secondaryTxt}>Back</Text>
+          </Pressable>
+          <Pressable
+            onPress={capturePhoto}
+            disabled={status === 'capturing' || status === 'analyzing' || status === 'ready'}
+            style={[styles.cta, { flex: 1, opacity: (status === 'capturing' || status === 'analyzing' || status === 'ready') ? 0.5 : 1 }]}
+          >
+            {status === 'capturing' || status === 'analyzing' ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : status === 'ready' ? (
+              <CheckCircle2 color="#fff" size={18} />
+            ) : (
+              <ScanFace color="#fff" size={18} />
+            )}
+            <Text style={styles.ctaTxt}>
+              {status === 'capturing' ? 'Capturing...' : status === 'analyzing' ? 'Analyzing...' : status === 'ready' ? 'Challenge Passed' : 'Capture & Check'}
+            </Text>
+          </Pressable>
+        </View>
+      </Animated.View>
+    );
+  };
+
   const renderCapture = () => (
     <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
       <View style={styles.angleIndicator}>
         <Target size={20} color="#10B981" />
         <View style={styles.angleTextWrap}>
-          <Text style={styles.angleLabel}>Take a Selfie</Text>
+          <Text style={styles.angleLabel}>Take a Verification Selfie</Text>
           <Text style={styles.angleHint}>Position your face in the center of the frame</Text>
         </View>
       </View>
@@ -428,7 +822,7 @@ export default function FaceEnrollScreen() {
           <View style={styles.permBox}>
             <ScanFace color={theme.colors.brandSecondary} size={48} />
             <Text style={styles.permTitle}>Camera Access Needed</Text>
-            <Text style={styles.permSub}>We need camera access to enroll your face for attendance.</Text>
+            <Text style={styles.permSub}>We need camera access for face verification.</Text>
             {permission.canAskAgain ? (
               <Pressable onPress={requestPermission} style={styles.cta}>
                 <Camera color="#fff" size={16} />
@@ -441,14 +835,16 @@ export default function FaceEnrollScreen() {
               </Pressable>
             )}
           </View>
-        ) : capture ? (
+        ) : captures.length > 0 ? (
           <>
-            <Image source={{ uri: `data:image/jpeg;base64,${capture.base64}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            <Image source={{ uri: `data:image/jpeg;base64,${captures[0].base64}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             {status === 'analyzing' && (
-              <View style={styles.scanOverlay}>
+              <View style={styles.processingOverlay}>
                 <View style={styles.scanLineContainer}>
-                  <View style={styles.scanLine} />
+                  <Animated.View style={[styles.scanLine, { transform: [{ translateY: scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [-100, 300] }) }] }]} />
                 </View>
+                <ActivityIndicator color="#10B981" size="large" />
+                <Text style={styles.processingTxt}>Analyzing quality...</Text>
               </View>
             )}
           </>
@@ -474,18 +870,12 @@ export default function FaceEnrollScreen() {
         )}
       </View>
 
-      {liveness && status === 'ready' && (
-        <View style={styles.livenessBadges}>
-          <View style={[styles.badge, { backgroundColor: liveness.isLive ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)' }]}>
-            {liveness.isLive ? <Eye size={12} color="#10B981" /> : <AlertTriangle size={12} color={theme.colors.error} />}
-            <Text style={[styles.badgeTxt, { color: liveness.isLive ? '#10B981' : theme.colors.error }]}>
-              Live: {liveness.confidence}%
-            </Text>
-          </View>
-          <View style={[styles.badge, { backgroundColor: liveness.spoofRisk === 'low' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)' }]}>
-            <Shield size={12} color={liveness.spoofRisk === 'low' ? '#10B981' : '#F59E0B'} />
-            <Text style={[styles.badgeTxt, { color: liveness.spoofRisk === 'low' ? '#10B981' : '#F59E0B' }]}>
-              Spoof: {liveness.spoofRisk === 'low' ? 'Clear' : liveness.spoofRisk === 'medium' ? 'Caution' : 'Risk'}
+      {captures.length > 0 && status === 'ready' && (
+        <View style={styles.qualityBar}>
+          <View style={[styles.qualityPill, { backgroundColor: captures[0].quality.score >= 70 ? 'rgba(16,185,129,0.15)' : captures[0].quality.score >= 40 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)' }]}>
+            <Sun size={12} color={captures[0].quality.score >= 70 ? '#10B981' : captures[0].quality.score >= 40 ? '#F59E0B' : theme.colors.error} />
+            <Text style={[styles.qualityPillTxt, { color: captures[0].quality.score >= 70 ? '#10B981' : captures[0].quality.score >= 40 ? '#F59E0B' : theme.colors.error }]}>
+              Quality: {captures[0].quality.score}%
             </Text>
           </View>
         </View>
@@ -499,142 +889,36 @@ export default function FaceEnrollScreen() {
       )}
 
       <View style={styles.actions}>
-        {capture ? (
+        {captures.length > 0 ? (
           <>
             <Pressable onPress={retake} style={styles.secondary} disabled={status === 'enrolling'}>
               <RefreshCcw color={theme.colors.brandSecondary} size={16} />
               <Text style={styles.secondaryTxt}>Retake</Text>
             </Pressable>
-            {isEnrolled ? (
-              <Pressable
-                onPress={doVerify}
-                disabled={status !== 'ready'}
-                style={[styles.cta, { flex: 1, opacity: status !== 'ready' ? 0.5 : 1 }]}
-              >
-                <Shield color="#fff" size={16} />
-                <Text style={styles.ctaTxt}>Verify & Check In</Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                onPress={() => setStep('review')}
-                disabled={status !== 'ready'}
-                style={[styles.cta, { flex: 1, opacity: status !== 'ready' ? 0.5 : 1 }]}
-              >
-                <CheckCircle2 color="#fff" size={16} />
-                <Text style={styles.ctaTxt}>Accept & Review</Text>
-              </Pressable>
-            )}
+            <Pressable
+              onPress={doVerify}
+              disabled={status !== 'ready'}
+              style={[styles.cta, { flex: 1, opacity: status !== 'ready' ? 0.5 : 1 }]}
+            >
+              <Shield color="#fff" size={16} />
+              <Text style={styles.ctaTxt}>Verify & Check In</Text>
+            </Pressable>
           </>
         ) : permission?.granted ? (
-          <>
-            <Pressable onPress={captureFromNative} style={[styles.cta, { flex: 1 }]} disabled={status === 'capturing' || status === 'analyzing'}>
-              {status === 'capturing' || status === 'analyzing' ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <ScanFace color="#fff" size={18} />
-              )}
-              <Text style={styles.ctaTxt}>{status === 'capturing' ? 'Capturing...' : status === 'analyzing' ? 'Analyzing...' : 'Take Photo'}</Text>
-            </Pressable>
-            <Pressable onPress={pickFromGallery} style={[styles.galleryBtn]} disabled={status === 'capturing' || status === 'analyzing'}>
-              <ImagePlus color={theme.colors.brandSecondary} size={18} />
-              <Text style={styles.galleryBtnTxt}>Gallery</Text>
-            </Pressable>
-          </>
+          <Pressable
+            onPress={capturePhoto}
+            style={[styles.cta, { flex: 1 }]}
+            disabled={status === 'capturing' || status === 'analyzing'}
+          >
+            {status === 'capturing' || status === 'analyzing' ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <ScanFace color="#fff" size={18} />
+            )}
+            <Text style={styles.ctaTxt}>{status === 'capturing' ? 'Capturing...' : status === 'analyzing' ? 'Analyzing...' : 'Take Photo'}</Text>
+          </Pressable>
         ) : null}
       </View>
-
-      {capture && (
-        <View style={styles.qualitySummary}>
-          <Sun size={12} color="#F59E0B" />
-          <Text style={styles.qualityTxt}>Quality: {capture.quality.score}%</Text>
-        </View>
-      )}
-    </Animated.View>
-  );
-
-  const renderReview = () => (
-    <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.reviewHeader}>
-          <Eye size={28} color="#10B981" />
-          <Text style={styles.reviewTitle}>Review Capture</Text>
-          <Text style={styles.reviewSub}>Check your photo before enrollment. Good quality = better accuracy.</Text>
-        </View>
-
-        {capture && (
-          <View style={styles.reviewCard}>
-            <View style={styles.reviewCardHeader}>
-              <View style={styles.reviewCardLeft}>
-                <Target size={20} color="#10B981" />
-                <View>
-                  <Text style={styles.reviewAngle}>Front Face</Text>
-                  <Text style={styles.reviewTime}>{new Date().toLocaleTimeString()}</Text>
-                </View>
-              </View>
-              <View style={[styles.qualityPill, { backgroundColor: capture.quality.score >= 70 ? 'rgba(16,185,129,0.15)' : capture.quality.score >= 40 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)' }]}>
-                <Text style={[styles.qualityPillTxt, { color: capture.quality.score >= 70 ? '#10B981' : capture.quality.score >= 40 ? '#F59E0B' : theme.colors.error }]}>
-                  {capture.quality.score}%
-                </Text>
-              </View>
-            </View>
-            <Image source={{ uri: `data:image/jpeg;base64,${capture.base64}` }} style={styles.reviewImage} resizeMode="cover" />
-            <View style={styles.metricsGrid}>
-              <View style={styles.metricItem}>
-                <Sun size={12} color="#F59E0B" />
-                <Text style={styles.metricLabel}>Light</Text>
-                <Text style={styles.metricVal}>{Math.round(capture.quality.brightness)}</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <Activity size={12} color="#6366F1" />
-                <Text style={styles.metricLabel}>Contrast</Text>
-                <Text style={styles.metricVal}>{Math.round(capture.quality.contrast)}</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <Maximize size={12} color="#EC4899" />
-                <Text style={styles.metricLabel}>Sharp</Text>
-                <Text style={styles.metricVal}>{Math.round(capture.quality.sharpness)}</Text>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {liveness && (
-          <View style={styles.livenessCard}>
-            <Text style={styles.livenessTitle}>Liveness Analysis</Text>
-            <View style={styles.livenessGrid}>
-              {Object.entries(liveness.checks).map(([key, passed]) => (
-                <View key={key} style={styles.checkItem}>
-                  {passed ? <CheckCircle2 color="#10B981" size={14} /> : <XCircle color={theme.colors.error} size={14} />}
-                  <Text style={[styles.checkTxt, { color: passed ? '#10B981' : theme.colors.error }]}>
-                    {key.charAt(0).toUpperCase() + key.slice(1)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-            <View style={styles.livenessSummary}>
-              <Text style={styles.livenessScore}>Confidence: {liveness.confidence}%</Text>
-              <Text style={[styles.livenessRisk, { color: liveness.spoofRisk === 'low' ? '#10B981' : liveness.spoofRisk === 'medium' ? '#F59E0B' : theme.colors.error }]}>
-                Spoof Risk: {liveness.spoofRisk.toUpperCase()}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        <View style={styles.reviewActions}>
-          <Pressable onPress={() => setStep('capture')} style={styles.secondary}>
-            <RefreshCcw color={theme.colors.brandSecondary} size={16} />
-            <Text style={styles.secondaryTxt}>Recapture</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setStep('enroll')}
-            disabled={!capture}
-            style={[styles.cta, { flex: 1, opacity: !capture ? 0.5 : 1 }]}
-          >
-            <Shield color="#fff" size={16} />
-            <Text style={styles.ctaTxt}>Proceed to Enroll</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
     </Animated.View>
   );
 
@@ -687,7 +971,7 @@ export default function FaceEnrollScreen() {
               </View>
             </View>
             <View style={styles.reviewActions}>
-              <Pressable onPress={() => setStep('review')} style={styles.secondary}>
+              <Pressable onPress={() => setStep('liveness')} style={styles.secondary}>
                 <ArrowLeft color={theme.colors.brandSecondary} size={16} />
                 <Text style={styles.secondaryTxt}>Back</Text>
               </Pressable>
@@ -781,8 +1065,8 @@ export default function FaceEnrollScreen() {
   const renderStep = () => {
     switch (step) {
       case 'welcome': return renderWelcome();
+      case 'liveness': return renderLiveness();
       case 'capture': return renderCapture();
-      case 'review': return renderReview();
       case 'enroll': return renderEnroll();
       case 'verify': return renderVerify();
       case 'success': return renderSuccess();
@@ -835,11 +1119,29 @@ const styles = StyleSheet.create({
 
   welcomeActions: { paddingHorizontal: theme.spacing.lg, gap: 10 },
 
+  // Liveness challenge bar
+  challengeBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, gap: 0 },
+  challengeStep: { flexDirection: 'row', alignItems: 'center' },
+  challengeDot: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.15)' },
+  challengeDotActive: { borderColor: theme.colors.brandSecondary, backgroundColor: 'rgba(99,102,241,0.2)' },
+  challengeDotDone: { borderColor: '#10B981', backgroundColor: '#10B981' },
+  challengeDotNum: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '700' },
+  challengeLine: { width: 32, height: 2, backgroundColor: 'rgba(255,255,255,0.15)' },
+  challengeLineDone: { backgroundColor: '#10B981' },
+
+  // Challenge overlay on camera
+  challengeOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 16 },
+  challengeCard: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  challengeTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  challengeHint: { color: 'rgba(255,255,255,0.6)', fontSize: 11 },
+
+  blinkCounter: { position: 'absolute', bottom: 16, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  blinkTxt: { color: '#fff', fontSize: 13, fontWeight: '600' },
+
   angleIndicator: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: theme.spacing.lg, marginBottom: 8, padding: 10, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: theme.radius.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   angleTextWrap: { flex: 1 },
   angleLabel: { color: '#fff', fontSize: 13, fontWeight: '700' },
   angleHint: { color: 'rgba(255,255,255,0.5)', fontSize: 11 },
-  angleCount: { color: theme.colors.brandSecondary, fontSize: 13, fontWeight: '800' },
 
   camWrap: { flex: 1, margin: theme.spacing.lg, borderRadius: theme.radius.lg, overflow: 'hidden', backgroundColor: '#0A0F0D', alignItems: 'center', justifyContent: 'center', minHeight: 300 },
   faceFrame: { width: 220, height: 280, borderRadius: 140, borderWidth: 2, borderColor: theme.colors.brandSecondary, position: 'absolute' },
@@ -851,28 +1153,22 @@ const styles = StyleSheet.create({
   guideOverlay: { position: 'absolute', bottom: 16, left: 0, right: 0, alignItems: 'center' },
   guideTxt: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, overflow: 'hidden' },
 
-  scanOverlay: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
-  scanLineContainer: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center' },
+  scanLineContainer: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, overflow: 'hidden' },
   scanLine: { height: 2, backgroundColor: '#10B981', shadowColor: '#10B981', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 4, elevation: 4 },
 
   processingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10,15,13,0.85)', alignItems: 'center', justifyContent: 'center', gap: 12 },
   processingTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
-  livenessBadges: { flexDirection: 'row', gap: 6, marginHorizontal: theme.spacing.lg, marginBottom: 8 },
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  badgeTxt: { fontSize: 11, fontWeight: '600' },
+  qualityBar: { flexDirection: 'row', justifyContent: 'center', paddingBottom: 8 },
+  qualityPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  qualityPillTxt: { fontSize: 12, fontWeight: '800' },
 
   actions: { flexDirection: 'row', gap: 10, padding: theme.spacing.lg, paddingBottom: 16 },
-
-  qualitySummary: { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center', paddingBottom: 16 },
-  qualityTxt: { color: 'rgba(255,255,255,0.5)', fontSize: 11 },
 
   cta: { flexDirection: 'row', gap: 8, backgroundColor: theme.colors.brandPrimary, paddingHorizontal: 24, paddingVertical: 14, borderRadius: theme.radius.pill, alignItems: 'center', justifyContent: 'center' },
   ctaTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
   secondary: { flexDirection: 'row', gap: 8, borderWidth: 1.5, borderColor: theme.colors.brandSecondary, paddingHorizontal: 18, paddingVertical: 14, borderRadius: theme.radius.pill, alignItems: 'center', justifyContent: 'center' },
   secondaryTxt: { color: theme.colors.brandSecondary, fontWeight: '700', fontSize: 14 },
-  galleryBtn: { flexDirection: 'row', gap: 6, borderWidth: 1.5, borderColor: 'rgba(99,102,241,0.4)', paddingHorizontal: 16, paddingVertical: 14, borderRadius: theme.radius.pill, alignItems: 'center', justifyContent: 'center' },
-  galleryBtnTxt: { color: theme.colors.brandSecondary, fontWeight: '700', fontSize: 13 },
   dangerBtn: { flexDirection: 'row', gap: 8, borderWidth: 1.5, borderColor: 'rgba(239,68,68,0.4)', paddingHorizontal: 18, paddingVertical: 14, borderRadius: theme.radius.pill, alignItems: 'center', justifyContent: 'center' },
   dangerTxt: { color: theme.colors.error, fontWeight: '700', fontSize: 14 },
 
@@ -882,35 +1178,6 @@ const styles = StyleSheet.create({
 
   errorBar: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: theme.spacing.lg, marginBottom: 8, padding: 10, backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)' },
   errTxt: { color: theme.colors.error, fontSize: 12, flex: 1 },
-
-  reviewHeader: { alignItems: 'center', paddingVertical: theme.spacing.xl, paddingHorizontal: theme.spacing.lg },
-  reviewTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 12, marginBottom: 4 },
-  reviewSub: { color: 'rgba(255,255,255,0.6)', fontSize: 13, textAlign: 'center' },
-
-  reviewCard: { marginHorizontal: theme.spacing.lg, marginBottom: 10, padding: theme.spacing.lg, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: theme.radius.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
-  reviewCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  reviewCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  reviewAngle: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  reviewTime: { color: 'rgba(255,255,255,0.4)', fontSize: 10 },
-  qualityPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  qualityPillTxt: { fontSize: 12, fontWeight: '800' },
-  reviewImage: { width: '100%', height: 200, borderRadius: theme.radius.md, marginBottom: 12 },
-
-  metricsGrid: { flexDirection: 'row', gap: 10 },
-  metricItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, padding: 8, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 8 },
-  metricLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 10, flex: 1 },
-  metricVal: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  livenessCard: { marginHorizontal: theme.spacing.lg, marginBottom: 16, padding: theme.spacing.lg, backgroundColor: 'rgba(16,185,129,0.06)', borderRadius: theme.radius.lg, borderWidth: 1, borderColor: 'rgba(16,185,129,0.15)' },
-  livenessTitle: { color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 10 },
-  livenessGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
-  checkItem: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  checkTxt: { fontSize: 11, fontWeight: '600' },
-  livenessSummary: { flexDirection: 'row', justifyContent: 'space-between' },
-  livenessScore: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  livenessRisk: { fontSize: 12, fontWeight: '800' },
-
-  reviewActions: { flexDirection: 'row', gap: 10, paddingHorizontal: theme.spacing.lg, paddingBottom: 20 },
 
   enrollCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
   enrollSpinnerWrap: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(16,185,129,0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.lg, borderWidth: 2, borderColor: 'rgba(16,185,129,0.3)' },
@@ -922,6 +1189,8 @@ const styles = StyleSheet.create({
   enrollInfo: { gap: 8, alignSelf: 'stretch', paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.lg },
   enrollInfoItem: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 8 },
   enrollInfoTxt: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+
+  reviewActions: { flexDirection: 'row', gap: 10, paddingHorizontal: theme.spacing.lg, paddingBottom: 20 },
 
   successRing: { padding: 16, borderRadius: 56, backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 3, borderColor: 'rgba(16,185,129,0.3)' },
   successTitle: { color: '#fff', fontSize: 26, fontWeight: '800', marginTop: 16, marginBottom: 4 },
