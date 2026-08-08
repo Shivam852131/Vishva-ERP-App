@@ -7,9 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from '@/src/navigation/router';
 import { CameraView, useCameraPermissions, launchCamera } from '@/src/native/camera';
 import {
-  ArrowLeft, ScanFace, CheckCircle2, XCircle, Settings, RefreshCcw,
+  ArrowLeft, ScanFace, CheckCircle2, Settings, RefreshCcw,
   Shield, Eye, Camera, AlertTriangle, Trash2, Zap,
-  Sun, Maximize, Fingerprint, CircleDot,
+  Sun, Fingerprint, CircleDot,
   Lightbulb, Lock, Target, Activity,
 } from 'lucide-react-native';
 import * as Haptics from '@/src/native/haptics';

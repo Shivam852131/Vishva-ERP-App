@@ -147,7 +147,7 @@ function createAttendanceRouter(io) {
       })
     );
     const userId = String(user._id);
-    const faceProfile = await db.collection('face_profiles').findOne({ userId: userId, ...collegeFilter(req) });
+    const faceProfile = await db.collection('face_profiles').findOne({ $or: [{ userId: oid(user._id) }, { userId }], ...collegeFilter(req) });
     res.json({ sessions: enriched, face_enrolled: !!faceProfile });
   });
 
