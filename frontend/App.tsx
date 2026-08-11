@@ -107,6 +107,7 @@ import SkillProfileScreen from './app/skill-profile';
 import CareerDashboardScreen from './app/career-dashboard';
 import FaceEnrollScreen from './app/face-enroll';
 import EditProfileScreen from './app/edit-profile';
+import ScreenshotTestScreen from './app/screenshot-test';
 import { ErrorBoundary } from './src/ErrorBoundary';
 import { navigationRef } from './src/navigation/navigation-ref';
 import { AuthProvider } from './src/providers/AuthContext';
@@ -391,6 +392,7 @@ export default function App() {
                   <RootStack.Screen name="/career-dashboard" component={CareerDashboardScreen} />
                   <RootStack.Screen name="/face-enroll" component={FaceEnrollScreen} />
                   <RootStack.Screen name="/edit-profile" component={EditProfileScreen} />
+                  <RootStack.Screen name="/__screenshots" component={ScreenshotTestScreen} options={{ headerShown: false }} />
                 </RootStack.Navigator>
               </NavigationContainer>
             </BottomSheetModalProvider>

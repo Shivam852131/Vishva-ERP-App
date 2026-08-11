@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
@@ -6,7 +6,7 @@ import { router } from '@/src/navigation/router';
 import {
   LogOut, Award, Calendar, Bell, Users, BookOpen,
   Library, Bus, Home, MessageSquare, ChevronRight, IdCard,
-  ScanFace, FileText, Pencil,
+  ScanFace, FileText, Pencil, Camera,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { theme } from '@/src/theme';
@@ -15,10 +15,20 @@ import { ErrorBoundary } from '@/src/ErrorBoundary';
 
 export default function Profile() {
   const { user: u, logout: doLogout } = useAuth();
+  const [tapCount, setTapCount] = useState(0);
 
   const logout = async () => {
     await doLogout();
     router.replace('/login');
+  };
+
+  const handleVersionTap = () => {
+    const next = tapCount + 1;
+    setTapCount(next);
+    if (next >= 5) {
+      setTapCount(0);
+      router.push('/__screenshots' as any);
+    }
   };
 
   const links = [
@@ -124,6 +134,10 @@ export default function Profile() {
             >
               <LogOut color={theme.colors.error} size={18} />
               <Text style={styles.logoutTxt}>Log Out</Text>
+            </Pressable>
+
+            <Pressable onPress={handleVersionTap} style={{ alignItems: 'center', marginTop: 16, padding: 8 }}>
+              <Text style={{ color: theme.colors.muted, fontSize: 10 }}>v1.0.0</Text>
             </Pressable>
           </View>
         </ScrollView>
