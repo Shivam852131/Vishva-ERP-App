@@ -23,6 +23,7 @@ import {
   Library,
   BarChart3,
   FileText,
+  Share,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch } from '@/src/hooks/useFetch';
@@ -273,6 +274,12 @@ export default function FacultyDashboard() {
                 label: 'Live Classes',
                 to: '/live-classes',
                 color: '#DC2626',
+              },
+              {
+                icon: <Share size={20} color="#fff" />,
+                label: 'Local Share',
+                to: '/localshare',
+                color: '#F59E0B',
               },
             ].map((a) => (
               <Pressable

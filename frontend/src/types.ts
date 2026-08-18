@@ -528,3 +528,68 @@ export interface CareerDashboard {
   }[];
   recent_activity: { type: string; title: string; at: string; status: string }[];
 }
+
+export interface LocalShareFile {
+  file_id: string;
+  name: string;
+  size: number;
+  type: string;
+  chunk_count?: number;
+}
+
+export interface LocalShareSession {
+  id: string;
+  session_id: string;
+  share_code: string;
+  title: string;
+  description?: string;
+  teacher_id: string;
+  teacher_name: string;
+  files: LocalShareFile[];
+  status: 'active' | 'ended';
+  max_participants: number;
+  participant_count: number;
+  college_id?: string;
+  created_at: string;
+  expires_at: string;
+  ended_at?: string;
+}
+
+export interface LocalShareParticipant {
+  id: string;
+  session_id: string;
+  student_id: string;
+  student_name: string;
+  joined_at: string;
+  connection_status: string;
+  files_received: string[];
+  last_seen: string;
+}
+
+export interface LocalShareTransfer {
+  name: string;
+  size: number;
+  type: string;
+  status: 'sending' | 'receiving' | 'completed' | 'failed';
+  progress: number;
+  sent?: number;
+  received?: number;
+  totalChunks?: number;
+  error?: string;
+}
+
+export interface LocalShareRTCPeer {
+  type: 'offer' | 'answer' | 'ice-candidate' | 'dc-open' | 'dc-closed' | 'connection-state' | 'file-start' | 'file-chunk' | 'file-end' | 'file-request' | 'bridge-ready' | 'initialized' | 'disconnected';
+  sdp?: any;
+  candidate?: any;
+  state?: string;
+  fileId?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  totalChunks?: number;
+  index?: number;
+  total?: number;
+  data?: string;
+  error?: string;
+}

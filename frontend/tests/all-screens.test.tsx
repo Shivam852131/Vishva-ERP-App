@@ -53,6 +53,54 @@ jest.mock('react-native-view-shot', () => ({
   captureRef: jest.fn(() => Promise.resolve('file:///tmp/shot.png')),
 }));
 
+jest.mock('react-native-webview', () => {
+  const { View } = require('react-native');
+  return { WebView: View };
+});
+
+jest.mock('react-native-qrcode-svg', () => {
+  const { View } = require('react-native');
+  return function QRCode() { return View; };
+});
+
+jest.mock('react-native-fs', () => ({
+  default: {
+    readFile: jest.fn(() => Promise.resolve('')),
+    writeFile: jest.fn(() => Promise.resolve()),
+    appendFile: jest.fn(() => Promise.resolve()),
+    moveFile: jest.fn(() => Promise.resolve()),
+    readDir: jest.fn(() => Promise.resolve([])),
+    unlink: jest.fn(() => Promise.resolve()),
+    DocumentDirectoryPath: '/tmp/docs',
+    DownloadDirectoryPath: '/tmp/downloads',
+  },
+  readFile: jest.fn(() => Promise.resolve('')),
+  writeFile: jest.fn(() => Promise.resolve()),
+  DocumentDirectoryPath: '/tmp/docs',
+}));
+
+jest.mock('@/src/native/image-picker', () => ({
+  launchCameraAsync: jest.fn(() => Promise.resolve({ didCancel: true, assets: [] })),
+  launchImageLibraryAsync: jest.fn(() => Promise.resolve({ didCancel: true, assets: [] })),
+}));
+
+jest.mock('@/src/localshare/hooks/useLocalShare', () => ({
+  useLocalShare: () => ({
+    session: null, sessions: [], loading: false, error: null,
+    createSession: jest.fn(), fetchSessions: jest.fn(), fetchSession: jest.fn(),
+    joinSession: jest.fn(), endSession: jest.fn(), deleteSession: jest.fn(),
+    logDownload: jest.fn(), submitFeedback: jest.fn(),
+  }),
+  useLocalShareRTC: () => ({
+    isConnected: false, connectionState: 'new', error: null, peerDisconnected: false,
+    transfers: {}, receivedFiles: [], retryCount: 0,
+    initAsTeacher: jest.fn(), initAsStudent: jest.fn(),
+    sendData: jest.fn(), sendFiles: jest.fn(), disconnect: jest.fn(),
+    cleanupLocalFiles: jest.fn(), hasActiveTransfers: jest.fn(() => false),
+    WebViewBridge: () => null,
+  }),
+}));
+
 const { api } = require('@/src/api');
 
 // Every screen reachable from App.tsx. Camera/scanner screens are covered too —
@@ -134,6 +182,12 @@ const SCREENS: [string, () => any][] = [
   ['mentorship', () => require('@/app/mentorship').default],
   ['skill-profile', () => require('@/app/skill-profile').default],
   ['career-dashboard', () => require('@/app/career-dashboard').default],
+  ['localshare-home', () => require('@/app/localshare-home').default],
+  ['localshare-create', () => require('@/app/localshare-create').default],
+  ['localshare-active', () => require('@/app/localshare-active').default],
+  ['localshare-join', () => require('@/app/localshare-join').default],
+  ['localshare-transfer', () => require('@/app/localshare-transfer').default],
+  ['localshare-history', () => require('@/app/localshare-history').default],
 ];
 
 describe('every screen mounts on an empty API', () => {

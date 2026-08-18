@@ -190,6 +190,22 @@ async function createIndexes(database) {
     database.collection('classrooms').createIndex({ collegeId: 1 }),
     database.collection('schedules').createIndex({ collegeId: 1 }),
     database.collection('face_profiles').createIndex({ collegeId: 1 }),
+    database.collection('localshare_sessions').createIndex({ sessionId: 1 }, { unique: true }),
+    database.collection('localshare_sessions').createIndex({ shareCode: 1 }, { unique: true }),
+    database.collection('localshare_sessions').createIndex({ collegeId: 1, status: 1 }),
+    database.collection('localshare_sessions').createIndex({ collegeId: 1, teacherId: 1 }),
+    database.collection('localshare_sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    database.collection('localshare_participants').createIndex({ sessionId: 1, studentId: 1 }, { unique: true }),
+    database.collection('localshare_participants').createIndex({ sessionId: 1, connectionStatus: 1 }),
+    database.collection('localshare_participants').createIndex({ collegeId: 1 }),
+    database.collection('localshare_downloads').createIndex({ sessionId: 1, studentId: 1 }),
+    database.collection('localshare_downloads').createIndex({ completedAt: 1 }, { expireAfterSeconds: 2592000 }),
+    database.collection('localshare_downloads').createIndex({ collegeId: 1 }),
+    database.collection('localshare_audit_logs').createIndex({ sessionId: 1, timestamp: 1 }),
+    database.collection('localshare_audit_logs').createIndex({ timestamp: 1 }, { expireAfterSeconds: 7776000 }),
+    database.collection('localshare_feedback').createIndex({ sessionId: 1, studentId: 1 }, { unique: true }),
+    database.collection('localshare_feedback').createIndex({ sessionId: 1 }),
+    database.collection('localshare_feedback').createIndex({ collegeId: 1 }),
   ]);
 }
 

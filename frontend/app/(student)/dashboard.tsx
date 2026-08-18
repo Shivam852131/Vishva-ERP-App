@@ -7,7 +7,7 @@ import { router } from '@/src/navigation/router';
 import {
   Bell, Wallet, Award, TrendingUp, BookOpen, ChevronRight,
   BellRing, Library, Building, Bus, FileText, Sparkles,
-  QrCode, MessageSquare,
+  QrCode, MessageSquare, Share,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch } from '@/src/hooks/useFetch';
@@ -87,6 +87,7 @@ export default function StudentDashboard() {
     { icon: <Building size={20} color="#fff" />, label: 'Hostel', to: '/hostel', color: theme.colors.brandPrimary },
     { icon: <Bus size={20} color="#fff" />, label: 'Transport', to: '/transport', color: '#10B981' },
     { icon: <FileText size={20} color="#fff" />, label: 'Exams', to: '/exams', color: theme.colors.brand },
+    { icon: <Share size={20} color="#fff" />, label: 'Local Share', to: '/localshare', color: '#F59E0B' },
   ];
 
   return (
@@ -393,6 +394,7 @@ export default function StudentDashboard() {
               {[
                 { icon: '🎯', label: 'Career Hub', route: '/career-dashboard' },
                 { icon: '🎥', label: 'Live Classes', route: '/live-classes' },
+                { icon: '📤', label: 'Local Share', route: '/localshare' },
                 { icon: '💼', label: 'Placements', route: '/placement' },
                 { icon: '📝', label: 'Assessments', route: '/skill-assessment' },
                 { icon: '🤝', label: 'Mentorship', route: '/mentorship' },
