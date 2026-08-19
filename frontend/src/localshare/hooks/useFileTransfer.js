@@ -151,7 +151,7 @@ export function useFileTransfer({ rtc, session }) {
     return { completed, failed, total: files.length };
   }, [sendFile]);
 
-  const handleReceivedMessage = useCallback((msg) => {
+  const handleReceivedMessage = useCallback(async (msg) => {
     if (msg.type === 'file-start') {
       const { fileId, fileName, fileSize, mimeType, totalChunks } = msg;
       assemblerRef.current.addChunk(fileId, 0, totalChunks, '');

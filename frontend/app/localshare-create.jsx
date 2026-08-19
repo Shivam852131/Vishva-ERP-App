@@ -27,7 +27,18 @@ export default function LocalShareCreate() {
         mediaType: 'mixed',
         selectionLimit: 10 - files.length,
       });
-      if (result.canceled) return;
+      if (result.canceled) {
+        if (result.errorCode) {
+          let msg = 'Failed to pick files.';
+          if (result.errorCode === 'permission') {
+            msg = 'Storage permission is required to select files. Please grant permission in Settings.';
+          } else if (result.errorMessage) {
+            msg = result.errorMessage;
+          }
+          Alert.alert('Error', msg);
+        }
+        return;
+      }
 
       const newFiles = (result.assets || []).map(asset => ({
         name: asset.fileName || asset.uri.split('/').pop(),

@@ -1,6 +1,6 @@
 const request = require('supertest');
 const { buildTestApp } = require('./helpers/testApp');
-const { getDB, oid } = require('../src/db');
+const { getDB, oid, connectDB } = require('../src/db');
 const { hashPassword, issueToken } = require('../src/auth');
 
 const app = buildTestApp();
@@ -9,10 +9,13 @@ let db;
 let facultyToken, studentToken, facultyId, studentId, collegeId;
 
 beforeAll(async () => {
+  await connectDB();
   db = getDB();
 });
 
 beforeEach(async () => {
+  await db.collection('colleges').deleteMany({});
+  await db.collection('users').deleteMany({});
   await db.collection('localshare_sessions').deleteMany({});
   await db.collection('localshare_participants').deleteMany({});
   await db.collection('localshare_downloads').deleteMany({});
@@ -215,5 +218,39 @@ describe('POST /api/localshare/sessions/:id/feedback', () => {
       .set('Authorization', `Bearer ${studentToken}`)
       .send({ rating: 3 });
     expect(res.status).toBe(409);
+  });
+});
+
+describe('Rate limiting on /api/localshare/sessions', () => {
+  it('does NOT rate-limit GET requests to /api/localshare/sessions', async () => {
+    for (let i = 0; i < 15; i++) {
+      const res = await request(app)
+        .get('/api/localshare/sessions')
+        .set('Authorization', `Bearer ${facultyToken}`);
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it('POST requests to /api/localshare/sessions are rate-limited after max attempts', async () => {
+    for (let i = 0; i < 10; i++) {
+      await request(app)
+        .post('/api/localshare/sessions')
+        .set('Authorization', `Bearer ${facultyToken}`)
+        .send({
+          title: `Test ${i}`,
+          description: 'Rate limit test',
+          files: [{ name: `file${i}.pdf`, size: 1024, type: 'application/pdf' }],
+        });
+    }
+
+    const res = await request(app)
+      .post('/api/localshare/sessions')
+      .set('Authorization', `Bearer ${facultyToken}`)
+      .send({
+        title: 'Over limit',
+        files: [{ name: 'over.pdf', size: 1024, type: 'application/pdf' }],
+      });
+    expect(res.status).toBe(429);
+    expect(res.body.detail).toContain('Too many sessions');
   });
 });

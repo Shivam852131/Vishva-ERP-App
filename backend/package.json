@@ -12,7 +12,8 @@
     "db:seed": "node prisma/seed.js",
     "db:seed:atlas": "node prisma/seed-atlas.js",
     "db:seed:all": "node prisma/seed-all.js",
-    "test": "node test-api.js"
+    "test": "node test-api.js",
+    "test:unit": "jest"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -39,5 +40,9 @@
   "overrides": {
     "tar": "^7.5.21",
     "brace-expansion": "^5.0.8"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2"
   }
 }

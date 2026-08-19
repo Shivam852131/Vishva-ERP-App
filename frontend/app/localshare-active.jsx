@@ -85,7 +85,18 @@ export default function LocalShareActive() {
     }
     try {
       const result = await launchImageLibraryAsync({ mediaType: 'mixed', selectionLimit: 10 });
-      if (result.canceled) return;
+      if (result.canceled) {
+        if (result.errorCode) {
+          let msg = 'Failed to pick files.';
+          if (result.errorCode === 'permission') {
+            msg = 'Storage permission is required to select files.';
+          } else if (result.errorMessage) {
+            msg = result.errorMessage;
+          }
+          Alert.alert('Error', msg);
+        }
+        return;
+      }
 
       const filesToSend = (result.assets || []).map(asset => ({
         fileId: `file_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,

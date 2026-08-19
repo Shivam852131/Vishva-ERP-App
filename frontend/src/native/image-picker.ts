@@ -14,6 +14,8 @@ type PickerAsset = {
 type PickerResult = {
   canceled: boolean;
   assets?: PickerAsset[];
+  errorCode?: string;
+  errorMessage?: string;
 };
 
 export async function requestCameraPermissionsAsync(): Promise<{ granted: boolean; canAskAgain: boolean }> {
@@ -82,8 +84,16 @@ export async function launchImageLibraryAsync(
     };
     const merged = { ...baseOpts, ...options } as ImageLibraryOptions;
     const result = await launchImageLibrary(merged);
-    if (result.didCancel || result.errorCode || !result.assets?.length) {
+    if (result.didCancel) {
       return { canceled: true, assets: [] };
+    }
+    if (result.errorCode || !result.assets?.length) {
+      return {
+        canceled: true,
+        assets: [],
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
+      };
     }
     return {
       canceled: false,
@@ -97,7 +107,12 @@ export async function launchImageLibraryAsync(
         fileName: a.fileName,
       })),
     };
-  } catch {
-    return { canceled: true, assets: [] };
+  } catch (e) {
+    return {
+      canceled: true,
+      assets: [],
+      errorCode: 'unknown',
+      errorMessage: e instanceof Error ? e.message : 'Unknown error',
+    };
   }
 }
