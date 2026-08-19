@@ -19,6 +19,7 @@ export function useLocalShare() {
         body: JSON.stringify({ title, description, files }),
       });
       setSession(result);
+      setSessions(prev => [result, ...prev]);
       return result;
     } catch (e) {
       setError(e.message);

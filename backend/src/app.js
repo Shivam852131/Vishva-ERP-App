@@ -68,7 +68,7 @@ function createApp(io) {
 
   app.use('/api/auth/login', loginLimiter);
   app.use('/api/auth/register', registerLimiter);
-  app.use('/api/localshare/sessions', rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, message: { detail: 'Too many sessions. Please try again later.' } }));
+  app.post('/api/localshare/sessions', rateLimit({ windowMs: 60 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { detail: 'Too many sessions. Please try again later.' } }));
   app.use('/api', apiLimiter);
 
   app.use('/api', createWebhookRouter(io));

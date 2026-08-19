@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { router } from '@/src/navigation/router';
 import { ArrowLeft, Plus, X, FileText, Upload } from 'lucide-react-native';
-import { launchImageLibrary } from '@/src/native/image-picker';
+import { launchImageLibraryAsync } from '@/src/native/image-picker';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
 import { Button, GradientButton } from '@/src/ui';
@@ -23,16 +23,16 @@ export default function LocalShareCreate() {
 
   const pickFiles = async () => {
     try {
-      const result = await launchImageLibrary({
+      const result = await launchImageLibraryAsync({
         mediaType: 'mixed',
         selectionLimit: 10 - files.length,
       });
-      if (result.didCancel) return;
+      if (result.canceled) return;
 
       const newFiles = (result.assets || []).map(asset => ({
         name: asset.fileName || asset.uri.split('/').pop(),
         size: asset.fileSize || 0,
-        type: asset.type === 'video' ? 'video/mp4' : (asset.mimeType || 'image/jpeg'),
+        type: asset.type === 'video' ? 'video/mp4' : (asset.type || 'image/jpeg'),
         uri: asset.uri,
       })).filter(f => {
         if (f.size > MAX_FILE_SIZE) {

@@ -9,7 +9,7 @@ import {
   ArrowLeft, Users, Clock, Square, Send, AlertTriangle,
   RefreshCw, BarChart3, TrendingUp,
 } from 'lucide-react-native';
-import { launchImageLibrary } from '@/src/native/image-picker';
+import { launchImageLibraryAsync } from '@/src/native/image-picker';
 import { useAuth } from '@/src/providers/AuthContext';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
@@ -84,14 +84,14 @@ export default function LocalShareActive() {
       return;
     }
     try {
-      const result = await launchImageLibrary({ mediaType: 'mixed', selectionLimit: 10 });
-      if (result.didCancel) return;
+      const result = await launchImageLibraryAsync({ mediaType: 'mixed', selectionLimit: 10 });
+      if (result.canceled) return;
 
       const filesToSend = (result.assets || []).map(asset => ({
         fileId: `file_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: asset.fileName || asset.uri.split('/').pop(),
         size: asset.fileSize || 0,
-        type: asset.type === 'video' ? 'video/mp4' : (asset.mimeType || 'image/jpeg'),
+        type: asset.type === 'video' ? 'video/mp4' : (asset.type || 'image/jpeg'),
         uri: asset.uri,
       }));
 
