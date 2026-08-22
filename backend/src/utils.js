@@ -4,6 +4,39 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+// ── Simple TTL Query Cache ──
+
+const queryCache = new Map();
+const QUERY_CACHE_MAX = 200;
+
+function cacheGet(key) {
+  const entry = queryCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    queryCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function cacheSet(key, value, ttlMs = 30000) {
+  if (queryCache.size >= QUERY_CACHE_MAX) {
+    const oldest = queryCache.keys().next().value;
+    queryCache.delete(oldest);
+  }
+  queryCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+function cacheKey(...parts) {
+  return parts.map(String).join(':');
+}
+
+function cacheInvalidate(prefix) {
+  for (const key of queryCache.keys()) {
+    if (key.startsWith(prefix)) queryCache.delete(key);
+  }
+}
+
 function daysFromNow(days) {
   const date = new Date();
   date.setDate(date.getDate() + days);
@@ -104,4 +137,8 @@ module.exports = {
   sendError,
   parseCsv,
   emitToCollege,
+  cacheGet,
+  cacheSet,
+  cacheKey,
+  cacheInvalidate,
 };

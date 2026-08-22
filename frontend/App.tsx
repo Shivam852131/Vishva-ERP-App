@@ -1,23 +1,8 @@
 import React, { Suspense } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
-import {
-  Home,
-  Calendar,
-  ClipboardList,
-  Bot,
-  User,
-  Users,
-  BookOpen,
-  BarChart3,
-  ClipboardCheck,
-  Building2,
-  Wallet,
-} from 'lucide-react-native';
-import { StyleSheet, Text } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -36,39 +21,24 @@ function LoadingScreen() {
 
 const LS = (fn: () => Promise<{ default: React.ComponentType<any> }>) => React.lazy(fn);
 
-// ── Tab Screens (loaded eagerly — needed on first navigation per role) ──
-import StudentDashboardScreen from './app/(student)/dashboard';
-import StudentTimetableScreen from './app/(student)/timetable';
-import StudentAssignmentsScreen from './app/(student)/assignments';
-import StudentAiScreen from './app/(student)/ai';
-import StudentProfileScreen from './app/(student)/profile';
-import ParentDashboardScreen from './app/(parent)/dashboard';
-import ParentAttendanceScreen from './app/(parent)/attendance';
-import ParentFeesScreen from './app/(parent)/fees';
-import ParentProfileScreen from './app/(parent)/profile';
-import FacultyDashboardScreen from './app/(faculty)/dashboard';
-import FacultyClassesScreen from './app/(faculty)/classes';
-import FacultyAssignmentsScreen from './app/(faculty)/assignments';
-import FacultyAiScreen from './app/(faculty)/ai';
-import FacultyProfileScreen from './app/(faculty)/profile';
-import CollegeAdminDashboardScreen from './app/(college_admin)/dashboard';
-import CollegeAdminUsersScreen from './app/(college_admin)/users';
-import CollegeAdminAttendanceScreen from './app/(college_admin)/attendance';
-import CollegeAdminAcademicsScreen from './app/(college_admin)/academics';
-import CollegeAdminReportsScreen from './app/(college_admin)/reports';
-import CollegeAdminProfileScreen from './app/(college_admin)/profile';
-import SuperAdminDashboardScreen from './app/(super_admin)/dashboard';
-import SuperAdminCollegesScreen from './app/(super_admin)/colleges';
-import SuperAdminUsersScreen from './app/(super_admin)/users';
-import SuperAdminReportsScreen from './app/(super_admin)/reports';
-import SuperAdminProfileScreen from './app/(super_admin)/profile';
+// ── Role-based navigators — only the active role's code is loaded ──
+const StudentTabNavigator = LS(() => import('./src/navigation/StudentNavigator'));
+const ParentTabNavigator = LS(() => import('./src/navigation/ParentNavigator'));
+const FacultyTabNavigator = LS(() => import('./src/navigation/FacultyNavigator'));
+const CollegeAdminTabNavigator = LS(() => import('./src/navigation/CollegeAdminNavigator'));
+const SuperAdminTabNavigator = LS(() => import('./src/navigation/SuperAdminNavigator'));
 
-// ── All other screens — lazy-loaded on demand ──
+// ── Auth screens ──
 const IndexScreen = LS(() => import('./app/index'));
 const LandingScreen = LS(() => import('./app/landing'));
 const LoginScreen = LS(() => import('./app/login'));
+const PhoneOTPLoginScreen = LS(() => import('./app/phone-login'));
+
+// ── Role sub-screens ──
 const StudentFeesScreen = LS(() => import('./app/(student)/fees'));
+const ParentAiScreen = LS(() => import('./app/(parent)/ai'));
 const FacultyExamGeneratorScreen = LS(() => import('./app/(faculty)/exam-generator'));
+const FacultyQuestionPaperScreen = LS(() => import('./app/(faculty)/question-paper'));
 const CollegeAdminPaymentsScreen = LS(() => import('./app/(college_admin)/payments'));
 const CollegeAdminSubscriptionScreen = LS(() => import('./app/(college_admin)/subscription'));
 const CollegeAdminHostelAdminScreen = LS(() => import('./app/(college_admin)/hostel-admin'));
@@ -78,6 +48,8 @@ const CollegeAdminPlacementsScreen = LS(() => import('./app/(college_admin)/plac
 const CollegeAdminAssessmentsAdminScreen = LS(() => import('./app/(college_admin)/assessments-admin'));
 const CollegeAdminMentorshipAdminScreen = LS(() => import('./app/(college_admin)/mentorship-admin'));
 const CollegeAdminSkillAdminScreen = LS(() => import('./app/(college_admin)/skill-admin'));
+
+// ── Shared screens ──
 const AnalyticsScreen = LS(() => import('./app/analytics'));
 const AttendanceScreen = LS(() => import('./app/attendance'));
 const AttendanceLiveScreen = LS(() => import('./app/attendance-live'));
@@ -101,15 +73,12 @@ const SelfieScreen = LS(() => import('./app/selfie'));
 const SessionScreen = LS(() => import('./app/session'));
 const StartSessionScreen = LS(() => import('./app/start-session'));
 const TransportScreen = LS(() => import('./app/transport'));
-const PhoneOTPLoginScreen = LS(() => import('./app/phone-login'));
 const VisitorManagementScreen = LS(() => import('./app/visitor'));
 const ComplaintManagementScreen = LS(() => import('./app/complaints'));
 const AssetManagementScreen = LS(() => import('./app/assets'));
 const PushNotificationsScreen = LS(() => import('./app/push-notifications'));
 const EmailIntegrationScreen = LS(() => import('./app/email'));
 const WhatsAppIntegrationScreen = LS(() => import('./app/whatsapp'));
-const ParentAiScreen = LS(() => import('./app/(parent)/ai'));
-const FacultyQuestionPaperScreen = LS(() => import('./app/(faculty)/question-paper'));
 const AssignmentCheckerScreen = LS(() => import('./app/assignment-checker'));
 const ReportCardScreen = LS(() => import('./app/report-card'));
 const CareerAdvisorScreen = LS(() => import('./app/career-advisor'));
@@ -135,207 +104,6 @@ const LocalShareTransferScreen = LS(() => import('./app/localshare-transfer'));
 const LocalShareHistoryScreen = LS(() => import('./app/localshare-history'));
 
 const RootStack = createNativeStackNavigator();
-const StudentTabs = createBottomTabNavigator();
-const ParentTabs = createBottomTabNavigator();
-const FacultyTabs = createBottomTabNavigator();
-const CollegeAdminTabs = createBottomTabNavigator();
-const SuperAdminTabs = createBottomTabNavigator();
-
-type TabIconProps = {
-  Icon: React.ElementType;
-  color: string;
-  size: number;
-  badge?: number;
-};
-
-function TabIcon({ Icon, color, size, badge }: TabIconProps) {
-  return (
-    <View>
-      <Icon color={color} size={size} />
-      {badge ? (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-const defaultTabOptions = {
-  headerShown: false,
-  tabBarActiveTintColor: theme.colors.brand,
-  tabBarInactiveTintColor: theme.colors.muted,
-  tabBarStyle: {
-    backgroundColor: theme.colors.surfaceSecondary,
-    borderTopColor: theme.colors.border,
-    borderTopWidth: 1,
-    height: 64,
-    paddingBottom: 8,
-    paddingTop: 6,
-    ...theme.shadow.sm,
-  },
-  tabBarLabelStyle: { fontSize: 11, fontWeight: '600' as const },
-};
-
-function StudentTabNavigator() {
-  return (
-    <StudentTabs.Navigator screenOptions={defaultTabOptions}>
-      <StudentTabs.Screen
-        name="/(student)/dashboard"
-        component={StudentDashboardScreen}
-        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Home color={color} size={size} /> }}
-      />
-      <StudentTabs.Screen
-        name="/(student)/timetable"
-        component={StudentTimetableScreen}
-        options={{ title: 'Timetable', tabBarIcon: ({ color, size }) => <Calendar color={color} size={size} /> }}
-      />
-      <StudentTabs.Screen
-        name="/(student)/assignments"
-        component={StudentAssignmentsScreen}
-        options={{ title: 'Tasks', tabBarIcon: ({ color, size }) => <ClipboardList color={color} size={size} /> }}
-      />
-      <StudentTabs.Screen
-        name="/(student)/ai"
-        component={StudentAiScreen}
-        options={{ title: 'AI Hub', tabBarIcon: ({ color, size }) => <Bot color={color} size={size} /> }}
-      />
-      <StudentTabs.Screen
-        name="/(student)/profile"
-        component={StudentProfileScreen}
-        options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <User color={color} size={size} /> }}
-      />
-    </StudentTabs.Navigator>
-  );
-}
-
-function ParentTabNavigator() {
-  return (
-    <ParentTabs.Navigator screenOptions={defaultTabOptions}>
-      <ParentTabs.Screen
-        name="/(parent)/dashboard"
-        component={ParentDashboardScreen}
-        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Home color={color} size={size} /> }}
-      />
-      <ParentTabs.Screen
-        name="/(parent)/attendance"
-        component={ParentAttendanceScreen}
-        options={{ title: 'Attendance', tabBarIcon: ({ color, size }) => <ClipboardList color={color} size={size} /> }}
-      />
-      <ParentTabs.Screen
-        name="/(parent)/fees"
-        component={ParentFeesScreen}
-        options={{ title: 'Fees', tabBarIcon: ({ color, size }) => <Wallet color={color} size={size} /> }}
-      />
-      <ParentTabs.Screen
-        name="/(parent)/profile"
-        component={ParentProfileScreen}
-        options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <User color={color} size={size} /> }}
-      />
-    </ParentTabs.Navigator>
-  );
-}
-
-function FacultyTabNavigator() {
-  return (
-    <FacultyTabs.Navigator screenOptions={defaultTabOptions}>
-      <FacultyTabs.Screen
-        name="/(faculty)/dashboard"
-        component={FacultyDashboardScreen}
-        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <TabIcon Icon={Home} color={color} size={size} /> }}
-      />
-      <FacultyTabs.Screen
-        name="/(faculty)/classes"
-        component={FacultyClassesScreen}
-        options={{ title: 'Classes', tabBarIcon: ({ color, size }) => <TabIcon Icon={Users} color={color} size={size} /> }}
-      />
-      <FacultyTabs.Screen
-        name="/(faculty)/assignments"
-        component={FacultyAssignmentsScreen}
-        options={{ title: 'Tasks', tabBarIcon: ({ color, size }) => <TabIcon Icon={ClipboardList} color={color} size={size} /> }}
-      />
-      <FacultyTabs.Screen
-        name="/(faculty)/ai"
-        component={FacultyAiScreen}
-        options={{ title: 'AI', tabBarIcon: ({ color, size }) => <TabIcon Icon={Bot} color={color} size={size} /> }}
-      />
-      <FacultyTabs.Screen
-        name="/(faculty)/profile"
-        component={FacultyProfileScreen}
-        options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <TabIcon Icon={User} color={color} size={size} /> }}
-      />
-    </FacultyTabs.Navigator>
-  );
-}
-
-function CollegeAdminTabNavigator() {
-  return (
-    <CollegeAdminTabs.Navigator screenOptions={defaultTabOptions}>
-      <CollegeAdminTabs.Screen
-        name="/(college_admin)/dashboard"
-        component={CollegeAdminDashboardScreen}
-        options={{ title: 'Overview', tabBarIcon: ({ color, size }) => <TabIcon Icon={Home} color={color} size={size} /> }}
-      />
-      <CollegeAdminTabs.Screen
-        name="/(college_admin)/users"
-        component={CollegeAdminUsersScreen}
-        options={{ title: 'Users', tabBarIcon: ({ color, size }) => <TabIcon Icon={Users} color={color} size={size} /> }}
-      />
-      <CollegeAdminTabs.Screen
-        name="/(college_admin)/attendance"
-        component={CollegeAdminAttendanceScreen}
-        options={{ title: 'Attendance', tabBarIcon: ({ color, size }) => <TabIcon Icon={ClipboardCheck} color={color} size={size} /> }}
-      />
-      <CollegeAdminTabs.Screen
-        name="/(college_admin)/academics"
-        component={CollegeAdminAcademicsScreen}
-        options={{ title: 'Academics', tabBarIcon: ({ color, size }) => <TabIcon Icon={BookOpen} color={color} size={size} /> }}
-      />
-      <CollegeAdminTabs.Screen
-        name="/(college_admin)/reports"
-        component={CollegeAdminReportsScreen}
-        options={{ title: 'Reports', tabBarIcon: ({ color, size }) => <TabIcon Icon={BarChart3} color={color} size={size} /> }}
-      />
-      <CollegeAdminTabs.Screen
-        name="/(college_admin)/profile"
-        component={CollegeAdminProfileScreen}
-        options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <TabIcon Icon={User} color={color} size={size} /> }}
-      />
-    </CollegeAdminTabs.Navigator>
-  );
-}
-
-function SuperAdminTabNavigator() {
-  return (
-    <SuperAdminTabs.Navigator screenOptions={defaultTabOptions}>
-      <SuperAdminTabs.Screen
-        name="/(super_admin)/dashboard"
-        component={SuperAdminDashboardScreen}
-        options={{ title: 'Overview', tabBarIcon: ({ color, size }) => <TabIcon Icon={Home} color={color} size={size} /> }}
-      />
-      <SuperAdminTabs.Screen
-        name="/(super_admin)/colleges"
-        component={SuperAdminCollegesScreen}
-        options={{ title: 'Colleges', tabBarIcon: ({ color, size }) => <TabIcon Icon={Building2} color={color} size={size} /> }}
-      />
-      <SuperAdminTabs.Screen
-        name="/(super_admin)/users"
-        component={SuperAdminUsersScreen}
-        options={{ title: 'Users', tabBarIcon: ({ color, size }) => <TabIcon Icon={Users} color={color} size={size} /> }}
-      />
-      <SuperAdminTabs.Screen
-        name="/(super_admin)/reports"
-        component={SuperAdminReportsScreen}
-        options={{ title: 'Reports', tabBarIcon: ({ color, size }) => <TabIcon Icon={BarChart3} color={color} size={size} /> }}
-      />
-      <SuperAdminTabs.Screen
-        name="/(super_admin)/profile"
-        component={SuperAdminProfileScreen}
-        options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <TabIcon Icon={User} color={color} size={size} /> }}
-      />
-    </SuperAdminTabs.Navigator>
-  );
-}
 
 export default function App() {
   return (
@@ -431,23 +199,3 @@ export default function App() {
     </ErrorBoundary>
   );
 }
-
-const styles = StyleSheet.create({
-  badge: {
-    position: 'absolute',
-    top: -4,
-    right: -6,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: theme.colors.error,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-});

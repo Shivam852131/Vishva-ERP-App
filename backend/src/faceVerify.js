@@ -202,10 +202,39 @@ function generateFallbackEncoding(buffer) {
   return encoding.map(v => v / norm);
 }
 
+// ── Encoding Cache (LRU, max 500 entries, 5-minute TTL) ──
+
+const ENCODE_CACHE_MAX = 500;
+const ENCODE_CACHE_TTL_MS = 5 * 60 * 1000;
+const encodeCache = new Map();
+
+function cacheGet(key) {
+  const entry = encodeCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > ENCODE_CACHE_TTL_MS) {
+    encodeCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function cacheSet(key, value) {
+  if (encodeCache.size >= ENCODE_CACHE_MAX) {
+    const oldest = encodeCache.keys().next().value;
+    encodeCache.delete(oldest);
+  }
+  encodeCache.set(key, { value, ts: Date.now() });
+}
+
 // ── Encode Face (for enrollment) ──
 
 async function encodeFace(selfieBase64) {
+  const cacheKey = selfieBase64.substring(0, 100);
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+
   const buffer = Buffer.from(selfieBase64, 'base64');
+  let result;
 
   // Try worker pool ML detection
   if (poolReady && pool) {
@@ -214,20 +243,25 @@ async function encodeFace(selfieBase64) {
       if (detections.length === 1 && detections[0].descriptor) {
         const encoding = Array.from(detections[0].descriptor);
         const liveness = detectLiveness(detections, buffer);
-        return { ok: true, encoding, liveness, ml: true };
+        result = { ok: true, encoding, liveness, ml: true };
       }
     } catch (err) {
       console.warn('[faceVerify] Pool encode error, using fallback:', err.message);
     }
   }
 
-  // Fallback: pixel-based encoding
-  const encoding = generateFallbackEncoding(buffer);
-  if (!encoding) {
-    return { ok: false, error: 'Could not generate face encoding' };
+  if (!result) {
+    // Fallback: pixel-based encoding
+    const encoding = generateFallbackEncoding(buffer);
+    if (!encoding) {
+      return { ok: false, error: 'Could not generate face encoding' };
+    }
+    const liveness = detectLiveness(null, buffer);
+    result = { ok: true, encoding, liveness, ml: false };
   }
-  const liveness = detectLiveness(null, buffer);
-  return { ok: true, encoding, liveness, ml: false };
+
+  cacheSet(cacheKey, result);
+  return result;
 }
 
 // ── Face Comparison ──
@@ -269,8 +303,23 @@ async function verifyFace(selfieBase64, enrolledProfile, prevFrameBase64 = null)
     }
   }
 
-  // ── Liveness ──
-  const liveness = detectLiveness(usedML ? detections : null, buffer);
+  // Run liveness + spoofing + encoding in parallel (ML path)
+  let liveness, spoof, encoding;
+
+  if (usedML) {
+    [liveness, spoof, encoding] = await Promise.all([
+      Promise.resolve(detectLiveness(detections, buffer)),
+      Promise.resolve(detectSpoofing(detections)),
+      Promise.resolve(extractEncoding(detections[0])),
+    ]);
+  } else {
+    [liveness, encoding] = await Promise.all([
+      Promise.resolve(detectLiveness(null, buffer)),
+      Promise.resolve(generateFallbackEncoding(buffer)),
+    ]);
+    spoof = null;
+  }
+
   if (!liveness.isLive) {
     return {
       ok: false, status: 'liveness_failed', message: 'Liveness check failed',
@@ -278,19 +327,13 @@ async function verifyFace(selfieBase64, enrolledProfile, prevFrameBase64 = null)
     };
   }
 
-  // ── Anti-spoofing (ML only) ──
-  if (usedML) {
-    const spoof = detectSpoofing(detections);
-    if (spoof.isSpoof) {
-      return {
-        ok: false, status: 'spoof_detected', message: 'Spoof attempt detected',
-        detail: spoof.warnings.join('; '), liveness, spoof,
-      };
-    }
+  if (usedML && spoof && spoof.isSpoof) {
+    return {
+      ok: false, status: 'spoof_detected', message: 'Spoof attempt detected',
+      detail: spoof.warnings.join('; '), liveness, spoof,
+    };
   }
 
-  // ── Encoding ──
-  const encoding = usedML ? extractEncoding(detections[0]) : generateFallbackEncoding(buffer);
   if (!encoding) {
     return {
       ok: false, status: 'encoding_failed', message: 'Could not generate face encoding',
@@ -298,7 +341,6 @@ async function verifyFace(selfieBase64, enrolledProfile, prevFrameBase64 = null)
     };
   }
 
-  // ── New enrollment ──
   if (!enrolledProfile || !enrolledProfile.encoding) {
     return {
       ok: true, status: 'enrolled', message: 'Face enrolled successfully',
@@ -307,7 +349,6 @@ async function verifyFace(selfieBase64, enrolledProfile, prevFrameBase64 = null)
     };
   }
 
-  // ── Compare ──
   const threshold = usedML ? 0.6 : 0.7;
   const comparison = compareFaces(encoding, enrolledProfile.encoding, threshold);
   if (!comparison.match) {

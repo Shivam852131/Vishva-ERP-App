@@ -12,23 +12,37 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const PORT = Number(process.env.PORT || 8000);
 
 let server = null;
+let mlModelsLoaded = false;
+let mlModelsLoading = false;
+
+function getMlStatus() {
+  return { loaded: mlModelsLoaded, loading: mlModelsLoading };
+}
 
 async function main() {
   await connectDB();
   logger.info('MongoDB connected.');
 
-  logger.info('Loading face-api ML models...');
-  const modelsOk = await loadModels();
-  if (modelsOk) {
-    logger.info('Face verification ML models loaded successfully.');
-  } else {
-    logger.warn('Face verification models failed to load — face check-in will be degraded.');
-  }
+  // Load ML models in background — don't block server startup
+  mlModelsLoading = true;
+  loadModels().then(ok => {
+    mlModelsLoaded = ok;
+    mlModelsLoading = false;
+    if (ok) logger.info('Face verification ML models loaded successfully.');
+    else logger.warn('Face verification models failed to load — face check-in will be degraded.');
+  }).catch(err => {
+    mlModelsLoaded = false;
+    mlModelsLoading = false;
+    logger.warn({ err: err.message }, 'Face verification model load failed.');
+  });
 
   const io = createSocketServer();
   const app = createApp(io);
   server = http.createServer(app);
   io.attach(server);
+
+  // Expose ML status on health endpoint via app locals
+  app.set('mlStatus', () => ({ loaded: mlModelsLoaded, loading: mlModelsLoading }));
 
   server.listen(PORT, '0.0.0.0', () => {
     logger.info(`Vishva ERP backend listening on http://0.0.0.0:${PORT}`);
@@ -64,16 +78,41 @@ function startKeepAlive() {
     return;
   }
   const url = `${RENDER_URL}/health`;
-  logger.info(`Keep-alive started — pinging ${url} every 5 min`);
-  setInterval(async () => {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
-      logger.info(`Keep-alive ping: ${res.status}`);
-    } catch (err) {
-      logger.warn({ err: err.message }, 'Keep-alive ping failed');
-    }
-  }, 5 * 60 * 1000);
+  let failures = 0;
+  const MAX_FAILURES = 5;
+  const BASE_INTERVAL = 5 * 60 * 1000;
+  const MAX_INTERVAL = 30 * 60 * 1000;
+
+  function schedulePing() {
+    const jitter = Math.random() * 60 * 1000;
+    const interval = Math.min(BASE_INTERVAL * Math.pow(2, failures), MAX_INTERVAL) + jitter;
+    setTimeout(async () => {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
+        if (res.ok) {
+          failures = 0;
+          logger.info(`Keep-alive ping: ${res.status}`);
+        } else {
+          failures++;
+          logger.warn(`Keep-alive ping HTTP ${res.status} (${failures}/${MAX_FAILURES})`);
+        }
+      } catch (err) {
+        failures++;
+        logger.warn({ err: err.message }, `Keep-alive ping failed (${failures}/${MAX_FAILURES})`);
+      }
+      if (failures < MAX_FAILURES) {
+        schedulePing();
+      } else {
+        logger.error(`Keep-alive stopped after ${MAX_FAILURES} consecutive failures`);
+      }
+    }, interval);
+  }
+
+  logger.info(`Keep-alive started — pinging ${url} (max ${MAX_FAILURES} retries)`);
+  schedulePing();
 }
+
+module.exports = { getMlStatus };
 
 main().catch(err => {
   logger.error(err, 'Failed to start server');

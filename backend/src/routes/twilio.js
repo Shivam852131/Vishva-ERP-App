@@ -190,18 +190,22 @@ router.post('/twilio/whatsapp/broadcast', async (req, res) => {
   if (users.length === 0) return sendError(res, 'No users with phone numbers found for this audience.', 404);
 
   const fullMessage = title ? `*${title}*\n\n${message}` : message;
+  const CONCURRENCY = 10;
   let sent = 0, failed = 0;
 
-  for (const user of users) {
-    try {
-      await client.messages.create({
-        body: fullMessage,
-        from: process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886',
-        to: `whatsapp:${user.phone}`,
-      });
-      sent++;
-    } catch {
-      failed++;
+  for (let i = 0; i < users.length; i += CONCURRENCY) {
+    const batch = users.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(user =>
+        client.messages.create({
+          body: fullMessage,
+          from: process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886',
+          to: `whatsapp:${user.phone}`,
+        })
+      )
+    );
+    for (const r of results) {
+      r.status === 'fulfilled' ? sent++ : failed++;
     }
   }
 

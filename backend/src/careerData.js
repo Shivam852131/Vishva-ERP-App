@@ -146,174 +146,25 @@ const CAREER_TRACKS = [
 
 const CAREER_BY_KEY = new Map(CAREER_TRACKS.map(t => [t.key, t]));
 
-// Question bank. Each assessment draws its questions from here by skill key.
-// `answer` is the 0-based index of the correct option.
-const QUESTION_BANK = {
-  dsa: [
-    { q: 'What is the average time complexity of a lookup in a balanced binary search tree?', options: ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)'], answer: 1, difficulty: 'easy' },
-    { q: 'Which data structure gives O(1) amortised insert and delete at both ends?', options: ['Singly linked list', 'Deque', 'Binary heap', 'Sorted array'], answer: 1, difficulty: 'easy' },
-    { q: 'A min-heap of n elements is built from an unsorted array in:', options: ['O(n)', 'O(n log n)', 'O(log n)', 'O(n^2)'], answer: 0, difficulty: 'medium' },
-    { q: 'Which traversal of a BST yields keys in ascending order?', options: ['Pre-order', 'In-order', 'Post-order', 'Level-order'], answer: 1, difficulty: 'easy' },
-    { q: 'Dijkstra’s algorithm fails when the graph contains:', options: ['Cycles', 'Negative edge weights', 'Disconnected components', 'Self loops'], answer: 1, difficulty: 'medium' },
-    { q: 'Worst-case time complexity of quicksort is:', options: ['O(n log n)', 'O(n)', 'O(n^2)', 'O(log n)'], answer: 2, difficulty: 'easy' },
-    { q: 'Which technique solves overlapping subproblems by caching results?', options: ['Greedy', 'Dynamic programming', 'Divide and conquer', 'Backtracking'], answer: 1, difficulty: 'easy' },
-    { q: 'Space complexity of an iterative in-order traversal using an explicit stack on a skewed tree:', options: ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)'], answer: 2, difficulty: 'medium' },
-    { q: 'A hash table with a load factor above 1 and chaining will:', options: ['Fail to insert', 'Degrade lookups toward O(n)', 'Automatically become a tree', 'Lose entries'], answer: 1, difficulty: 'medium' },
-    { q: 'Topological sort is only defined for:', options: ['Any graph', 'Directed acyclic graphs', 'Undirected trees', 'Weighted graphs'], answer: 1, difficulty: 'medium' },
-    { q: 'Which algorithm finds the shortest path with negative weights but no negative cycles?', options: ['Dijkstra', 'Bellman-Ford', 'Prim', 'Kruskal'], answer: 1, difficulty: 'hard' },
-    { q: 'Union-Find with path compression and union by rank has near-constant amortised complexity of:', options: ['O(log n)', 'O(alpha(n))', 'O(1) exact', 'O(n)'], answer: 1, difficulty: 'hard' },
-  ],
-  javascript: [
-    { q: 'What does `typeof null` return in JavaScript?', options: ['"null"', '"object"', '"undefined"', '"number"'], answer: 1, difficulty: 'easy' },
-    { q: 'Which keyword creates a block-scoped variable that cannot be reassigned?', options: ['var', 'let', 'const', 'static'], answer: 2, difficulty: 'easy' },
-    { q: '`[1,2,3].map(x => x * 2)` returns:', options: ['[2,4,6]', '[1,2,3]', 'undefined', '6'], answer: 0, difficulty: 'easy' },
-    { q: 'A Promise that is rejected and never handled will:', options: ['Silently pass', 'Trigger an unhandled rejection warning', 'Retry automatically', 'Resolve to undefined'], answer: 1, difficulty: 'medium' },
-    { q: 'What is the output of `0.1 + 0.2 === 0.3`?', options: ['true', 'false', 'NaN', 'TypeError'], answer: 1, difficulty: 'easy' },
-    { q: '`async function f() { return 1 }` — calling `f()` returns:', options: ['1', 'A Promise resolving to 1', 'undefined', 'A generator'], answer: 1, difficulty: 'medium' },
-    { q: 'Which method creates a shallow copy of an object?', options: ['JSON.parse(JSON.stringify(o))', 'Object.assign({}, o)', 'structuredClone(o)', 'o.deepCopy()'], answer: 1, difficulty: 'medium' },
-    { q: 'Arrow functions differ from regular functions because they:', options: ['Cannot be async', 'Do not bind their own `this`', 'Are always hoisted', 'Cannot take parameters'], answer: 1, difficulty: 'medium' },
-    { q: 'The event loop processes microtasks (promises) relative to macrotasks (setTimeout):', options: ['After all macrotasks', 'Before the next macrotask', 'In parallel', 'Randomly'], answer: 1, difficulty: 'hard' },
-    { q: '`Array.prototype.reduce` without an initial value on an empty array:', options: ['Returns undefined', 'Returns 0', 'Throws a TypeError', 'Returns []'], answer: 2, difficulty: 'hard' },
-  ],
-  python: [
-    { q: 'Which of these is a mutable built-in type?', options: ['tuple', 'str', 'list', 'frozenset'], answer: 2, difficulty: 'easy' },
-    { q: '`len("hello")` returns:', options: ['4', '5', '6', 'Error'], answer: 1, difficulty: 'easy' },
-    { q: 'A list comprehension `[x*x for x in range(3)]` produces:', options: ['[0,1,4]', '[1,4,9]', '[0,1,2]', '[1,2,3]'], answer: 0, difficulty: 'easy' },
-    { q: 'What does the GIL primarily limit?', options: ['Memory usage', 'True parallel execution of threads', 'Recursion depth', 'File I/O'], answer: 1, difficulty: 'medium' },
-    { q: 'Default mutable arguments in a function signature are evaluated:', options: ['On every call', 'Once at definition time', 'Never', 'Only when passed'], answer: 1, difficulty: 'medium' },
-    { q: '`dict.get(key, default)` differs from `dict[key]` because it:', options: ['Is faster', 'Returns default instead of raising KeyError', 'Mutates the dict', 'Only works on strings'], answer: 1, difficulty: 'easy' },
-    { q: 'Which statement about generators is true?', options: ['They store all values in memory', 'They yield values lazily', 'They cannot be iterated', 'They are always faster'], answer: 1, difficulty: 'medium' },
-    { q: '`is` compares:', options: ['Values', 'Object identity', 'Types only', 'String content'], answer: 1, difficulty: 'medium' },
-    { q: 'A `with` block guarantees:', options: ['Faster execution', 'Resource cleanup via context manager', 'Thread safety', 'Exception suppression'], answer: 1, difficulty: 'medium' },
-    { q: 'Slicing `a[::-1]` on a list returns:', options: ['The list unchanged', 'A reversed copy', 'The last element', 'An error'], answer: 1, difficulty: 'easy' },
-  ],
-  sql: [
-    { q: 'Which clause filters rows before aggregation?', options: ['HAVING', 'WHERE', 'ORDER BY', 'GROUP BY'], answer: 1, difficulty: 'easy' },
-    { q: 'An INNER JOIN returns:', options: ['All rows from both tables', 'Only matching rows from both tables', 'All rows from the left table', 'Distinct rows only'], answer: 1, difficulty: 'easy' },
-    { q: 'Which index type best serves an exact-match lookup on a high-cardinality column?', options: ['B-tree', 'Bitmap', 'Full-text', 'No index'], answer: 0, difficulty: 'medium' },
-    { q: '`COUNT(*)` versus `COUNT(column)` differ because COUNT(column):', options: ['Is always faster', 'Skips NULLs', 'Counts distinct values', 'Requires a GROUP BY'], answer: 1, difficulty: 'medium' },
-    { q: 'The isolation level that prevents dirty reads but allows non-repeatable reads is:', options: ['READ UNCOMMITTED', 'READ COMMITTED', 'REPEATABLE READ', 'SERIALIZABLE'], answer: 1, difficulty: 'hard' },
-    { q: 'A LEFT JOIN with a WHERE filter on the right table’s column effectively becomes:', options: ['A CROSS JOIN', 'An INNER JOIN', 'A RIGHT JOIN', 'Unchanged'], answer: 1, difficulty: 'hard' },
-    { q: 'Normalisation to 3NF primarily removes:', options: ['All joins', 'Transitive dependencies', 'Indexes', 'Foreign keys'], answer: 1, difficulty: 'medium' },
-    { q: 'Which is NOT an aggregate function?', options: ['SUM', 'AVG', 'COALESCE', 'MAX'], answer: 2, difficulty: 'easy' },
-    { q: 'A window function differs from GROUP BY because it:', options: ['Cannot use ORDER BY', 'Retains individual rows', 'Is always slower', 'Requires an index'], answer: 1, difficulty: 'medium' },
-    { q: '`DELETE` versus `TRUNCATE`: TRUNCATE is typically:', options: ['Row-by-row and logged', 'Faster and not row-by-row logged', 'Reversible with a WHERE clause', 'Slower'], answer: 1, difficulty: 'medium' },
-  ],
-  aptitude: [
-    { q: 'A train 150 m long crosses a pole in 15 seconds. Its speed is:', options: ['10 m/s', '15 m/s', '20 m/s', '25 m/s'], answer: 0, difficulty: 'easy' },
-    { q: 'If 5 workers finish a job in 12 days, how long do 10 workers take (same rate)?', options: ['6 days', '12 days', '24 days', '3 days'], answer: 0, difficulty: 'easy' },
-    { q: 'The compound interest on ₹1000 at 10% p.a. for 2 years is:', options: ['₹200', '₹210', '₹220', '₹121'], answer: 1, difficulty: 'medium' },
-    { q: 'What is 35% of 240?', options: ['74', '80', '84', '96'], answer: 2, difficulty: 'easy' },
-    { q: 'The average of 5 numbers is 20. If one number is removed the average becomes 22. The removed number is:', options: ['12', '14', '10', '8'], answer: 0, difficulty: 'medium' },
-    { q: 'A sum doubles in 8 years at simple interest. The annual rate is:', options: ['10%', '12.5%', '8%', '15%'], answer: 1, difficulty: 'medium' },
-    { q: 'Two dice are rolled. Probability the sum is 7:', options: ['1/6', '1/9', '1/12', '5/36'], answer: 0, difficulty: 'medium' },
-    { q: 'A shopkeeper marks up 40% then gives 25% discount. Net profit is:', options: ['5%', '10%', '15%', '0%'], answer: 0, difficulty: 'hard' },
-    { q: 'The ratio 3:4 becomes 4:5 when the same number is added to both terms. That number is:', options: ['1', '2', '3', '4'], answer: 3, difficulty: 'hard' },
-    { q: 'How many 3-digit numbers can be formed from digits 1-5 without repetition?', options: ['60', '125', '10', '20'], answer: 0, difficulty: 'medium' },
-  ],
-  logical: [
-    { q: 'Find the next term: 2, 6, 12, 20, 30, ?', options: ['40', '42', '36', '45'], answer: 1, difficulty: 'easy' },
-    { q: 'If all Bloops are Razzies and all Razzies are Lazzies, then all Bloops are definitely:', options: ['Razzies only', 'Lazzies', 'Neither', 'Cannot say'], answer: 1, difficulty: 'easy' },
-    { q: 'Odd one out: Square, Circle, Triangle, Cube', options: ['Square', 'Circle', 'Triangle', 'Cube'], answer: 3, difficulty: 'easy' },
-    { q: 'CODE is written as DPEF. How is BOOK written?', options: ['CPPL', 'CNPL', 'CPQM', 'BPPL'], answer: 0, difficulty: 'medium' },
-    { q: 'Pointing to a photo a man says "She is the daughter of my grandfather’s only son". The woman is his:', options: ['Sister', 'Daughter', 'Cousin', 'Niece'], answer: 0, difficulty: 'medium' },
-    { q: 'Series: 3, 7, 15, 31, ?', options: ['47', '63', '55', '62'], answer: 1, difficulty: 'medium' },
-    { q: 'A is south of B. C is east of B. In which direction is C from A?', options: ['North-east', 'South-east', 'North-west', 'South-west'], answer: 0, difficulty: 'medium' },
-    { q: 'If EARTH is coded 51840, what is HEART?', options: ['05184', '51840', '04518', '01584'], answer: 0, difficulty: 'hard' },
-    { q: 'Statement: All pens are books. Some books are red. Conclusion: Some pens are red. This is:', options: ['Definitely true', 'Definitely false', 'Not necessarily true', 'Contradictory'], answer: 2, difficulty: 'hard' },
-    { q: 'Complete: 1, 1, 2, 3, 5, 8, ?', options: ['11', '13', '12', '15'], answer: 1, difficulty: 'easy' },
-  ],
-  communication: [
-    { q: 'The most effective way to open a professional email to a stranger is:', options: ['Hey!', 'A clear subject and a one-line purpose', 'A long personal story', 'No greeting at all'], answer: 1, difficulty: 'easy' },
-    { q: 'Active listening primarily involves:', options: ['Planning your reply', 'Reflecting back what you heard', 'Interrupting to clarify', 'Taking verbatim notes'], answer: 1, difficulty: 'easy' },
-    { q: 'In a disagreement with a teammate, the strongest first move is:', options: ['Escalate to the manager', 'State your position louder', 'Ask questions to understand their reasoning', 'Drop the issue'], answer: 2, difficulty: 'medium' },
-    { q: 'When presenting data to a non-technical audience you should:', options: ['Show all raw tables', 'Lead with the conclusion, then support it', 'Use maximum jargon', 'Avoid visuals'], answer: 1, difficulty: 'medium' },
-    { q: 'Constructive feedback is most useful when it is:', options: ['General and gentle', 'Specific and behaviour-focused', 'Delivered publicly', 'Anonymous'], answer: 1, difficulty: 'medium' },
-    { q: 'The STAR method structures an answer as:', options: ['Situation, Task, Action, Result', 'Story, Theme, Answer, Review', 'Start, Talk, Ask, Reply', 'Summary, Topic, Action, Reason'], answer: 0, difficulty: 'easy' },
-    { q: 'In a status update, the most important item to lead with is:', options: ['Hours worked', 'Blockers and risks', 'Tools used', 'Meeting count'], answer: 1, difficulty: 'medium' },
-    { q: 'Written asynchronous communication should favour:', options: ['Brevity with full context', 'Maximum length', 'Ambiguity to stay flexible', 'Voice notes only'], answer: 0, difficulty: 'medium' },
-  ],
-  os: [
-    { q: 'A process differs from a thread mainly because a process has:', options: ['Its own address space', 'A faster scheduler', 'No stack', 'No PID'], answer: 0, difficulty: 'easy' },
-    { q: 'Deadlock requires all of the following EXCEPT:', options: ['Mutual exclusion', 'Hold and wait', 'Preemption', 'Circular wait'], answer: 2, difficulty: 'medium' },
-    { q: 'Thrashing occurs when:', options: ['CPU is idle', 'Page fault rate is very high', 'Disk is empty', 'Cache is cold'], answer: 1, difficulty: 'medium' },
-    { q: 'Round-robin scheduling is characterised by:', options: ['Fixed priorities', 'A time quantum per process', 'Shortest job first', 'No context switching'], answer: 1, difficulty: 'easy' },
-    { q: 'A semaphore initialised to 1 behaves like:', options: ['A counter', 'A mutex', 'A condition variable', 'A spinlock only'], answer: 1, difficulty: 'medium' },
-    { q: 'Virtual memory primarily allows:', options: ['Faster CPUs', 'Programs larger than physical RAM', 'Fewer processes', 'Lower disk usage'], answer: 1, difficulty: 'easy' },
-    { q: 'The LRU page replacement policy evicts:', options: ['The newest page', 'The least recently used page', 'A random page', 'The largest page'], answer: 1, difficulty: 'easy' },
-    { q: 'A zombie process is one that:', options: ['Consumes all CPU', 'Has terminated but not been reaped by its parent', 'Never started', 'Runs in kernel mode'], answer: 1, difficulty: 'hard' },
-  ],
-  dbms: [
-    { q: 'ACID stands for Atomicity, Consistency, Isolation and:', options: ['Distribution', 'Durability', 'Dependency', 'Determinism'], answer: 1, difficulty: 'easy' },
-    { q: 'A primary key must be:', options: ['Nullable', 'Unique and non-null', 'Indexed only', 'A single column'], answer: 1, difficulty: 'easy' },
-    { q: 'Denormalisation is typically done to:', options: ['Save storage', 'Improve read performance', 'Enforce integrity', 'Reduce indexes'], answer: 1, difficulty: 'medium' },
-    { q: 'In a B+ tree index, data records are stored:', options: ['In internal nodes', 'Only in leaf nodes', 'In the root', 'Randomly'], answer: 1, difficulty: 'medium' },
-    { q: 'A foreign key enforces:', options: ['Uniqueness', 'Referential integrity', 'Ordering', 'Encryption'], answer: 1, difficulty: 'easy' },
-    { q: 'Two-phase locking guarantees:', options: ['No deadlocks', 'Serialisability', 'Faster writes', 'Zero contention'], answer: 1, difficulty: 'hard' },
-    { q: 'A sharded database splits data:', options: ['Vertically by column only', 'Horizontally across nodes', 'Into indexes', 'Into views'], answer: 1, difficulty: 'medium' },
-    { q: 'BASE consistency (NoSQL) trades strong consistency for:', options: ['Durability', 'Availability and partition tolerance', 'Atomicity', 'Isolation'], answer: 1, difficulty: 'medium' },
-  ],
-  networks: [
-    { q: 'TCP differs from UDP because TCP is:', options: ['Connectionless', 'Connection-oriented and reliable', 'Faster always', 'Broadcast only'], answer: 1, difficulty: 'easy' },
-    { q: 'HTTP runs by default on port:', options: ['21', '80', '443', '22'], answer: 1, difficulty: 'easy' },
-    { q: 'DNS primarily resolves:', options: ['IP to MAC', 'Domain names to IP addresses', 'Ports to protocols', 'URLs to files'], answer: 1, difficulty: 'easy' },
-    { q: 'The TCP three-way handshake sequence is:', options: ['SYN, ACK, FIN', 'SYN, SYN-ACK, ACK', 'ACK, SYN, ACK', 'FIN, ACK, FIN'], answer: 1, difficulty: 'medium' },
-    { q: 'Which layer of the OSI model does a router primarily operate at?', options: ['Layer 2', 'Layer 3', 'Layer 4', 'Layer 7'], answer: 1, difficulty: 'medium' },
-    { q: 'HTTPS adds which property over HTTP?', options: ['Compression', 'Transport encryption and authentication', 'Caching', 'Streaming'], answer: 1, difficulty: 'easy' },
-    { q: 'NAT is used mainly to:', options: ['Encrypt traffic', 'Map private addresses to a public one', 'Route by content', 'Balance load'], answer: 1, difficulty: 'medium' },
-    { q: 'A CDN improves latency primarily by:', options: ['Compressing HTML', 'Serving content from edge locations near users', 'Using UDP', 'Reducing DNS lookups'], answer: 1, difficulty: 'medium' },
-  ],
-  react: [
-    { q: 'A React component re-renders when:', options: ['The file is saved', 'Its state or props change', 'Every second', 'Only on mount'], answer: 1, difficulty: 'easy' },
-    { q: '`useEffect` with an empty dependency array runs:', options: ['On every render', 'Once after mount', 'Never', 'Only on unmount'], answer: 1, difficulty: 'easy' },
-    { q: 'Keys in a list help React:', options: ['Sort items', 'Identify which items changed', 'Style items', 'Fetch data'], answer: 1, difficulty: 'easy' },
-    { q: '`useMemo` is appropriate when:', options: ['Every value should be cached', 'A computation is expensive and inputs rarely change', 'You need side effects', 'You need refs'], answer: 1, difficulty: 'medium' },
-    { q: 'Lifting state up means:', options: ['Using global variables', 'Moving shared state to a common ancestor', 'Using refs', 'Rendering on the server'], answer: 1, difficulty: 'medium' },
-    { q: 'A stale closure in a hook usually comes from:', options: ['Too many renders', 'Missing dependencies in the dependency array', 'Using const', 'Async functions'], answer: 1, difficulty: 'hard' },
-    { q: 'Context is best used for:', options: ['All state', 'Low-frequency global values like theme or auth', 'Form inputs', 'Animation frames'], answer: 1, difficulty: 'medium' },
-    { q: 'Controlled inputs derive their value from:', options: ['The DOM', 'Component state', 'Refs', 'Local storage'], answer: 1, difficulty: 'easy' },
-  ],
-  statistics: [
-    { q: 'The mean is more sensitive than the median to:', options: ['Sample size', 'Outliers', 'Units', 'Ordering'], answer: 1, difficulty: 'easy' },
-    { q: 'A p-value of 0.03 at alpha = 0.05 means:', options: ['Accept the null', 'Reject the null', 'The effect is large', 'The sample is biased'], answer: 1, difficulty: 'medium' },
-    { q: 'The Central Limit Theorem says sample means approach:', options: ['A uniform distribution', 'A normal distribution', 'The population distribution', 'Zero'], answer: 1, difficulty: 'medium' },
-    { q: 'Correlation of -0.9 indicates:', options: ['No relationship', 'Strong negative linear relationship', 'Causation', 'Weak positive relationship'], answer: 1, difficulty: 'easy' },
-    { q: 'A Type I error is:', options: ['Failing to reject a false null', 'Rejecting a true null', 'A sampling error', 'A rounding error'], answer: 1, difficulty: 'medium' },
-    { q: 'Standard deviation measures:', options: ['Central tendency', 'Spread around the mean', 'Skewness', 'Sample size'], answer: 1, difficulty: 'easy' },
-    { q: 'A 95% confidence interval means:', options: ['95% of data lies inside', '95% of such intervals contain the true parameter', 'The mean is 95% accurate', 'p = 0.95'], answer: 1, difficulty: 'hard' },
-    { q: 'Simpson’s paradox arises from:', options: ['Small samples', 'A confounding grouping variable', 'Measurement error', 'Non-normality'], answer: 1, difficulty: 'hard' },
-  ],
-  ml: [
-    { q: 'Overfitting means the model:', options: ['Underperforms on training data', 'Fits training noise and generalises poorly', 'Has too few parameters', 'Converges too slowly'], answer: 1, difficulty: 'easy' },
-    { q: 'Which is an unsupervised algorithm?', options: ['Linear regression', 'K-means clustering', 'Random forest classifier', 'Logistic regression'], answer: 1, difficulty: 'easy' },
-    { q: 'Regularisation (L1/L2) primarily helps with:', options: ['Speed', 'Overfitting', 'Data cleaning', 'Feature creation'], answer: 1, difficulty: 'medium' },
-    { q: 'Precision is defined as:', options: ['TP / (TP + FN)', 'TP / (TP + FP)', '(TP + TN) / total', 'FP / total'], answer: 1, difficulty: 'medium' },
-    { q: 'Cross-validation is used to:', options: ['Increase dataset size', 'Estimate out-of-sample performance', 'Speed up training', 'Remove outliers'], answer: 1, difficulty: 'easy' },
-    { q: 'The bias-variance tradeoff says a very flexible model tends to have:', options: ['High bias, low variance', 'Low bias, high variance', 'Both high', 'Both low'], answer: 1, difficulty: 'medium' },
-    { q: 'Gradient descent can stall because of:', options: ['Too much data', 'A learning rate that is too large or too small', 'Too many features only', 'Normalisation'], answer: 1, difficulty: 'medium' },
-    { q: 'For a heavily imbalanced binary dataset, accuracy is a poor metric because:', options: ['It is slow', 'Predicting the majority class alone scores high', 'It needs probabilities', 'It ignores TP'], answer: 1, difficulty: 'hard' },
-  ],
-  uiux: [
-    { q: 'Fitts’s Law relates target acquisition time to:', options: ['Colour contrast', 'Target size and distance', 'Font family', 'Animation length'], answer: 1, difficulty: 'medium' },
-    { q: 'The minimum recommended touch target size on mobile is roughly:', options: ['16dp', '24dp', '44-48dp', '80dp'], answer: 2, difficulty: 'easy' },
-    { q: 'WCAG AA requires a contrast ratio for normal body text of at least:', options: ['2:1', '3:1', '4.5:1', '7:1'], answer: 2, difficulty: 'medium' },
-    { q: 'A wireframe differs from a mockup because it:', options: ['Includes final colours', 'Focuses on structure over visual detail', 'Is interactive', 'Is code'], answer: 1, difficulty: 'easy' },
-    { q: 'Progressive disclosure means:', options: ['Showing everything at once', 'Revealing complexity only as needed', 'Hiding errors', 'Lazy loading images'], answer: 1, difficulty: 'medium' },
-    { q: 'Usability testing with 5 users typically surfaces about:', options: ['20% of issues', '50% of issues', '80% of issues', '100% of issues'], answer: 2, difficulty: 'medium' },
-    { q: 'Consistency in a design system primarily reduces:', options: ['File size', 'Cognitive load', 'Render time', 'Colour count'], answer: 1, difficulty: 'easy' },
-    { q: 'An empty state should mainly:', options: ['Be blank', 'Explain the state and offer the next action', 'Show an error', 'Auto-redirect'], answer: 1, difficulty: 'easy' },
-  ],
-  productthinking: [
-    { q: 'A good product metric should be:', options: ['Easy to game', 'Actionable and tied to user value', 'Vanity-friendly', 'Static'], answer: 1, difficulty: 'medium' },
-    { q: 'An MVP exists primarily to:', options: ['Ship the cheapest thing', 'Validate a hypothesis with minimum effort', 'Impress investors', 'Replace research'], answer: 1, difficulty: 'easy' },
-    { q: 'When users request a feature, the strongest first response is to:', options: ['Build it immediately', 'Understand the underlying problem', 'Reject it', 'Poll everyone'], answer: 1, difficulty: 'medium' },
-    { q: 'North Star metric should reflect:', options: ['Revenue only', 'Core user value delivered', 'Headcount', 'Sprint velocity'], answer: 1, difficulty: 'medium' },
-    { q: 'A/B testing requires:', options: ['Equal feature sets', 'Random assignment and sufficient sample size', 'A single user', 'No control group'], answer: 1, difficulty: 'medium' },
-    { q: 'Prioritisation frameworks like RICE weigh reach, impact, confidence and:', options: ['Revenue', 'Effort', 'Risk', 'Recency'], answer: 1, difficulty: 'easy' },
-    { q: 'Churn is best diagnosed by:', options: ['Adding features', 'Cohort analysis and user interviews', 'Lowering price', 'More marketing'], answer: 1, difficulty: 'medium' },
-    { q: 'A product requirements doc should primarily specify:', options: ['Implementation details', 'Problem, users, success criteria and scope', 'Database schema', 'Sprint dates'], answer: 1, difficulty: 'easy' },
-  ],
-};
+// Question bank — lazy-loaded from separate module to reduce startup parse time
+let _questionBank = null;
+function getQuestionBank() {
+  if (!_questionBank) _questionBank = require('./questionBank');
+  return _questionBank;
+}
+
+// Proxied access so existing code like QUESTION_BANK.dsa still works
+const QUESTION_BANK_PROXY = new Proxy({}, {
+  get(_, key) {
+    return getQuestionBank()[key];
+  },
+  ownKeys() {
+    return Object.keys(getQuestionBank());
+  },
+  getOwnPropertyDescriptor(target, key) {
+    return Object.getOwnPropertyDescriptor(getQuestionBank(), key);
+  },
+});
 
 const ASSESSMENT_TEMPLATES = [
   { key: 'dsa_fundamentals', title: 'DSA Fundamentals', skillKey: 'dsa', description: 'Arrays, trees, graphs, complexity analysis and classic algorithms.', durationMinutes: 25, questionCount: 12, passScore: 60, difficulty: 'intermediate' },
@@ -501,9 +352,12 @@ const SEED_MENTORS = [
   },
 ];
 
-// Idempotent seeding of the reference collections. Safe to call on every request;
-// each collection is only written when it is empty.
+// Idempotent seeding — memoized so it only runs once per server lifetime
+let _seeded = false;
 async function ensureCareerSeed(db) {
+  if (_seeded) return;
+  _seeded = true;
+
   const [assessmentCount, driveCount, mentorCount] = await Promise.all([
     db.collection('assessments').estimatedDocumentCount(),
     db.collection('placement_drives').estimatedDocumentCount(),
@@ -513,11 +367,12 @@ async function ensureCareerSeed(db) {
   const now = new Date().toISOString();
 
   if (!assessmentCount) {
-    const docs = ASSESSMENT_TEMPLATES.filter(t => (QUESTION_BANK[t.skillKey] || []).length).map(t => ({
+    const qb = getQuestionBank();
+    const docs = ASSESSMENT_TEMPLATES.filter(t => (qb[t.skillKey] || []).length).map(t => ({
       ...t,
       skillName: SKILL_BY_KEY.get(t.skillKey)?.name || t.skillKey,
       category: SKILL_BY_KEY.get(t.skillKey)?.category || 'core_engineering',
-      totalQuestions: Math.min(t.questionCount, QUESTION_BANK[t.skillKey].length),
+      totalQuestions: Math.min(t.questionCount, qb[t.skillKey].length),
       attempts: 0,
       isActive: true,
       createdAt: now,
@@ -544,7 +399,7 @@ module.exports = {
   levelForScore,
   CAREER_TRACKS,
   CAREER_BY_KEY,
-  QUESTION_BANK,
+  QUESTION_BANK: QUESTION_BANK_PROXY,
   ASSESSMENT_TEMPLATES,
   SEED_COMPANIES,
   PLACEMENT_ROUNDS,

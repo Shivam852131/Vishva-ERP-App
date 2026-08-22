@@ -59,12 +59,21 @@ function createApp(io) {
   });
 
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, service: 'vishva-erp-backend', time: new Date().toISOString() });
+    const getMl = app.get('mlStatus');
+    const ml = getMl ? getMl() : { loaded: false, loading: false };
+    res.json({
+      ok: true,
+      service: 'vishva-erp-backend',
+      time: new Date().toISOString(),
+      ml: { modelsLoaded: ml.loaded, modelsLoading: ml.loading },
+    });
   });
 
   const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
   const registerLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
   const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false });
+  const whatsappLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { detail: 'Too many WhatsApp requests. Please try again later.' } });
+  const aiLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { detail: 'Too many AI requests. Please slow down.' } });
 
   app.use('/api/auth/login', loginLimiter);
   app.use('/api/auth/register', registerLimiter);
@@ -89,8 +98,8 @@ function createApp(io) {
   app.use('/api', collegesRoutes);
   app.use('/api', paymentConfigRoutes);
   app.use('/api', collegePaymentsRoutes);
-  app.use('/api/ai', createAiRouter(io));
-  app.use('/api', twilioRoutes);
+  app.use('/api/ai', aiLimiter, createAiRouter(io));
+  app.use('/api', whatsappLimiter, twilioRoutes);
   app.use('/api/live-classes', createLiveClassesRouter(io));
   app.use('/api/placement', createPlacementRouter(io));
   app.use('/api/assessments', createAssessmentsRouter(io));
