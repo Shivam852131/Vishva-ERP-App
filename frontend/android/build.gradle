@@ -28,4 +28,20 @@ allprojects {
     }
 }
 
+// Redirect cmake build directory for ALL subprojects to avoid
+// Windows 260-char path limit in node_modules/.cxx
+subprojects { subproject ->
+    subproject.plugins.whenPluginAdded { plugin ->
+        if (plugin.class.name.contains('com.android')) {
+            subproject.afterEvaluate {
+                try {
+                    android.externalNativeBuild.cmake.buildDirectory = new File("C:/dev/cxx/${subproject.name}")
+                } catch (Exception e) {
+                    // Not all android projects have cmake
+                }
+            }
+        }
+    }
+}
+
 apply plugin: "com.facebook.react.rootproject"

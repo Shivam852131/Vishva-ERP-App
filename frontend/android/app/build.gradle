@@ -69,13 +69,16 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('VISHVA_STORE_FILE')) {
-                storeFile file(VISHVA_STORE_FILE)
-                storePassword VISHVA_STORE_PASSWORD
-                keyAlias VISHVA_KEY_ALIAS
-                keyPassword VISHVA_KEY_PASSWORD
+            def keystorePropertiesFile = rootProject.file("keystore.properties")
+            if (keystorePropertiesFile.exists()) {
+                def keystoreProperties = new Properties()
+                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
             } else if (System.getenv("CI") != null) {
-                throw new GradleException("Release signing requires VISHVA_STORE_FILE in CI/production builds")
+                throw new GradleException("Release signing requires keystore.properties in CI/production builds")
             } else {
                 storeFile file('debug.keystore')
                 storePassword 'android'
