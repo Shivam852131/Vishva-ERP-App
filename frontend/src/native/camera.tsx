@@ -34,11 +34,16 @@ export type CameraViewHandle = {
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
-  const chunkSize = 8192;
+  const chunkSize = 65536;
   let binary = '';
   for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+    const end = Math.min(i + chunkSize, bytes.length);
+    const chunk = bytes.subarray(i, end);
+    let chars = '';
+    for (let j = 0; j < chunk.length; j++) {
+      chars += String.fromCharCode(chunk[j]);
+    }
+    binary += chars;
   }
   return btoa(binary);
 }

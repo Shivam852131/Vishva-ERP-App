@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
-const { sendError, nowIso, roomForUser } = require('../utils');
+const { sendError, nowIso, roomForUser, emitToCollege } = require('../utils');
 const { requireRole, collegeFilter } = require('../auth');
 const { ensureCareerSeed, SKILL_BY_KEY, PLACEMENT_ROUNDS, departmentMatches } = require('../careerData');
 const { getSkillMap } = require('../skillProfile');
@@ -264,7 +264,7 @@ function createPlacementRouter(io) {
 
     const { insertedId } = await db.collection('placement_drives').insertOne(doc);
     const payload = serializeDrive({ ...doc, _id: insertedId });
-    io.emit('placement:drive-created', payload);
+    emitToCollege(io, req.userCollegeId, 'placement:drive-created', payload);
     res.status(201).json(payload);
   });
 

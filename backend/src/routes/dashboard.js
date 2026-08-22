@@ -9,7 +9,7 @@ async function buildStudentAttendance(studentId) {
   const db = getDB();
   const uid = oid(studentId);
   const filter = uid ? { $or: [{ studentId: uid }, { studentId: studentId }] } : { studentId: studentId };
-  const records = await db.collection('attendance_records').find(filter).toArray();
+  const records = await db.collection('attendance_records').find(filter).sort({ date: -1 }).limit(500).toArray();
   const total = records.length || 0;
   const present = records.filter(r => r.status === 'present').length;
   const rate = total ? Math.round((present / total) * 100) : 0;
@@ -31,7 +31,7 @@ async function buildStudentDashboard(studentId, req) {
   const attendance = await buildStudentAttendance(studentId);
 
   const submittedAssignmentIds = (
-    await db.collection('submissions').find({ ...cf, $or: [{ studentId: sid }, { studentId: studentId }] }).toArray()
+    await db.collection('submissions').find({ ...cf, $or: [{ studentId: sid }, { studentId: studentId }] }).limit(500).toArray()
   ).map(s => s.assignmentId);
 
   const pendingAssignments = courseIds.length
@@ -51,13 +51,14 @@ async function buildStudentDashboard(studentId, req) {
 
   const pendingFees = await db.collection('fees')
     .find({ ...cf, $or: [{ userId: sid }, { userId: studentId }], status: { $ne: 'paid' } })
+    .limit(100)
     .toArray();
 
   const upcomingClasses = courseIds.length
-    ? await db.collection('timetable_slots').find({ ...cf, $or: [{ courseId: { $in: courseIds } }, { courseId: { $in: courseIds.map(String) } }] }).toArray()
-    : await db.collection('timetable_slots').find(cf).toArray();
+    ? await db.collection('timetable_slots').find({ ...cf, $or: [{ courseId: { $in: courseIds } }, { courseId: { $in: courseIds.map(String) } }] }).limit(50).toArray()
+    : await db.collection('timetable_slots').find(cf).limit(50).toArray();
 
-  const results = await db.collection('exam_results').find({ ...cf, $or: [{ studentId: sid }, { studentId: studentId }] }).toArray();
+  const results = await db.collection('exam_results').find({ ...cf, $or: [{ studentId: sid }, { studentId: studentId }] }).limit(200).toArray();
   const cgpa = results.length
     ? Number((results.reduce((sum, r) => sum + (r.marks || 0), 0) / results.length).toFixed(2))
     : null;
@@ -137,7 +138,7 @@ async function buildParentDashboard(parentId, req) {
           .toArray()
       : [];
 
-    const fees = await db.collection('fees').find({ ...cf, userId: cid }).toArray();
+    const fees = await db.collection('fees').find({ ...cf, userId: cid }).limit(100).toArray();
 
     const cgpa = examResults.length
       ? Number((examResults.reduce((sum, r) => sum + (r.marks || 0), 0) / examResults.length).toFixed(2))
@@ -261,12 +262,12 @@ router.get('/analytics/student', requireRole('student'), async (req, res) => {
       });
     }
 
-    const results = await db.collection('exam_results').find({ ...cf, studentId: oid(sid) }).toArray();
+    const results = await db.collection('exam_results').find({ ...cf, studentId: oid(sid) }).limit(200).toArray();
     const avgMarks = results.length
       ? Math.round(results.reduce((sum, r) => sum + (r.marks || 0), 0) / results.length)
       : 0;
 
-    const bookIssues = await db.collection('book_issues').find({ ...cf, userId: oid(sid) }).toArray();
+    const bookIssues = await db.collection('book_issues').find({ ...cf, userId: oid(sid) }).limit(100).toArray();
 
     res.json({
       attendance: attendance.rate,

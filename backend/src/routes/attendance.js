@@ -1,24 +1,24 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { authUser, requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
-const { serializeUser, sendError, makeCode, nowIso, isoDate } = require('../utils');
+const { serializeUser, sendError, makeCode, nowIso, isoDate, emitToCollege } = require('../utils');
 const { verifyFace, encodeFace } = require('../faceVerify');
 
 function createAttendanceRouter(io) {
   const router = express.Router();
 
-  function emitAttendance(session) {
+  function emitAttendance(session, collegeId) {
     const sid = String(session._id);
-    io.emit('attendance:session:update', { sessionId: sid });
-    io.emit('attendance:active-sessions:update', { sessionId: sid, courseId: String(session.courseId) });
-    io.emit('attendance:live:update', { sessionId: sid, courseId: String(session.courseId) });
+    emitToCollege(io, collegeId, 'attendance:session:update', { sessionId: sid });
+    emitToCollege(io, collegeId, 'attendance:active-sessions:update', { sessionId: sid, courseId: String(session.courseId) });
+    emitToCollege(io, collegeId, 'attendance:live:update', { sessionId: sid, courseId: String(session.courseId) });
   }
 
   async function pushNotification(req, { audience = 'all', title, body, recipientIds = [] }) {
     const db = getDB();
     const doc = { audience, title, body, recipientIds: recipientIds.map(String), readBy: [], createdAt: new Date(), collegeId: oid(req.userCollegeId) };
     const { insertedId } = await db.collection('notifications').insertOne(doc);
-    io.emit('notifications:update', { audience, recipientIds });
+    emitToCollege(io, req.userCollegeId, 'notifications:update', { audience, recipientIds });
     return { _id: insertedId, ...doc };
   }
 
@@ -82,9 +82,12 @@ function createAttendanceRouter(io) {
     const db = getDB();
     const uid = oid(user._id);
     const userId = String(user._id);
+    const { paginationParams: pp } = require('../utils');
+    const { skip, limit: pgLimit } = pp(req.query, { defaultSize: 100, maxSize: 500 });
     const filter = { $or: [{ studentId: uid }, { studentId: userId }], ...collegeFilter(req) };
     if (req.query.courseId) filter.courseId = oid(req.query.courseId);
-    const records = await db.collection('attendance_records').find(filter).sort({ date: -1 }).toArray();
+    const total = await db.collection('attendance_records').countDocuments(filter);
+    const records = await db.collection('attendance_records').find(filter).sort({ date: -1 }).skip(skip).limit(pgLimit).toArray();
     const courseIdsRaw = [...new Set(records.map((r) => String(r.courseId)))];
     const courseOids = courseIdsRaw.map(oid).filter(Boolean);
     const courses = courseOids.length || courseIdsRaw.length
@@ -201,7 +204,7 @@ function createAttendanceRouter(io) {
     };
     const { insertedId } = await db.collection('attendance_sessions').insertOne(doc);
     const session = { _id: insertedId, ...doc };
-    emitAttendance(session);
+    emitAttendance(session, req.userCollegeId);
     res.json({
       id: String(insertedId),
       course_name: course.name,
@@ -321,7 +324,7 @@ function createAttendanceRouter(io) {
       sessionId: session._id,
       collegeId: oid(req.userCollegeId),
     });
-    emitAttendance(session);
+    emitAttendance(session, req.userCollegeId);
     const course = await db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) });
     await pushNotification(req, { audience: 'students', title: 'Attendance confirmed', body: `${course?.name || 'Course'} check-in recorded.` });
     res.json({
@@ -356,7 +359,7 @@ function createAttendanceRouter(io) {
         }))
       );
     }
-    emitAttendance(session);
+    emitAttendance(session, req.userCollegeId);
     res.json({ ok: true, closed_at: now.toISOString() });
   });
 
@@ -390,7 +393,7 @@ function createAttendanceRouter(io) {
       { $set: { status: newStatus } },
       { upsert: true }
     );
-    emitAttendance(session);
+    emitAttendance(session, req.userCollegeId);
     res.json({ ok: true });
   });
 
@@ -453,15 +456,20 @@ function createAttendanceRouter(io) {
 
     const sessions = await db.collection('attendance_sessions')
       .find({ date: { $gte: sinceStr }, ...collegeFilter(req) })
+      .limit(500)
       .toArray();
 
     const sessionIds = sessions.map(s => s._id);
-    const entries = await db.collection('attendance_roll_entries')
-      .find({ sessionId: { $in: sessionIds }, ...collegeFilter(req) })
-      .toArray();
+    const entries = sessionIds.length
+      ? await db.collection('attendance_roll_entries')
+          .find({ sessionId: { $in: sessionIds }, ...collegeFilter(req) })
+          .limit(5000)
+          .toArray()
+      : [];
 
     const records = await db.collection('attendance_records')
       .find({ date: { $gte: sinceStr }, ...collegeFilter(req) })
+      .limit(5000)
       .toArray();
 
     const totalSessions = sessions.length;

@@ -1,5 +1,5 @@
 const { getDB, oid } = require('../db');
-const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated } = require('../utils');
+const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated, emitToCollege } = require('../utils');
 const { requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
 
 function serializeAsset(asset) {
@@ -276,7 +276,7 @@ function createCampusRouter(io) {
         { $inc: { occupied: 1 } }
       );
 
-      if (io) io.emit('hostel:allocated', { hostel_id: req.params.id, student_id: String(req.user._id) });
+      if (io) emitToCollege(io, req.userCollegeId, 'hostel:allocated', { hostel_id: req.params.id, student_id: String(req.user._id) });
 
       res.json(allocation);
     } catch (e) {
@@ -304,7 +304,7 @@ function createCampusRouter(io) {
         { $inc: { occupied: -1 } }
       );
 
-      if (io) io.emit('hostel:deallocated', { hostel_id: String(allocation.hostelId), student_id: String(allocation.studentId) });
+      if (io) emitToCollege(io, req.userCollegeId, 'hostel:deallocated', { hostel_id: String(allocation.hostelId), student_id: String(allocation.studentId) });
 
       res.json({ ok: true });
     } catch (e) {
@@ -346,7 +346,7 @@ function createCampusRouter(io) {
         { $inc: { occupied: 1 } }
       );
 
-      if (io) io.emit('hostel:allocated', { hostel_id, student_id });
+      if (io) emitToCollege(io, req.userCollegeId, 'hostel:allocated', { hostel_id, student_id });
 
       res.json({ ok: true, allocation_id: String(result.insertedId) });
     } catch (e) {
@@ -456,7 +456,7 @@ function createCampusRouter(io) {
       const result = await db.collection('transport_enrollments').insertOne(enrollment);
       enrollment._id = result.insertedId;
 
-      if (io) io.emit('transport:enrolled', { route_id: String(routeId), student_id: String(req.user._id), student_name: req.user.name || '' });
+      if (io) emitToCollege(io, req.userCollegeId, 'transport:enrolled', { route_id: String(routeId), student_id: String(req.user._id), student_name: req.user.name || '' });
 
       res.json(enrollment);
     } catch (e) {
@@ -478,7 +478,7 @@ function createCampusRouter(io) {
       );
       if (result.matchedCount === 0) return sendError(res, 'Enrollment not found', 404);
 
-      if (io) io.emit('transport:deenrolled', { route_id: req.params.routeId, student_id: String(req.user._id) });
+      if (io) emitToCollege(io, req.userCollegeId, 'transport:deenrolled', { route_id: req.params.routeId, student_id: String(req.user._id) });
 
       res.json({ success: true });
     } catch (e) {
@@ -717,7 +717,7 @@ function createCampusRouter(io) {
 
       const result = await db.collection('gate_passes').insertOne(pass);
 
-      if (io) io.emit('gate_pass:created', { student_id: String(req.user._id), id: String(result.insertedId) });
+      if (io) emitToCollege(io, req.userCollegeId, 'gate_pass:created', { student_id: String(req.user._id), id: String(result.insertedId) });
 
       res.json({
         id: String(result.insertedId),
@@ -741,7 +741,7 @@ function createCampusRouter(io) {
       if (result.matchedCount === 0) return sendError(res, 'Gate pass not found', 404);
 
       const updated = await db.collection('gate_passes').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
-      if (io) io.emit('gate_pass:updated', { id: req.params.id, status: 'approved' });
+      if (io) emitToCollege(io, req.userCollegeId, 'gate_pass:updated', { id: req.params.id, status: 'approved' });
       res.json({ id: String(updated._id), status: updated.status, reviewed_at: updated.reviewed_at });
     } catch (e) {
       sendError(res, e);
@@ -759,7 +759,7 @@ function createCampusRouter(io) {
       if (result.matchedCount === 0) return sendError(res, 'Gate pass not found', 404);
 
       const updated = await db.collection('gate_passes').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
-      if (io) io.emit('gate_pass:updated', { id: req.params.id, status: 'rejected' });
+      if (io) emitToCollege(io, req.userCollegeId, 'gate_pass:updated', { id: req.params.id, status: 'rejected' });
       res.json({ id: String(updated._id), status: updated.status, reviewed_at: updated.reviewed_at });
     } catch (e) {
       sendError(res, e);

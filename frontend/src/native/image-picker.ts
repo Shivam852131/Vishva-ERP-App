@@ -50,6 +50,8 @@ export async function launchCameraAsync(
       includeBase64: true,
       quality: 0.5,
       saveToPhotos: false,
+      maxWidth: 1920,
+      maxHeight: 1920,
     };
     const merged = { ...baseOpts, ...options } as CameraOptions;
     const result = await launchCamera(merged);
@@ -81,6 +83,8 @@ export async function launchImageLibraryAsync(
       mediaType: 'photo',
       includeBase64: true,
       quality: 0.5,
+      maxWidth: 1920,
+      maxHeight: 1920,
     };
     const merged = { ...baseOpts, ...options } as ImageLibraryOptions;
     const result = await launchImageLibrary(merged);

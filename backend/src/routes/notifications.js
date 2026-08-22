@@ -1,6 +1,6 @@
 const { getDB, oid } = require('../db');
 const { collegeFilter, requireCollegeAccess } = require('../auth');
-const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated, roomForUser } = require('../utils');
+const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated, roomForUser, emitToCollege } = require('../utils');
 
 function notificationVisibleToUser(notification, user) {
   if (notification.audience === 'all') return true;
@@ -18,12 +18,17 @@ function createNotificationsRouter(io) {
   router.get('/notifications', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
+      const { page, pageSize, skip, limit: pgLimit } = paginationParams(req.query, { defaultSize: 50, maxSize: 200 });
+      const filter = { ...collegeFilter(req) };
+      const total = await db.collection('notifications').countDocuments(filter);
       const all = await db.collection('notifications')
-        .find({ ...collegeFilter(req) })
+        .find(filter)
         .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pgLimit)
         .toArray();
       const visible = all.filter(n => notificationVisibleToUser(n, req.user));
-      res.json(visible);
+      sendPaginated(res, visible, total);
     } catch (e) {
       sendError(res, e);
     }
@@ -62,11 +67,16 @@ function createNotificationsRouter(io) {
   router.get('/announcements', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
+      const { page, pageSize, skip, limit: pgLimit } = paginationParams(req.query, { defaultSize: 50, maxSize: 200 });
+      const filter = { ...collegeFilter(req) };
+      const total = await db.collection('announcements').countDocuments(filter);
       const announcements = await db.collection('announcements')
-        .find({ ...collegeFilter(req) })
+        .find(filter)
         .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pgLimit)
         .toArray();
-      res.json(announcements);
+      sendPaginated(res, announcements, total);
     } catch (e) {
       sendError(res, e);
     }
@@ -118,7 +128,7 @@ function createNotificationsRouter(io) {
       const notifResult = await db.collection('notifications').insertOne(notification);
       notification._id = notifResult.insertedId;
 
-      if (io) io.emit('announcements:update', announcement);
+      if (io) emitToCollege(io, req.userCollegeId, 'announcements:update', announcement);
 
       res.json(announcement);
     } catch (e) {

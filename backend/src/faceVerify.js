@@ -1,41 +1,30 @@
 /**
  * Face Verification Module — AI-powered selfie check-in
  *
- * Two-tier detection:
- *   1. ML mode (when @tensorflow/tfjs-node available): full face-api.js with
- *      TinyFaceDetector + FaceLandmark68 + FaceRecognitionNet + FaceExpressionNet
- *   2. Fallback mode: pixel-analysis-based liveness + encoding + cosine similarity
+ * Uses a worker thread pool for heavy ML operations (canvas + face-api.js)
+ * so the main event loop is never blocked.
  *
- * On Render (Linux), @tensorflow/tfjs-node installs natively → ML mode activates.
- * On Windows dev, falls back to pixel analysis automatically.
+ * Two-tier detection:
+ *   1. ML mode via worker pool: TinyFaceDetector + FaceLandmark68 + FaceRecognitionNet + FaceExpressionNet
+ *   2. Fallback mode: pixel-analysis-based liveness + encoding + cosine similarity
  */
 
-const path = require('path');
+const { FacePool } = require('./ml/facePool');
 
-const MODEL_DIR = path.join(__dirname, '..', 'models');
-let faceapi = null;
-let modelsLoaded = false;
+const POOL_SIZE = Number(process.env.FACE_WORKER_POOL_SIZE) || 2;
+let pool = null;
+let poolReady = false;
 
-// ── Model Loading ──
+// ── Pool Initialization ──
 
 async function loadModels() {
-  if (modelsLoaded) return true;
   try {
-    // Try loading @tensorflow/tfjs-node (works on Linux/Render)
-    require('@tensorflow/tfjs-node');
-    faceapi = require('@vladmandic/face-api');
-
-    await faceapi.nets.tinyFaceDetector.loadFromDisk(MODEL_DIR);
-    await faceapi.nets.faceLandmark68TinyNet.loadFromDisk(MODEL_DIR);
-    await faceapi.nets.faceRecognitionNet.loadFromDisk(MODEL_DIR);
-    await faceapi.nets.faceExpressionNet.loadFromDisk(MODEL_DIR);
-
-    modelsLoaded = true;
-    console.log('[faceVerify] ✅ ML models loaded — full face detection active');
-    return true;
+    pool = new FacePool(POOL_SIZE);
+    poolReady = await pool.start();
+    return poolReady;
   } catch (err) {
-    console.warn('[faceVerify] ⚠ ML models unavailable, using pixel-analysis fallback:', err.message);
-    modelsLoaded = false;
+    console.warn('[faceVerify] Worker pool failed to start:', err.message);
+    poolReady = false;
     return false;
   }
 }
@@ -72,7 +61,6 @@ function analyzeImageBuffer(buffer) {
 // ── Liveness Detection ──
 
 function detectLiveness(detections, buffer) {
-  // ML path: use face-api detections
   if (detections && detections.length > 0) {
     const checks = {};
     const detection = detections[0];
@@ -82,13 +70,12 @@ function detectLiveness(detections, buffer) {
       return { isLive: false, confidence: 0, reasons: [`${detections.length} faces detected`], checks };
     }
 
-    checks.confidence = detection.detection && detection.detection.score > 0.5;
+    checks.confidence = detection.score > 0.5;
 
-    if (detection.detection && detection.detection.box) {
-      const box = detection.detection.box;
-      const imgW = detection.detection.imageWidth || 640;
-      const imgH = detection.detection.imageHeight || 480;
-      const faceRatio = (box.width * box.height) / (imgW * imgH);
+    if (detection.box) {
+      const imgW = detection.imageWidth || 640;
+      const imgH = detection.imageHeight || 480;
+      const faceRatio = (detection.box.width * detection.box.height) / (imgW * imgH);
       checks.faceSize = faceRatio > 0.05 && faceRatio < 0.8;
     }
 
@@ -179,7 +166,6 @@ function generateFallbackEncoding(buffer) {
   if (width < 50 || height < 50) return null;
 
   const encoding = [];
-  // Sample 32 regions in a grid pattern for better accuracy
   const gridCols = 8;
   const gridRows = 4;
   for (let gy = 0; gy < gridRows; gy++) {
@@ -197,7 +183,6 @@ function generateFallbackEncoding(buffer) {
     }
   }
 
-  // Add gradient features (horizontal and vertical)
   for (let y = 0; y < gridRows; y++) {
     for (let x = 0; x < gridCols - 1; x++) {
       const idx1 = (y * gridCols + x) * 3;
@@ -222,31 +207,17 @@ function generateFallbackEncoding(buffer) {
 async function encodeFace(selfieBase64) {
   const buffer = Buffer.from(selfieBase64, 'base64');
 
-  // Try ML detection first
-  if (modelsLoaded && faceapi) {
+  // Try worker pool ML detection
+  if (poolReady && pool) {
     try {
-      const { createCanvas, Image } = require('canvas');
-      const img = new Image();
-      img.src = buffer;
-      const canvas = createCanvas(img.width, img.height);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-
-      const detections = await faceapi
-        .detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 }))
-        .withFaceLandmarks(true)
-        .withFaceDescriptors()
-        .withFaceExpressions();
-
-      if (detections.length === 1) {
-        const encoding = extractEncoding(detections[0]);
-        if (encoding) {
-          const liveness = detectLiveness(detections, buffer);
-          return { ok: true, encoding, liveness, ml: true };
-        }
+      const detections = await pool.detect(buffer, 'encode');
+      if (detections.length === 1 && detections[0].descriptor) {
+        const encoding = Array.from(detections[0].descriptor);
+        const liveness = detectLiveness(detections, buffer);
+        return { ok: true, encoding, liveness, ml: true };
       }
     } catch (err) {
-      console.warn('[faceVerify] ML encode error, using fallback:', err.message);
+      console.warn('[faceVerify] Pool encode error, using fallback:', err.message);
     }
   }
 
@@ -286,73 +257,76 @@ function compareFaces(encoding1, encoding2, threshold = 0.6) {
 async function verifyFace(selfieBase64, enrolledProfile, prevFrameBase64 = null) {
   const buffer = Buffer.from(selfieBase64, 'base64');
 
-  // Try ML detection
   let detections = null;
   let usedML = false;
 
-  if (modelsLoaded && faceapi) {
+  if (poolReady && pool) {
     try {
-      const { createCanvas, Image } = require('canvas');
-      const img = new Image();
-      img.src = buffer;
-      const canvas = createCanvas(img.width, img.height);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-
-      detections = await faceapi
-        .detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 }))
-        .withFaceLandmarks(true)
-        .withFaceDescriptors()
-        .withFaceExpressions();
-
+      detections = await pool.detect(buffer, 'detect');
       usedML = true;
     } catch (err) {
-      console.warn('[faceVerify] ML detection error, using fallback:', err.message);
+      console.warn('[faceVerify] Pool detection error, using fallback:', err.message);
     }
   }
 
   // ── Liveness ──
   const liveness = detectLiveness(usedML ? detections : null, buffer);
   if (!liveness.isLive) {
-    return { ok: false, status: 'liveness_failed', message: 'Liveness check failed',
-      detail: `Confidence: ${liveness.confidence}%. ${liveness.reasons.join('; ')}`, liveness };
+    return {
+      ok: false, status: 'liveness_failed', message: 'Liveness check failed',
+      detail: `Confidence: ${liveness.confidence}%. ${liveness.reasons.join('; ')}`, liveness,
+    };
   }
 
   // ── Anti-spoofing (ML only) ──
   if (usedML) {
     const spoof = detectSpoofing(detections);
     if (spoof.isSpoof) {
-      return { ok: false, status: 'spoof_detected', message: 'Spoof attempt detected',
-        detail: spoof.warnings.join('; '), liveness, spoof };
+      return {
+        ok: false, status: 'spoof_detected', message: 'Spoof attempt detected',
+        detail: spoof.warnings.join('; '), liveness, spoof,
+      };
     }
   }
 
   // ── Encoding ──
   const encoding = usedML ? extractEncoding(detections[0]) : generateFallbackEncoding(buffer);
   if (!encoding) {
-    return { ok: false, status: 'encoding_failed', message: 'Could not generate face encoding',
-      detail: 'Ensure your face is clearly visible', liveness };
+    return {
+      ok: false, status: 'encoding_failed', message: 'Could not generate face encoding',
+      detail: 'Ensure your face is clearly visible', liveness,
+    };
   }
 
   // ── New enrollment ──
   if (!enrolledProfile || !enrolledProfile.encoding) {
-    return { ok: true, status: 'enrolled', message: 'Face enrolled successfully',
+    return {
+      ok: true, status: 'enrolled', message: 'Face enrolled successfully',
       detail: 'Your face is now registered for check-in',
-      encoding, liveness, isNewEnrollment: true, ml: usedML };
+      encoding, liveness, isNewEnrollment: true, ml: usedML,
+    };
   }
 
   // ── Compare ──
   const threshold = usedML ? 0.6 : 0.7;
   const comparison = compareFaces(encoding, enrolledProfile.encoding, threshold);
   if (!comparison.match) {
-    return { ok: false, status: 'mismatch', message: 'Face does not match enrolled profile',
+    return {
+      ok: false, status: 'mismatch', message: 'Face does not match enrolled profile',
       detail: `Similarity: ${(comparison.similarity * 100).toFixed(1)}%`,
-      liveness, comparison };
+      liveness, comparison,
+    };
   }
 
-  return { ok: true, status: 'verified', message: 'Face verified successfully',
+  return {
+    ok: true, status: 'verified', message: 'Face verified successfully',
     detail: `Match confidence: ${(comparison.similarity * 100).toFixed(1)}%`,
-    encoding, liveness, comparison, isNewEnrollment: false, ml: usedML };
+    encoding, liveness, comparison, isNewEnrollment: false, ml: usedML,
+  };
 }
 
-module.exports = { loadModels, detectLiveness, detectSpoofing, extractEncoding, compareFaces, verifyFace, encodeFace };
+async function shutdown() {
+  if (pool) await pool.shutdown();
+}
+
+module.exports = { loadModels, detectLiveness, detectSpoofing, extractEncoding, compareFaces, verifyFace, encodeFace, shutdown };

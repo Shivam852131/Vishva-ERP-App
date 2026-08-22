@@ -82,6 +82,15 @@ function parseCsv(csvText) {
     .filter(Boolean);
 }
 
+function emitToCollege(io, collegeId, event, data) {
+  const cid = collegeId ? String(collegeId) : null;
+  if (cid) {
+    io.to(`college:${cid}`).emit(event, data);
+  } else {
+    io.emit(event, data);
+  }
+}
+
 module.exports = {
   nowIso,
   daysFromNow,
@@ -94,4 +103,5 @@ module.exports = {
   serializeUserWithCollege,
   sendError,
   parseCsv,
+  emitToCollege,
 };

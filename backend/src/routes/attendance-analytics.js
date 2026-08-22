@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { authUser, requireRole, collegeFilter } = require('../auth');
-const { sendError, isoDate } = require('../utils');
+const { sendError, isoDate, emitToCollege } = require('../utils');
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -301,7 +301,7 @@ function createAttendanceAnalyticsRouter(io) {
             collegeId: oid(req.userCollegeId),
             createdAt: new Date(),
           });
-          io.emit('notifications:update', { audience: 'faculty', recipientIds: [String(faculty._id)] });
+          emitToCollege(io, req.userCollegeId, 'notifications:update', { audience: 'faculty', recipientIds: [String(faculty._id)] });
         }
       }
     }
@@ -389,7 +389,7 @@ function createAttendanceAnalyticsRouter(io) {
       collegeId: oid(req.userCollegeId),
       createdAt: new Date(),
     });
-    io.emit('notifications:update', { audience: 'students', recipientIds: [String(request.studentId)] });
+    emitToCollege(io, req.userCollegeId, 'notifications:update', { audience: 'students', recipientIds: [String(request.studentId)] });
 
     res.json({ ok: true, message: `Leave request ${action}` });
   });
@@ -708,8 +708,8 @@ function createAttendanceAnalyticsRouter(io) {
     );
 
     const sidStr = String(session._id);
-    io.emit('attendance:session:update', { sessionId: sidStr });
-    io.emit('attendance:live:update', { sessionId: sidStr, courseId: String(session.courseId) });
+    emitToCollege(io, req.userCollegeId, 'attendance:session:update', { sessionId: sidStr });
+    emitToCollege(io, req.userCollegeId, 'attendance:live:update', { sessionId: sidStr, courseId: String(session.courseId) });
 
     res.json({ ok: true, status });
   });
@@ -766,7 +766,7 @@ function createAttendanceAnalyticsRouter(io) {
     }
 
     if (recipientIds.length) {
-      io.emit('notifications:update', { audience: 'students', recipientIds });
+      emitToCollege(io, req.userCollegeId, 'notifications:update', { audience: 'students', recipientIds });
     }
 
     res.json({ ok: true, notifications_sent: notificationsSent });

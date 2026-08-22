@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { hashPassword, requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
-const { sendError, serializeUserWithCollege, parseCsv } = require('../utils');
+const { sendError, serializeUserWithCollege, parseCsv, paginationParams, sendPaginated } = require('../utils');
 
 const router = express.Router();
 
@@ -11,10 +11,12 @@ router.use(requireRole('college_admin', 'super_admin'));
 
 router.get('/', requireCollegeAccess, async (req, res) => {
   const db = getDB();
+  const { skip, limit: pgLimit } = paginationParams(req.query, { defaultSize: 100, maxSize: 500 });
   const filter = { ...collegeFilter(req) };
   if (req.query.role) filter.role = req.query.role;
-  const users = await db.collection('users').find(filter).toArray();
-  res.json(await Promise.all(users.map(user => serializeUserWithCollege(db, user))));
+  const total = await db.collection('users').countDocuments(filter);
+  const users = await db.collection('users').find(filter).skip(skip).limit(pgLimit).toArray();
+  sendPaginated(res, await Promise.all(users.map(user => serializeUserWithCollege(db, user))), total);
 });
 
 router.get('/emails', requireCollegeAccess, async (req, res) => {

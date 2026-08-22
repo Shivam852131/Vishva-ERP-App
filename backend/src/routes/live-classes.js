@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
-const { sendError, nowIso, roomForUser } = require('../utils');
+const { sendError, nowIso, roomForUser, emitToCollege } = require('../utils');
 const { requireRole, collegeFilter } = require('../auth');
 
 function roomForLive(sessionId) {
@@ -137,7 +137,7 @@ function createLiveClassesRouter(io) {
 
     const { insertedId } = await db.collection('live_sessions').insertOne(doc);
     const payload = serializeSession({ ...doc, _id: insertedId }, { participant_count: 0, active_count: 0, joined: false });
-    io.emit('live:scheduled', payload);
+    emitToCollege(io, req.userCollegeId, 'live:scheduled', payload);
     res.status(201).json(payload);
   });
 
@@ -220,7 +220,7 @@ function createLiveClassesRouter(io) {
     );
 
     const payload = serializeSession({ ...session, status: 'live', startedAt: nowIso() });
-    io.emit('live:started', payload);
+    emitToCollege(io, session.collegeId, 'live:started', payload);
     io.to(roomForLive(session._id)).emit('live:status', { sessionId: String(session._id), status: 'live' });
     res.json(payload);
   });
@@ -246,7 +246,7 @@ function createLiveClassesRouter(io) {
     );
 
     io.to(roomForLive(session._id)).emit('live:status', { sessionId: String(session._id), status: 'ended' });
-    io.emit('live:ended', { sessionId: String(session._id) });
+    emitToCollege(io, session.collegeId, 'live:ended', { sessionId: String(session._id) });
     res.json(serializeSession({ ...session, status: 'ended', endedAt }));
   });
 

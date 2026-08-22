@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { Suspense } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -16,13 +17,26 @@ import {
   Building2,
   Wallet,
 } from 'lucide-react-native';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import IndexScreen from './app/index';
-import LandingScreen from './app/landing';
-import LoginScreen from './app/login';
+import { ErrorBoundary } from './src/ErrorBoundary';
+import { navigationRef } from './src/navigation/navigation-ref';
+import { AuthProvider } from './src/providers/AuthContext';
+import { theme } from './src/theme';
+
+function LoadingScreen() {
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.bg }}>
+      <ActivityIndicator size="large" color={theme.colors.brand} />
+    </View>
+  );
+}
+
+const LS = (fn: () => Promise<{ default: React.ComponentType<any> }>) => React.lazy(fn);
+
+// ── Tab Screens (loaded eagerly — needed on first navigation per role) ──
 import StudentDashboardScreen from './app/(student)/dashboard';
 import StudentTimetableScreen from './app/(student)/timetable';
 import StudentAssignmentsScreen from './app/(student)/assignments';
@@ -37,87 +51,88 @@ import FacultyClassesScreen from './app/(faculty)/classes';
 import FacultyAssignmentsScreen from './app/(faculty)/assignments';
 import FacultyAiScreen from './app/(faculty)/ai';
 import FacultyProfileScreen from './app/(faculty)/profile';
-import FacultyExamGeneratorScreen from './app/(faculty)/exam-generator';
 import CollegeAdminDashboardScreen from './app/(college_admin)/dashboard';
 import CollegeAdminUsersScreen from './app/(college_admin)/users';
 import CollegeAdminAttendanceScreen from './app/(college_admin)/attendance';
 import CollegeAdminAcademicsScreen from './app/(college_admin)/academics';
 import CollegeAdminReportsScreen from './app/(college_admin)/reports';
 import CollegeAdminProfileScreen from './app/(college_admin)/profile';
-import CollegeAdminPaymentsScreen from './app/(college_admin)/payments';
-import CollegeAdminSubscriptionScreen from './app/(college_admin)/subscription';
-import CollegeAdminHostelAdminScreen from './app/(college_admin)/hostel-admin';
-import CollegeAdminPaymentSettingsScreen from './app/(college_admin)/payment-settings';
-import CollegeAdminCareerHubScreen from './app/(college_admin)/career-hub';
-import CollegeAdminPlacementsScreen from './app/(college_admin)/placements';
-import CollegeAdminAssessmentsAdminScreen from './app/(college_admin)/assessments-admin';
-import CollegeAdminMentorshipAdminScreen from './app/(college_admin)/mentorship-admin';
-import CollegeAdminSkillAdminScreen from './app/(college_admin)/skill-admin';
 import SuperAdminDashboardScreen from './app/(super_admin)/dashboard';
 import SuperAdminCollegesScreen from './app/(super_admin)/colleges';
 import SuperAdminUsersScreen from './app/(super_admin)/users';
 import SuperAdminReportsScreen from './app/(super_admin)/reports';
 import SuperAdminProfileScreen from './app/(super_admin)/profile';
-import AnalyticsScreen from './app/analytics';
-import AttendanceScreen from './app/attendance';
-import AttendanceLiveScreen from './app/attendance-live';
-import AttendanceAdvancedScreen from './app/attendance-advanced';
-import AttendanceLiveAdvancedScreen from './app/attendance-live-advanced';
-import LeaveManagementScreen from './app/leave-management';
-import ChatScreen from './app/chat';
-import EventsScreen from './app/events';
-import ExamsScreen from './app/exams';
-import FeesScreen from './app/fees';
-import GrievancesScreen from './app/grievances';
-import HostelScreen from './app/hostel';
-import IdCardScreen from './app/id-card';
-import LibraryScreen from './app/library';
-import NotesScreen from './app/notes';
-import NotificationsScreen from './app/notifications';
-import PlacementScreen from './app/placement';
-import ResultsScreen from './app/results';
-import ScanScreen from './app/scan';
-import SelfieScreen from './app/selfie';
-import SessionScreen from './app/session';
-import StartSessionScreen from './app/start-session';
-import TransportScreen from './app/transport';
-import PhoneOTPLoginScreen from './app/phone-login';
-import VisitorManagementScreen from './app/visitor';
-import ComplaintManagementScreen from './app/complaints';
-import AssetManagementScreen from './app/assets';
-import PushNotificationsScreen from './app/push-notifications';
-import EmailIntegrationScreen from './app/email';
-import WhatsAppIntegrationScreen from './app/whatsapp';
-import ParentAiScreen from './app/(parent)/ai';
-import StudentFeesScreen from './app/(student)/fees';
-import FacultyQuestionPaperScreen from './app/(faculty)/question-paper';
-import AssignmentCheckerScreen from './app/assignment-checker';
-import ReportCardScreen from './app/report-card';
-import CareerAdvisorScreen from './app/career-advisor';
-import ResumeBuilderScreen from './app/resume-builder';
-import InterviewPracticeScreen from './app/interview-practice';
-import StudyPlannerScreen from './app/study-planner';
-import BusTrackingScreen from './app/bus-tracking';
-import LiveClassesScreen from './app/live-classes';
-import LiveClassRoomScreen from './app/live-class';
-import SkillAssessmentScreen from './app/skill-assessment';
-import AssessmentAttemptScreen from './app/assessment-attempt';
-import MentorshipScreen from './app/mentorship';
-import SkillProfileScreen from './app/skill-profile';
-import CareerDashboardScreen from './app/career-dashboard';
-import FaceEnrollScreen from './app/face-enroll';
-import EditProfileScreen from './app/edit-profile';
-import ScreenshotTestScreen from './app/screenshot-test';
-import LocalShareHomeScreen from './app/localshare-home';
-import LocalShareCreateScreen from './app/localshare-create';
-import LocalShareActiveScreen from './app/localshare-active';
-import LocalShareJoinScreen from './app/localshare-join';
-import LocalShareTransferScreen from './app/localshare-transfer';
-import LocalShareHistoryScreen from './app/localshare-history';
-import { ErrorBoundary } from './src/ErrorBoundary';
-import { navigationRef } from './src/navigation/navigation-ref';
-import { AuthProvider } from './src/providers/AuthContext';
-import { theme } from './src/theme';
+
+// ── All other screens — lazy-loaded on demand ──
+const IndexScreen = LS(() => import('./app/index'));
+const LandingScreen = LS(() => import('./app/landing'));
+const LoginScreen = LS(() => import('./app/login'));
+const StudentFeesScreen = LS(() => import('./app/(student)/fees'));
+const FacultyExamGeneratorScreen = LS(() => import('./app/(faculty)/exam-generator'));
+const CollegeAdminPaymentsScreen = LS(() => import('./app/(college_admin)/payments'));
+const CollegeAdminSubscriptionScreen = LS(() => import('./app/(college_admin)/subscription'));
+const CollegeAdminHostelAdminScreen = LS(() => import('./app/(college_admin)/hostel-admin'));
+const CollegeAdminPaymentSettingsScreen = LS(() => import('./app/(college_admin)/payment-settings'));
+const CollegeAdminCareerHubScreen = LS(() => import('./app/(college_admin)/career-hub'));
+const CollegeAdminPlacementsScreen = LS(() => import('./app/(college_admin)/placements'));
+const CollegeAdminAssessmentsAdminScreen = LS(() => import('./app/(college_admin)/assessments-admin'));
+const CollegeAdminMentorshipAdminScreen = LS(() => import('./app/(college_admin)/mentorship-admin'));
+const CollegeAdminSkillAdminScreen = LS(() => import('./app/(college_admin)/skill-admin'));
+const AnalyticsScreen = LS(() => import('./app/analytics'));
+const AttendanceScreen = LS(() => import('./app/attendance'));
+const AttendanceLiveScreen = LS(() => import('./app/attendance-live'));
+const AttendanceAdvancedScreen = LS(() => import('./app/attendance-advanced'));
+const AttendanceLiveAdvancedScreen = LS(() => import('./app/attendance-live-advanced'));
+const LeaveManagementScreen = LS(() => import('./app/leave-management'));
+const ChatScreen = LS(() => import('./app/chat'));
+const EventsScreen = LS(() => import('./app/events'));
+const ExamsScreen = LS(() => import('./app/exams'));
+const FeesScreen = LS(() => import('./app/fees'));
+const GrievancesScreen = LS(() => import('./app/grievances'));
+const HostelScreen = LS(() => import('./app/hostel'));
+const IdCardScreen = LS(() => import('./app/id-card'));
+const LibraryScreen = LS(() => import('./app/library'));
+const NotesScreen = LS(() => import('./app/notes'));
+const NotificationsScreen = LS(() => import('./app/notifications'));
+const PlacementScreen = LS(() => import('./app/placement'));
+const ResultsScreen = LS(() => import('./app/results'));
+const ScanScreen = LS(() => import('./app/scan'));
+const SelfieScreen = LS(() => import('./app/selfie'));
+const SessionScreen = LS(() => import('./app/session'));
+const StartSessionScreen = LS(() => import('./app/start-session'));
+const TransportScreen = LS(() => import('./app/transport'));
+const PhoneOTPLoginScreen = LS(() => import('./app/phone-login'));
+const VisitorManagementScreen = LS(() => import('./app/visitor'));
+const ComplaintManagementScreen = LS(() => import('./app/complaints'));
+const AssetManagementScreen = LS(() => import('./app/assets'));
+const PushNotificationsScreen = LS(() => import('./app/push-notifications'));
+const EmailIntegrationScreen = LS(() => import('./app/email'));
+const WhatsAppIntegrationScreen = LS(() => import('./app/whatsapp'));
+const ParentAiScreen = LS(() => import('./app/(parent)/ai'));
+const FacultyQuestionPaperScreen = LS(() => import('./app/(faculty)/question-paper'));
+const AssignmentCheckerScreen = LS(() => import('./app/assignment-checker'));
+const ReportCardScreen = LS(() => import('./app/report-card'));
+const CareerAdvisorScreen = LS(() => import('./app/career-advisor'));
+const ResumeBuilderScreen = LS(() => import('./app/resume-builder'));
+const InterviewPracticeScreen = LS(() => import('./app/interview-practice'));
+const StudyPlannerScreen = LS(() => import('./app/study-planner'));
+const BusTrackingScreen = LS(() => import('./app/bus-tracking'));
+const LiveClassesScreen = LS(() => import('./app/live-classes'));
+const LiveClassRoomScreen = LS(() => import('./app/live-class'));
+const SkillAssessmentScreen = LS(() => import('./app/skill-assessment'));
+const AssessmentAttemptScreen = LS(() => import('./app/assessment-attempt'));
+const MentorshipScreen = LS(() => import('./app/mentorship'));
+const SkillProfileScreen = LS(() => import('./app/skill-profile'));
+const CareerDashboardScreen = LS(() => import('./app/career-dashboard'));
+const FaceEnrollScreen = LS(() => import('./app/face-enroll'));
+const EditProfileScreen = LS(() => import('./app/edit-profile'));
+const ScreenshotTestScreen = LS(() => import('./app/screenshot-test'));
+const LocalShareHomeScreen = LS(() => import('./app/localshare-home'));
+const LocalShareCreateScreen = LS(() => import('./app/localshare-create'));
+const LocalShareActiveScreen = LS(() => import('./app/localshare-active'));
+const LocalShareJoinScreen = LS(() => import('./app/localshare-join'));
+const LocalShareTransferScreen = LS(() => import('./app/localshare-transfer'));
+const LocalShareHistoryScreen = LS(() => import('./app/localshare-history'));
 
 const RootStack = createNativeStackNavigator();
 const StudentTabs = createBottomTabNavigator();
@@ -330,6 +345,7 @@ export default function App() {
           <AuthProvider>
             <BottomSheetModalProvider>
               <NavigationContainer ref={navigationRef}>
+                <Suspense fallback={<LoadingScreen />}>
                 <RootStack.Navigator screenOptions={{ headerShown: false }}>
                   <RootStack.Screen name="/" component={IndexScreen} />
                   <RootStack.Screen name="/landing" component={LandingScreen} />
@@ -406,6 +422,7 @@ export default function App() {
                   <RootStack.Screen name="/localshare-history" component={LocalShareHistoryScreen} />
                   <RootStack.Screen name="/__screenshots" component={ScreenshotTestScreen} options={{ headerShown: false }} />
                 </RootStack.Navigator>
+                </Suspense>
               </NavigationContainer>
             </BottomSheetModalProvider>
           </AuthProvider>

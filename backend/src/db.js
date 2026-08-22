@@ -1,17 +1,20 @@
 const { MongoClient, ObjectId } = require('mongodb');
 
 const DB_NAME = process.env.MONGODB_DB || 'test';
+const MONGODB_URI = process.env.MONGODB_URI;
 
-  const MONGODB_URI = process.env.MONGODB_URI ||
-  'mongodb+srv://shivam32880_db_user:pT1L0nBwvGLaNRcV@ac-xzethlm.uevx1zw.mongodb.net/test?authSource=admin&retryWrites=true&w=majority';
-  console.log('[MongoDB] URI starts with:', MONGODB_URI?.substring(0, 14));
+if (!MONGODB_URI) {
+  throw new Error('MONGODB_URI environment variable is required. See .env.example for reference.');
+}
 
 const POOL_OPTIONS = {
-  maxPoolSize: 10,
-  minPoolSize: 2,
+  maxPoolSize: 25,
+  minPoolSize: 5,
   maxIdleTimeMS: 30000,
   serverSelectionTimeoutMS: 10000,
   connectTimeoutMS: 10000,
+  retryWrites: true,
+  w: 'majority',
 };
 
 let client = null;
@@ -20,7 +23,7 @@ let db = null;
 async function connectDB(retries = 3, delay = 2000) {
   if (db) return db;
 
-  console.log('[MongoDB] Connecting to Atlas cluster...');
+  console.log('[MongoDB] Connecting to cluster...');
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -30,7 +33,9 @@ async function connectDB(retries = 3, delay = 2000) {
       await client.db('admin').command({ ping: 1 });
       db = client.db(DB_NAME);
 
-      await createIndexes(db);
+      createIndexes(db).catch(err => {
+        console.error('[MongoDB] Background index creation error:', err.message);
+      });
 
       console.log(`[MongoDB] Connected to "${DB_NAME}"`);
       return db;
@@ -45,21 +50,10 @@ async function connectDB(retries = 3, delay = 2000) {
 }
 
 async function ensureConnection() {
-  if (!db || !client) {
-    db = null;
-    client = null;
-    await connectDB();
-    return;
-  }
-  try {
-    await client.db('admin').command({ ping: 1 });
-  } catch {
-    console.warn('[MongoDB] Connection lost, reconnecting...');
-    try { await client.close(); } catch {}
-    client = null;
-    db = null;
-    await connectDB();
-  }
+  if (db && client) return;
+  db = null;
+  client = null;
+  await connectDB();
 }
 
 async function closeDB() {
@@ -82,131 +76,151 @@ function oid(id) {
   try { return new ObjectId(String(id)); } catch { return null; }
 }
 
+const INDEX_DEFS = [
+  ['users', { email: 1 }, { unique: true }],
+  ['users', { phone: 1 }, { sparse: true }],
+  ['users', { role: 1 }],
+  ['users', { collegeId: 1 }],
+  ['users', { collegeId: 1, role: 1 }],
+  ['notifications', { createdAt: -1 }],
+  ['notifications', { collegeId: 1 }],
+  ['attendance_sessions', { courseId: 1, date: 1 }],
+  ['attendance_sessions', { collegeId: 1 }],
+  ['attendance_sessions', { collegeId: 1, courseId: 1 }],
+  ['attendance_roll_entries', { sessionId: 1, studentId: 1 }],
+  ['attendance_roll_entries', { collegeId: 1 }],
+  ['attendance_records', { collegeId: 1 }],
+  ['attendance_records', { collegeId: 1, studentId: 1 }],
+  ['fees', { userId: 1 }],
+  ['fees', { collegeId: 1 }],
+  ['fees', { collegeId: 1, userId: 1 }],
+  ['chat_messages', { senderId: 1, receiverId: 1, createdAt: -1 }],
+  ['chat_messages', { collegeId: 1 }],
+  ['assignments', { courseId: 1 }],
+  ['assignments', { collegeId: 1 }],
+  ['submissions', { assignmentId: 1, studentId: 1 }],
+  ['submissions', { collegeId: 1 }],
+  ['live_sessions', { status: 1, scheduledAt: 1 }],
+  ['live_sessions', { collegeId: 1 }],
+  ['live_participants', { sessionId: 1, studentId: 1 }],
+  ['live_participants', { collegeId: 1 }],
+  ['live_messages', { sessionId: 1, createdAt: -1 }],
+  ['live_messages', { collegeId: 1 }],
+  ['live_questions', { sessionId: 1 }],
+  ['live_questions', { collegeId: 1 }],
+  ['live_polls', { sessionId: 1 }],
+  ['live_polls', { collegeId: 1 }],
+  ['placement_drives', { status: 1, deadline: 1 }],
+  ['placement_drives', { collegeId: 1 }],
+  ['placement_applications', { studentId: 1, driveId: 1 }, { unique: true }],
+  ['placement_applications', { collegeId: 1 }],
+  ['assessments', { key: 1 }, { unique: true }],
+  ['assessments', { collegeId: 1 }],
+  ['assessment_attempts', { studentId: 1, assessmentId: 1, status: 1 }],
+  ['assessment_attempts', { collegeId: 1 }],
+  ['student_skills', { studentId: 1, skillKey: 1 }, { unique: true }],
+  ['student_skills', { collegeId: 1 }],
+  ['skill_endorsements', { studentId: 1, skillKey: 1, endorserId: 1 }, { unique: true }],
+  ['skill_endorsements', { collegeId: 1 }],
+  ['student_certifications', { studentId: 1 }],
+  ['student_certifications', { collegeId: 1 }],
+  ['student_projects', { studentId: 1 }],
+  ['student_projects', { collegeId: 1 }],
+  ['mentors', { expertise: 1 }],
+  ['mentors', { collegeId: 1 }],
+  ['mentorship_connections', { studentId: 1, mentorId: 1 }],
+  ['mentorship_connections', { collegeId: 1 }],
+  ['mentorship_sessions', { studentId: 1, scheduledAt: 1 }],
+  ['mentorship_sessions', { collegeId: 1 }],
+  ['mentorship_goals', { studentId: 1 }],
+  ['mentorship_goals', { collegeId: 1 }],
+  ['payment_configs', { collegeId: 1 }, { unique: true }],
+  ['payment_configs', { collegeId: 1, status: 1 }],
+  ['fee_payments', { collegeId: 1, studentId: 1 }],
+  ['fee_payments', { collegeId: 1, status: 1 }],
+  ['fee_payments', { razorpayOrderId: 1 }],
+  ['fee_payments', { razorpayPaymentId: 1 }],
+  ['fee_payments', { orderId: 1 }],
+  ['webhook_logs', { collegeId: 1, createdAt: -1 }],
+  ['colleges', { code: 1 }, { unique: true }],
+  ['courses', { facultyId: 1 }],
+  ['courses', { collegeId: 1 }],
+  ['courses', { collegeId: 1, department: 1 }],
+  ['timetable_slots', { courseId: 1, dayOfWeek: 1 }],
+  ['timetable_slots', { facultyId: 1 }],
+  ['timetable_slots', { collegeId: 1 }],
+  ['notes', { courseId: 1 }],
+  ['notes', { createdAt: -1 }],
+  ['notes', { collegeId: 1 }],
+  ['exams', { courseId: 1 }],
+  ['exams', { collegeId: 1 }],
+  ['generated_exams', { createdById: 1 }],
+  ['generated_exams', { collegeId: 1 }],
+  ['exam_results', { studentId: 1, courseId: 1 }],
+  ['exam_results', { collegeId: 1 }],
+  ['course_enrollments', { studentId: 1, courseId: 1 }, { unique: true }],
+  ['course_enrollments', { collegeId: 1 }],
+  ['leave_requests', { collegeId: 1 }],
+  ['announcements', { collegeId: 1 }],
+  ['books', { collegeId: 1 }],
+  ['book_issues', { collegeId: 1 }],
+  ['hostels', { collegeId: 1 }],
+  ['hostel_allocations', { collegeId: 1 }],
+  ['transport_routes', { collegeId: 1 }],
+  ['transport_enrollments', { collegeId: 1 }],
+  ['grievances', { collegeId: 1 }],
+  ['assets', { collegeId: 1 }],
+  ['asset_maintenance', { collegeId: 1 }],
+  ['visitors', { collegeId: 1 }],
+  ['gate_passes', { collegeId: 1 }],
+  ['ai_sessions', { collegeId: 1 }],
+  ['ai_messages', { collegeId: 1 }],
+  ['ai_assignment_checks', { collegeId: 1 }],
+  ['ai_assignment_checks', { userId: 1 }],
+  ['interview_questions', { collegeId: 1 }],
+  ['generated_question_papers', { collegeId: 1 }],
+  ['study_plans', { collegeId: 1 }],
+  ['classrooms', { collegeId: 1 }],
+  ['schedules', { collegeId: 1 }],
+  ['face_profiles', { collegeId: 1 }],
+  ['localshare_sessions', { sessionId: 1 }, { unique: true }],
+  ['localshare_sessions', { shareCode: 1 }, { unique: true }],
+  ['localshare_sessions', { collegeId: 1, status: 1 }],
+  ['localshare_sessions', { collegeId: 1, teacherId: 1 }],
+  ['localshare_sessions', { expiresAt: 1 }, { expireAfterSeconds: 0 }],
+  ['localshare_participants', { sessionId: 1, studentId: 1 }, { unique: true }],
+  ['localshare_participants', { sessionId: 1, connectionStatus: 1 }],
+  ['localshare_participants', { collegeId: 1 }],
+  ['localshare_downloads', { sessionId: 1, studentId: 1 }],
+  ['localshare_downloads', { completedAt: 1 }, { expireAfterSeconds: 2592000 }],
+  ['localshare_downloads', { collegeId: 1 }],
+  ['localshare_audit_logs', { sessionId: 1, timestamp: 1 }],
+  ['localshare_audit_logs', { timestamp: 1 }, { expireAfterSeconds: 7776000 }],
+  ['localshare_feedback', { sessionId: 1, studentId: 1 }, { unique: true }],
+  ['localshare_feedback', { sessionId: 1 }],
+  ['localshare_feedback', { collegeId: 1 }],
+];
+
 async function createIndexes(database) {
-  await Promise.all([
-    database.collection('users').createIndex({ email: 1 }, { unique: true }),
-    database.collection('users').createIndex({ phone: 1 }, { sparse: true }),
-    database.collection('users').createIndex({ role: 1 }),
-    database.collection('users').createIndex({ collegeId: 1 }),
-    database.collection('users').createIndex({ collegeId: 1, role: 1 }),
-    database.collection('notifications').createIndex({ createdAt: -1 }),
-    database.collection('notifications').createIndex({ collegeId: 1 }),
-    database.collection('attendance_sessions').createIndex({ courseId: 1, date: 1 }),
-    database.collection('attendance_sessions').createIndex({ collegeId: 1 }),
-    database.collection('attendance_sessions').createIndex({ collegeId: 1, courseId: 1 }),
-    database.collection('attendance_roll_entries').createIndex({ sessionId: 1, studentId: 1 }),
-    database.collection('attendance_roll_entries').createIndex({ collegeId: 1 }),
-    database.collection('attendance_records').createIndex({ collegeId: 1 }),
-    database.collection('attendance_records').createIndex({ collegeId: 1, studentId: 1 }),
-    database.collection('fees').createIndex({ userId: 1 }),
-    database.collection('fees').createIndex({ collegeId: 1 }),
-    database.collection('fees').createIndex({ collegeId: 1, userId: 1 }),
-    database.collection('chat_messages').createIndex({ senderId: 1, receiverId: 1, createdAt: -1 }),
-    database.collection('chat_messages').createIndex({ collegeId: 1 }),
-    database.collection('assignments').createIndex({ courseId: 1 }),
-    database.collection('assignments').createIndex({ collegeId: 1 }),
-    database.collection('submissions').createIndex({ assignmentId: 1, studentId: 1 }),
-    database.collection('submissions').createIndex({ collegeId: 1 }),
-    database.collection('live_sessions').createIndex({ status: 1, scheduledAt: 1 }),
-    database.collection('live_sessions').createIndex({ collegeId: 1 }),
-    database.collection('live_participants').createIndex({ sessionId: 1, studentId: 1 }),
-    database.collection('live_participants').createIndex({ collegeId: 1 }),
-    database.collection('live_messages').createIndex({ sessionId: 1, createdAt: -1 }),
-    database.collection('live_messages').createIndex({ collegeId: 1 }),
-    database.collection('live_questions').createIndex({ sessionId: 1 }),
-    database.collection('live_questions').createIndex({ collegeId: 1 }),
-    database.collection('live_polls').createIndex({ sessionId: 1 }),
-    database.collection('live_polls').createIndex({ collegeId: 1 }),
-    database.collection('placement_drives').createIndex({ status: 1, deadline: 1 }),
-    database.collection('placement_drives').createIndex({ collegeId: 1 }),
-    database.collection('placement_applications').createIndex({ studentId: 1, driveId: 1 }, { unique: true }),
-    database.collection('placement_applications').createIndex({ collegeId: 1 }),
-    database.collection('assessments').createIndex({ key: 1 }, { unique: true }),
-    database.collection('assessments').createIndex({ collegeId: 1 }),
-    database.collection('assessment_attempts').createIndex({ studentId: 1, assessmentId: 1, status: 1 }),
-    database.collection('assessment_attempts').createIndex({ collegeId: 1 }),
-    database.collection('student_skills').createIndex({ studentId: 1, skillKey: 1 }, { unique: true }),
-    database.collection('student_skills').createIndex({ collegeId: 1 }),
-    database.collection('skill_endorsements').createIndex({ studentId: 1, skillKey: 1, endorserId: 1 }, { unique: true }),
-    database.collection('skill_endorsements').createIndex({ collegeId: 1 }),
-    database.collection('student_certifications').createIndex({ studentId: 1 }),
-    database.collection('student_certifications').createIndex({ collegeId: 1 }),
-    database.collection('student_projects').createIndex({ studentId: 1 }),
-    database.collection('student_projects').createIndex({ collegeId: 1 }),
-    database.collection('mentors').createIndex({ expertise: 1 }),
-    database.collection('mentors').createIndex({ collegeId: 1 }),
-    database.collection('mentorship_connections').createIndex({ studentId: 1, mentorId: 1 }),
-    database.collection('mentorship_connections').createIndex({ collegeId: 1 }),
-    database.collection('mentorship_sessions').createIndex({ studentId: 1, scheduledAt: 1 }),
-    database.collection('mentorship_sessions').createIndex({ collegeId: 1 }),
-    database.collection('mentorship_goals').createIndex({ studentId: 1 }),
-    database.collection('mentorship_goals').createIndex({ collegeId: 1 }),
-    database.collection('payment_configs').createIndex({ collegeId: 1 }, { unique: true }),
-    database.collection('payment_configs').createIndex({ collegeId: 1, status: 1 }),
-    database.collection('fee_payments').createIndex({ collegeId: 1, studentId: 1 }),
-    database.collection('fee_payments').createIndex({ collegeId: 1, status: 1 }),
-    database.collection('fee_payments').createIndex({ razorpayOrderId: 1 }),
-    database.collection('fee_payments').createIndex({ razorpayPaymentId: 1 }),
-    database.collection('fee_payments').createIndex({ orderId: 1 }),
-    database.collection('webhook_logs').createIndex({ collegeId: 1, createdAt: -1 }),
-    database.collection('colleges').createIndex({ code: 1 }, { unique: true }),
-    database.collection('courses').createIndex({ facultyId: 1 }),
-    database.collection('courses').createIndex({ collegeId: 1 }),
-    database.collection('courses').createIndex({ collegeId: 1, department: 1 }),
-    database.collection('timetable_slots').createIndex({ courseId: 1, dayOfWeek: 1 }),
-    database.collection('timetable_slots').createIndex({ facultyId: 1 }),
-    database.collection('timetable_slots').createIndex({ collegeId: 1 }),
-    database.collection('notes').createIndex({ courseId: 1 }),
-    database.collection('notes').createIndex({ createdAt: -1 }),
-    database.collection('notes').createIndex({ collegeId: 1 }),
-    database.collection('exams').createIndex({ courseId: 1 }),
-    database.collection('exams').createIndex({ collegeId: 1 }),
-    database.collection('generated_exams').createIndex({ createdById: 1 }),
-    database.collection('generated_exams').createIndex({ collegeId: 1 }),
-    database.collection('exam_results').createIndex({ studentId: 1, courseId: 1 }),
-    database.collection('exam_results').createIndex({ collegeId: 1 }),
-    database.collection('course_enrollments').createIndex({ studentId: 1, courseId: 1 }, { unique: true }),
-    database.collection('course_enrollments').createIndex({ collegeId: 1 }),
-    database.collection('leave_requests').createIndex({ collegeId: 1 }),
-    database.collection('announcements').createIndex({ collegeId: 1 }),
-    database.collection('books').createIndex({ collegeId: 1 }),
-    database.collection('book_issues').createIndex({ collegeId: 1 }),
-    database.collection('hostels').createIndex({ collegeId: 1 }),
-    database.collection('hostel_allocations').createIndex({ collegeId: 1 }),
-    database.collection('transport_routes').createIndex({ collegeId: 1 }),
-    database.collection('transport_enrollments').createIndex({ collegeId: 1 }),
-    database.collection('grievances').createIndex({ collegeId: 1 }),
-    database.collection('assets').createIndex({ collegeId: 1 }),
-    database.collection('asset_maintenance').createIndex({ collegeId: 1 }),
-    database.collection('visitors').createIndex({ collegeId: 1 }),
-    database.collection('gate_passes').createIndex({ collegeId: 1 }),
-    database.collection('ai_sessions').createIndex({ collegeId: 1 }),
-    database.collection('ai_messages').createIndex({ collegeId: 1 }),
-    database.collection('ai_assignment_checks').createIndex({ collegeId: 1 }),
-    database.collection('ai_assignment_checks').createIndex({ userId: 1 }),
-    database.collection('interview_questions').createIndex({ collegeId: 1 }),
-    database.collection('generated_question_papers').createIndex({ collegeId: 1 }),
-    database.collection('study_plans').createIndex({ collegeId: 1 }),
-    database.collection('classrooms').createIndex({ collegeId: 1 }),
-    database.collection('schedules').createIndex({ collegeId: 1 }),
-    database.collection('face_profiles').createIndex({ collegeId: 1 }),
-    database.collection('localshare_sessions').createIndex({ sessionId: 1 }, { unique: true }),
-    database.collection('localshare_sessions').createIndex({ shareCode: 1 }, { unique: true }),
-    database.collection('localshare_sessions').createIndex({ collegeId: 1, status: 1 }),
-    database.collection('localshare_sessions').createIndex({ collegeId: 1, teacherId: 1 }),
-    database.collection('localshare_sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-    database.collection('localshare_participants').createIndex({ sessionId: 1, studentId: 1 }, { unique: true }),
-    database.collection('localshare_participants').createIndex({ sessionId: 1, connectionStatus: 1 }),
-    database.collection('localshare_participants').createIndex({ collegeId: 1 }),
-    database.collection('localshare_downloads').createIndex({ sessionId: 1, studentId: 1 }),
-    database.collection('localshare_downloads').createIndex({ completedAt: 1 }, { expireAfterSeconds: 2592000 }),
-    database.collection('localshare_downloads').createIndex({ collegeId: 1 }),
-    database.collection('localshare_audit_logs').createIndex({ sessionId: 1, timestamp: 1 }),
-    database.collection('localshare_audit_logs').createIndex({ timestamp: 1 }, { expireAfterSeconds: 7776000 }),
-    database.collection('localshare_feedback').createIndex({ sessionId: 1, studentId: 1 }, { unique: true }),
-    database.collection('localshare_feedback').createIndex({ sessionId: 1 }),
-    database.collection('localshare_feedback').createIndex({ collegeId: 1 }),
-  ]);
+  const BATCH_SIZE = 10;
+  const baseOpts = { background: true };
+  let created = 0;
+  let failed = 0;
+
+  for (let i = 0; i < INDEX_DEFS.length; i += BATCH_SIZE) {
+    const batch = INDEX_DEFS.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(([col, key, opts]) =>
+        database.collection(col).createIndex(key, { ...baseOpts, ...opts })
+      )
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') created++;
+      else failed++;
+    }
+  }
+
+  console.log(`[MongoDB] Indexes: ${created} created, ${failed} failed (of ${INDEX_DEFS.length})`);
 }
 
 module.exports = { connectDB, getDB, closeDB, ensureConnection, ObjectId, oid };

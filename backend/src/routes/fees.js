@@ -33,11 +33,16 @@ function createFeesRouter(io) {
       const db = getDB();
       const uid = oid(req.user._id);
       const userId = String(req.user._id);
+      const { skip, limit: pgLimit } = paginationParams(req.query, { defaultSize: 100, maxSize: 500 });
+      const filter = { $or: [{ userId: uid }, { userId }], ...collegeFilter(req) };
+      const total = await db.collection('fees').countDocuments(filter);
       const fees = await db.collection('fees')
-        .find({ $or: [{ userId: uid }, { userId }], ...collegeFilter(req) })
+        .find(filter)
         .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pgLimit)
         .toArray();
-      res.json(fees);
+      sendPaginated(res, fees, total);
     } catch (e) {
       sendError(res, e);
     }
@@ -48,11 +53,16 @@ function createFeesRouter(io) {
       const db = getDB();
       const uid = oid(req.user._id);
       const userId = String(req.user._id);
+      const { skip, limit: pgLimit } = paginationParams(req.query, { defaultSize: 100, maxSize: 500 });
+      const filter = { $or: [{ userId: uid }, { userId }], ...collegeFilter(req) };
+      const total = await db.collection('fees').countDocuments(filter);
       const fees = await db.collection('fees')
-        .find({ $or: [{ userId: uid }, { userId }], ...collegeFilter(req) })
+        .find(filter)
         .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pgLimit)
         .toArray();
-      res.json(fees);
+      sendPaginated(res, fees, total);
     } catch (e) {
       sendError(res, e);
     }
@@ -61,14 +71,17 @@ function createFeesRouter(io) {
   router.get('/fees', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
+      const { skip, limit: pgLimit } = paginationParams(req.query, { defaultSize: 100, maxSize: 500 });
       const filter = { ...collegeFilter(req) };
       if (req.query.status) filter.status = req.query.status;
-
+      const total = await db.collection('fees').countDocuments(filter);
       const fees = await db.collection('fees')
         .find(filter)
         .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pgLimit)
         .toArray();
-      res.json(fees);
+      sendPaginated(res, fees, total);
     } catch (e) {
       sendError(res, e);
     }
