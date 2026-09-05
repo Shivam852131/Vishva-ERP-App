@@ -38,6 +38,7 @@ import {
   Card,
 } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
+import { subscribeRealtime } from '@/src/realtime/socket';
 
 export default function FacultyDashboard() {
   const { user } = useAuth();
@@ -68,6 +69,25 @@ export default function FacultyDashboard() {
     setRefreshing(true);
     refreshDashboard();
     refreshAnalytics();
+  }, [refreshDashboard, refreshAnalytics]);
+
+  useEffect(() => {
+    const unsub1 = subscribeRealtime('attendance:session:update', () => {
+      refreshDashboard();
+      refreshAnalytics();
+    });
+    const unsub2 = subscribeRealtime('attendance:live:update', () => {
+      refreshDashboard();
+      refreshAnalytics();
+    });
+    const unsub3 = subscribeRealtime('notifications:update', () => {
+      refreshDashboard();
+    });
+    const unsub4 = subscribeRealtime('submissions:update', () => {
+      refreshDashboard();
+      refreshAnalytics();
+    });
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, [refreshDashboard, refreshAnalytics]);
 
   if (loading && !dashboard) {

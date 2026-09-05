@@ -59,10 +59,10 @@ export default function MentorshipAdmin() {
   }, [connections, filter]);
 
   const tabs = [
-    { key: 'overview', label: 'Overview', icon: <BarChart3 size={14} /> },
-    { key: 'mentors', label: 'Mentors', icon: <Users size={14} /> },
-    { key: 'connections', label: 'Connections', icon: <UserCheck size={14} /> },
-    { key: 'sessions', label: 'Sessions', icon: <Calendar size={14} /> },
+    { key: 'overview', label: 'Overview', Icon: BarChart3 },
+    { key: 'mentors', label: 'Mentors', Icon: Users },
+    { key: 'connections', label: 'Connections', Icon: UserCheck },
+    { key: 'sessions', label: 'Sessions', Icon: Calendar },
   ];
 
   const acceptConnection = async (connId: string) => {
@@ -151,12 +151,19 @@ export default function MentorshipAdmin() {
             </View>
 
             <View style={styles.tabBar}>
-              {tabs.map(t => (
-                <Pressable key={t.key} onPress={() => setTab(t.key as any)} style={[styles.tabBtn, tab === t.key && styles.tabBtnActive]}>
-                  {t.icon}
-                  <Text style={[styles.tabTxt, tab === t.key && styles.tabTxtActive]}>{t.label}</Text>
-                </Pressable>
-              ))}
+              {tabs.map(({ key, label, Icon }) => {
+                const active = tab === key;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => setTab(key as any)}
+                    style={[styles.tabBtn, active && styles.tabBtnActive]}
+                  >
+                    <Icon size={14} color={active ? '#fff' : theme.colors.muted} />
+                    <Text style={[styles.tabTxt, active && styles.tabTxtActive]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
 
@@ -431,10 +438,22 @@ const styles = StyleSheet.create({
   statMini: { flex: 1, backgroundColor: theme.colors.surfaceSecondary, padding: 10, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', gap: 4 },
   statMiniVal: { fontSize: 16, fontWeight: '800', color: theme.colors.onSurface },
   statMiniLabel: { fontSize: 9, color: theme.colors.muted, fontWeight: '600' },
-  tabBar: { flexDirection: 'row', gap: 8, marginTop: theme.spacing.md },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  tabBar: { flexDirection: 'row', gap: 6, marginTop: theme.spacing.md },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
   tabBtnActive: { backgroundColor: theme.colors.brandPrimary, borderColor: theme.colors.brandPrimary },
-  tabTxt: { fontSize: 12, fontWeight: '600', color: theme.colors.muted },
+  tabTxt: { fontSize: 10, fontWeight: '700', color: theme.colors.muted, textAlign: 'center' },
   tabTxtActive: { color: '#fff' },
   cardTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.onSurface, marginBottom: 8 },
   goalLabel: { fontSize: 13, fontWeight: '600', color: theme.colors.onSurface },

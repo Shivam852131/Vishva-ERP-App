@@ -33,6 +33,9 @@ const otpStore = new Map();
 const sendSchema = z.object({ phone: z.string().regex(/^\d{10}$/, 'Must be 10 digits') });
 
 router.post('/auth/send-otp', async (req, res) => {
+  if (typeof req.body?.phone === 'string') {
+    req.body.phone = req.body.phone.replace(/\D/g, '').slice(-10);
+  }
   const parsed = sendSchema.safeParse(req.body);
   if (!parsed.success) return sendError(res, 'A valid 10-digit phone number is required.');
 
@@ -82,6 +85,9 @@ const verifySchema = z.object({
 });
 
 router.post('/auth/verify-otp', async (req, res) => {
+  if (typeof req.body?.phone === 'string') {
+    req.body.phone = req.body.phone.replace(/\D/g, '').slice(-10);
+  }
   const parsed = verifySchema.safeParse(req.body);
   if (!parsed.success) return sendError(res, 'Phone and a 6-digit OTP are required.');
 
@@ -101,8 +107,24 @@ router.post('/auth/verify-otp', async (req, res) => {
   otpStore.delete(phone);
 
   const db = getDB();
-  let user = await db.collection('users').findOne({ phone: `+91${phone}` });
+  let user = await db.collection('users').findOne({
+    $or: [
+      { phone: `+91${phone}` },
+      { phone },
+      { phone: `+91 ${phone}` },
+    ],
+  });
   if (!user) {
+    let defaultCol = await db.collection('colleges').findOne({});
+    if (!defaultCol) {
+      const newCol = await db.collection('colleges').insertOne({
+        name: 'Vishva Institute of Technology',
+        code: 'VIT',
+        createdAt: new Date().toISOString(),
+      });
+      defaultCol = { _id: newCol.insertedId, name: 'Vishva Institute of Technology', code: 'VIT' };
+    }
+    const collegeId = defaultCol._id;
     const bcrypt = require('bcrypt');
     const crypto = require('crypto');
     const result = await db.collection('users').insertOne({
@@ -111,16 +133,29 @@ router.post('/auth/verify-otp', async (req, res) => {
       passwordHash: await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10),
       role: 'student',
       phone: `+91${phone}`,
-      collegeId: null, // Assigned later by college_admin; requireCollegeAccess middleware blocks access until then
+      college: defaultCol?.name || 'Vishva Institute of Technology',
+      collegeId: oid(collegeId),
       department: 'Computer Science',
       studentCode: `VIT-P${phone.slice(-4)}`,
       year: 1,
-      cgpa: 8.0,
+      cgpa: null,
       status: 'active',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
-    user = { _id: result.insertedId, name: `User ${phone.slice(-4)}`, email: `phone_${phone}@campus.edu`, role: 'student', phone: `+91${phone}`, collegeId: null, department: 'Computer Science', studentCode: `VIT-P${phone.slice(-4)}` };
+    user = {
+      _id: result.insertedId,
+      name: `User ${phone.slice(-4)}`,
+      email: `phone_${phone}@campus.edu`,
+      role: 'student',
+      phone: `+91${phone}`,
+      collegeId: collegeId ? oid(collegeId) : null,
+      department: 'Computer Science',
+      studentCode: `VIT-P${phone.slice(-4)}`,
+      status: 'active',
+      isActive: true,
+    };
   }
 
   const token = issueToken(user);

@@ -1,6 +1,6 @@
 const request = require('supertest');
 const { buildTestApp } = require('./helpers/testApp');
-const { prisma, resetDb } = require('./helpers/db');
+const { prisma, resetDb, getDB } = require('./helpers/db');
 const { createUser, tokenFor } = require('./helpers/factories');
 
 const app = buildTestApp();
@@ -66,10 +66,30 @@ describe('POST /api/auth/register', () => {
       .send({ name: 'New Student', email: 'newstudent@test.com', password: 'password123' });
     expect(res.status).toBe(200);
     expect(res.body.user.role).toBe('student');
+    expect(res.body.user.collegeId).toBeDefined();
 
     const me = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${res.body.token}`);
     expect(me.status).toBe(200);
     expect(me.body.email).toBe('newstudent@test.com');
+
+    // Also verify college-scoped routes work immediately without 403 Forbidden
+    const courses = await request(app).get('/api/courses').set('Authorization', `Bearer ${res.body.token}`);
+    expect(courses.status).toBe(200);
+  });
+
+  it('supports registering as faculty or parent', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ name: 'Faculty Member', email: 'faculty@test.com', password: 'password123', role: 'faculty' });
+    expect(res.status).toBe(200);
+    expect(res.body.user.role).toBe('faculty');
+  });
+
+  it('rejects passwords shorter than 8 characters', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ name: 'Short', email: 'short@test.com', password: 'pass' });
+    expect(res.status).toBe(400);
   });
 
   it('ignores a client-supplied privileged role and forces student/parent only', async () => {
@@ -85,6 +105,113 @@ describe('POST /api/auth/register', () => {
       .post('/api/auth/register')
       .send({ name: 'Dupe', email: 'dupe@test.com', password: 'password123' });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/auth/send-otp', () => {
+  it('sends OTP for a valid 10-digit number', async () => {
+    const res = await request(app)
+      .post('/api/auth/send-otp')
+      .send({ phone: '9876543210' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.otp).toMatch(/^\d{6}$/);
+  });
+
+  it('normalizes phone number with +91 country prefix', async () => {
+    const res = await request(app)
+      .post('/api/auth/send-otp')
+      .send({ phone: '+919876543210' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.otp).toBeDefined();
+  });
+
+  it('normalizes phone number with whitespace or hyphens', async () => {
+    const res = await request(app)
+      .post('/api/auth/send-otp')
+      .send({ phone: '+91 98765-43210' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('rejects an invalid phone number', async () => {
+    const res = await request(app)
+      .post('/api/auth/send-otp')
+      .send({ phone: '12345' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/auth/verify-otp', () => {
+  it('auto-provisions a new student user and returns a token with college access', async () => {
+    const sendRes = await request(app)
+      .post('/api/auth/send-otp')
+      .send({ phone: '9876543211' });
+    expect(sendRes.status).toBe(200);
+    const otp = sendRes.body.otp;
+
+    const verifyRes = await request(app)
+      .post('/api/auth/verify-otp')
+      .send({ phone: '9876543211', otp });
+    expect(verifyRes.status).toBe(200);
+    expect(verifyRes.body.token).toBeDefined();
+    expect(verifyRes.body.user.role).toBe('student');
+    expect(verifyRes.body.user.collegeId).toBeDefined();
+
+    // Verify token grants access to authenticated routes and college-scoped routes
+    const meRes = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${verifyRes.body.token}`);
+    expect(meRes.status).toBe(200);
+
+    const coursesRes = await request(app)
+      .get('/api/courses')
+      .set('Authorization', `Bearer ${verifyRes.body.token}`);
+    expect(coursesRes.status).toBe(200);
+  });
+
+  it('logs in an existing user without duplicating accounts', async () => {
+    const existing = await createUser({
+      name: 'Existing Phone User',
+      email: 'phoneuser@test.com',
+      phone: '+919876543212',
+      role: 'student',
+    });
+
+    const sendRes = await request(app)
+      .post('/api/auth/send-otp')
+      .send({ phone: '+919876543212' });
+    const otp = sendRes.body.otp;
+
+    const verifyRes = await request(app)
+      .post('/api/auth/verify-otp')
+      .send({ phone: '9876543212', otp });
+    expect(verifyRes.status).toBe(200);
+    expect(verifyRes.body.user.email).toBe(existing.email);
+    expect(verifyRes.body.user.name).toBe('Existing Phone User');
+
+    const db = getDB();
+    const totalUsers = await db.collection('users').countDocuments({ phone: { $regex: '9876543212' } });
+    expect(totalUsers).toBe(1);
+  });
+
+  it('rejects an incorrect OTP with 401', async () => {
+    await request(app)
+      .post('/api/auth/send-otp')
+      .send({ phone: '9876543213' });
+
+    const verifyRes = await request(app)
+      .post('/api/auth/verify-otp')
+      .send({ phone: '9876543213', otp: '000000' });
+    expect(verifyRes.status).toBe(401);
+  });
+
+  it('returns 404 if no OTP was requested for the phone', async () => {
+    const verifyRes = await request(app)
+      .post('/api/auth/verify-otp')
+      .send({ phone: '9999999999', otp: '123456' });
+    expect(verifyRes.status).toBe(404);
   });
 });
 

@@ -400,10 +400,19 @@ export default function AdvancedAttendance() {
 
   useEffect(() => {
     if (user?.role !== 'student') return undefined;
-    return subscribeRealtime('attendance:active-sessions:update', () => {
+    const unsub1 = subscribeRealtime('attendance:active-sessions:update', () => {
       refreshSessions();
       refresh();
     });
+    const unsub2 = subscribeRealtime('attendance:session:update', () => {
+      refreshSessions();
+      refresh();
+    });
+    const unsub3 = subscribeRealtime('attendance:live:update', () => {
+      refreshSessions();
+      refresh();
+    });
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, [refresh, refreshSessions, user?.role]);
 
   const onRefresh = async () => {
@@ -443,7 +452,7 @@ export default function AdvancedAttendance() {
       if (!loc) return;
       const r = await checkin('/attendance/checkin', {
         method: 'POST',
-        body: JSON.stringify({ session_id: session.id, ...loc }),
+        body: JSON.stringify({ session_id: session.id, ...loc, method: 'gps' }),
       });
       if (r && Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       flash(true, `${r?.message || 'Checked in'} — ${r?.detail || ''}`);
@@ -466,7 +475,7 @@ export default function AdvancedAttendance() {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         const r = await checkinAuto('/attendance/checkin', {
           method: 'POST',
-          body: JSON.stringify({ session_id: session.id, lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          body: JSON.stringify({ session_id: session.id, lat: pos.coords.latitude, lng: pos.coords.longitude, method: 'auto' }),
         });
         if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         flash(true, `Auto check-in: ${r?.message || 'Done'}`);
@@ -528,7 +537,7 @@ export default function AdvancedAttendance() {
           try {
             const r = await checkinAuto('/attendance/checkin', {
               method: 'POST',
-              body: JSON.stringify({ session_id: session.id, lat: pos.coords.latitude, lng: pos.coords.longitude }),
+              body: JSON.stringify({ session_id: session.id, lat: pos.coords.latitude, lng: pos.coords.longitude, method: 'auto' }),
             });
             if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             flash(true, `Auto check-in: ${r?.message || 'Done'}`);

@@ -88,7 +88,9 @@ export default function VisitorManagement() {
           <View style={styles.tabs}>
             {(['log', 'pending', 'register'] as const).map(t => (
               <Pressable key={t} onPress={() => setActiveTab(t)} style={[styles.tabBtn, activeTab === t && styles.tabActive]}>
-                <Text style={[styles.tabTxt, activeTab === t && { color: '#fff' }]}>{t === 'log' ? 'Visitor Log' : t === 'pending' ? 'Approvals' : 'Register'}</Text>
+                <Text style={[styles.tabTxt, activeTab === t && { color: '#fff' }]} numberOfLines={1}>
+                  {t === 'log' ? 'Visitor Log' : t === 'pending' ? 'Approvals' : 'Register'}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -208,9 +210,9 @@ const styles = StyleSheet.create({
   heroStatLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 9 },
   backBtn: { position: 'absolute', top: 16, left: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   tabs: { flexDirection: 'row', backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3, marginHorizontal: 16, marginVertical: 12 },
-  tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: theme.radius.pill },
+  tabBtn: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
   tabActive: { backgroundColor: theme.colors.brand },
-  tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 12 },
+  tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 11, textAlign: 'center' },
   avatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   avatarActive: { backgroundColor: '#10B981' },
   avatarLeft: { backgroundColor: theme.colors.muted },

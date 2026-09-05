@@ -99,7 +99,8 @@ function createApp(io) {
   app.use('/api', paymentConfigRoutes);
   app.use('/api', collegePaymentsRoutes);
   app.use('/api/ai', aiLimiter, createAiRouter(io));
-  app.use('/api', whatsappLimiter, twilioRoutes);
+  app.use('/api/twilio/whatsapp', whatsappLimiter);
+  app.use('/api', twilioRoutes);
   app.use('/api/live-classes', createLiveClassesRouter(io));
   app.use('/api/placement', createPlacementRouter(io));
   app.use('/api/assessments', createAssessmentsRouter(io));

@@ -90,10 +90,10 @@ export default function Reports() {
   const parentPct = total ? Math.round(((dash.parents || 0) / total) * 100) : 0;
 
   const tabs = [
-    { key: 'overview', label: 'Overview', icon: <BarChart3 size={14} /> },
-    { key: 'attendance', label: 'Attendance', icon: <CheckCircle size={14} /> },
-    { key: 'finance', label: 'Finance', icon: <Wallet size={14} /> },
-    { key: 'users', label: 'Users', icon: <Users size={14} /> },
+    { key: 'overview', label: 'Overview', Icon: BarChart3 },
+    { key: 'attendance', label: 'Attendance', Icon: CheckCircle },
+    { key: 'finance', label: 'Finance', Icon: Wallet },
+    { key: 'users', label: 'Users', Icon: Users },
   ];
 
   return (
@@ -142,16 +142,19 @@ export default function Reports() {
 
           {/* Tabs */}
           <View style={styles.tabBar}>
-            {tabs.map(t => (
-              <Pressable
-                key={t.key}
-                onPress={() => setActiveTab(t.key as any)}
-                style={[styles.tabBtn, activeTab === t.key && styles.tabBtnActive]}
-              >
-                {t.icon}
-                <Text style={[styles.tabTxt, activeTab === t.key && styles.tabTxtActive]}>{t.label}</Text>
-              </Pressable>
-            ))}
+            {tabs.map(({ key, label, Icon }) => {
+              const active = activeTab === key;
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => setActiveTab(key as any)}
+                  style={[styles.tabBtn, active && styles.tabBtnActive]}
+                >
+                  <Icon size={14} color={active ? '#fff' : theme.colors.muted} />
+                  <Text style={[styles.tabTxt, active && styles.tabTxtActive]}>{label}</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           {/* Overview Tab */}
@@ -451,10 +454,22 @@ const styles = StyleSheet.create({
   dateOptionActive: { backgroundColor: theme.colors.brandPrimary, borderColor: theme.colors.brandPrimary },
   dateOptionTxt: { fontSize: 11, fontWeight: '600', color: theme.colors.muted },
   dateOptionTxtActive: { color: '#fff' },
-  tabBar: { flexDirection: 'row', gap: 8, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  tabBar: { flexDirection: 'row', gap: 6, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
   tabBtnActive: { backgroundColor: theme.colors.brandPrimary, borderColor: theme.colors.brandPrimary },
-  tabTxt: { fontSize: 12, fontWeight: '600', color: theme.colors.muted },
+  tabTxt: { fontSize: 10, fontWeight: '700', color: theme.colors.muted, textAlign: 'center' },
   tabTxtActive: { color: '#fff' },
   statRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   feeOverview: { flexDirection: 'row', gap: 12, marginBottom: 12 },

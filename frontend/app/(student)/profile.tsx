@@ -201,7 +201,8 @@ const styles = StyleSheet.create({
   body: { padding: theme.spacing.lg },
   infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: theme.spacing.lg },
   infoItem: {
-    width: '48%',
+    flexBasis: '47%',
+    flexGrow: 1,
     backgroundColor: theme.colors.surfaceSecondary,
     padding: theme.spacing.md,
     borderRadius: theme.radius.md,

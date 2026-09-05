@@ -54,6 +54,21 @@ export default function StudentDashboard() {
     refreshAnalytics();
   }), [dRefresh, refreshAnalytics]);
   useEffect(() => subscribeRealtime('fees:update', () => dRefresh()), [dRefresh]);
+  useEffect(() => {
+    const unsub1 = subscribeRealtime('attendance:session:update', () => {
+      dRefresh();
+      refreshAnalytics();
+    });
+    const unsub2 = subscribeRealtime('attendance:live:update', () => {
+      dRefresh();
+      refreshAnalytics();
+    });
+    const unsub3 = subscribeRealtime('attendance:active-sessions:update', () => {
+      dRefresh();
+      refreshAnalytics();
+    });
+    return () => { unsub1(); unsub2(); unsub3(); };
+  }, [dRefresh, refreshAnalytics]);
 
   if (dLoading && !d) {
     return (

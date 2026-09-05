@@ -48,10 +48,11 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function CameraViewIOS(
-  { facing, onBarcodeScanned, style, children, ...viewProps }: CameraProps,
-  ref: React.ForwardedRef<CameraViewHandle>,
-) {
+const CameraViewIOS = React.forwardRef<CameraViewHandle, CameraProps>(
+  function CameraViewIOS(
+    { facing, onBarcodeScanned, style, children, ...viewProps }: CameraProps,
+    ref: React.ForwardedRef<CameraViewHandle>,
+  ) {
   const cameraRef = useRef<CameraRef>(null);
   const device = useCameraDevice(facing === 'front' ? 'front' : 'back');
   const { hasPermission, requestPermission } = useCameraPermission();
@@ -123,12 +124,13 @@ function CameraViewIOS(
       />
     </View>
   );
-}
+});
 
-function CameraViewAndroid(
-  { facing, onBarcodeScanned, style, children, ...viewProps }: CameraProps,
-  ref: React.ForwardedRef<CameraViewHandle>,
-) {
+const CameraViewAndroid = React.forwardRef<CameraViewHandle, CameraProps>(
+  function CameraViewAndroid(
+    { facing, onBarcodeScanned, style, children, ...viewProps }: CameraProps,
+    ref: React.ForwardedRef<CameraViewHandle>,
+  ) {
   const cameraRef = useRef<CameraRef>(null);
   const device = useCameraDevice(facing === 'front' ? 'front' : 'back');
   const { hasPermission, requestPermission } = useCameraPermission();
@@ -155,7 +157,7 @@ function CameraViewAndroid(
           includeBase64: options?.base64 ?? true,
           quality: (options?.quality as any) ?? 0.5,
           saveToPhotos: false,
-          cameraType: 'front',
+          cameraType: 'back',
         };
         const result = await launchCamera(opts);
         if (result.didCancel || result.errorCode || !result.assets?.length) return null;
@@ -185,15 +187,9 @@ function CameraViewAndroid(
       />
     </View>
   );
-}
+});
 
-const CameraViewComponent = Platform.OS === 'ios' ? CameraViewIOS : CameraViewAndroid;
-
-export const CameraView = React.forwardRef<CameraViewHandle, CameraProps>(
-  function CameraView(props, ref) {
-    return <CameraViewComponent {...props} ref={ref} />;
-  },
-);
+export const CameraView = Platform.OS === 'ios' ? CameraViewIOS : CameraViewAndroid;
 
 export function useCameraPermissions(): [Permission, () => Promise<Permission>] {
   const [permission, setPermission] = useState<Permission>({

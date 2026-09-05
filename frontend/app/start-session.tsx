@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   chipTxt: { fontSize: 13, color: theme.colors.onSurfaceTertiary, fontWeight: '600' },
   chipTxtActive: { color: '#fff' },
   methodGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  methodCard: { width: '48%', backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg, gap: 6 },
+  methodCard: { flexBasis: '47%', flexGrow: 1, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg, gap: 6 },
   methodActive: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },
   methodLbl: { fontSize: 15, fontWeight: '800', color: theme.colors.onSurface },
   methodDesc: { fontSize: 11, color: theme.colors.muted, lineHeight: 15 },

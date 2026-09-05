@@ -59,17 +59,31 @@ router.post('/auth/register', async (req, res) => {
   if (existing) return sendError(res, 'Email already exists.');
   const resolvedRole = role || 'student';
   const now = new Date().toISOString();
+  let col = req.body.collegeId
+    ? await db.collection('colleges').findOne({ $or: [{ _id: oid(req.body.collegeId) }, { _id: String(req.body.collegeId) }] })
+    : await db.collection('colleges').findOne({});
+  if (!col) {
+    const newCol = await db.collection('colleges').insertOne({
+      name: 'Vishva Institute of Technology',
+      code: 'VIT',
+      createdAt: now,
+    });
+    col = { _id: newCol.insertedId, name: 'Vishva Institute of Technology', code: 'VIT' };
+  }
+  const collegeId = col._id;
+
   const doc = {
     name,
     email: email.toLowerCase(),
     passwordHash: await hashPassword(password),
     role: resolvedRole,
     phone: phone || null,
-    collegeId: null,
-    department: resolvedRole === 'student' ? 'Computer Science' : null,
-    studentCode: resolvedRole === 'student' ? `VIT-${String(Math.floor(1000 + Math.random() * 9000))}` : null,
-    year: resolvedRole === 'student' ? 1 : null,
-    cgpa: resolvedRole === 'student' ? 8.1 : null,
+    college: col?.name || 'Vishva Institute of Technology',
+    collegeId: collegeId ? oid(collegeId) : null,
+    department: req.body.department || (resolvedRole === 'student' ? 'General' : null),
+    studentCode: req.body.studentCode || (resolvedRole === 'student' ? `VIT-${String(Math.floor(1000 + Math.random() * 9000))}` : null),
+    year: req.body.year ? Number(req.body.year) : (resolvedRole === 'student' ? 1 : null),
+    cgpa: null,
     status: 'active',
     isActive: true,
     parentId: null,

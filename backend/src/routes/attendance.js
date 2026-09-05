@@ -14,6 +14,19 @@ function createAttendanceRouter(io) {
     emitToCollege(io, collegeId, 'attendance:live:update', { sessionId: sid, courseId: String(session.courseId) });
   }
 
+  function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; // metres
+    const phi1 = (Number(lat1) * Math.PI) / 180;
+    const phi2 = (Number(lat2) * Math.PI) / 180;
+    const deltaPhi = ((Number(lat2) - Number(lat1)) * Math.PI) / 180;
+    const deltaLambda = ((Number(lon2) - Number(lon1)) * Math.PI) / 180;
+    const a =
+      Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+      Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
   async function pushNotification(req, { audience = 'all', title, body, recipientIds = [] }) {
     const db = getDB();
     const doc = { audience, title, body, recipientIds: recipientIds.map(String), readBy: [], createdAt: new Date(), collegeId: oid(req.userCollegeId) };
@@ -52,25 +65,31 @@ function createAttendanceRouter(io) {
     const db = getDB();
     const cid = oid(courseId);
     if (!cid) return [];
-    const enrollments = await db.collection('course_enrollments').find({ courseId: cid, ...collegeFilter(req) }).toArray();
+    const courseIdValues = [cid, String(courseId)];
+    const enrollments = await db.collection('course_enrollments').find({ courseId: { $in: courseIdValues }, ...collegeFilter(req) }).toArray();
     const studentIds = enrollments.map((e) => oid(e.studentId)).filter(Boolean);
-    if (!studentIds.length) return [];
-    return db.collection('users').find({ _id: { $in: studentIds }, ...collegeFilter(req) }).toArray();
+    const studentStrs = enrollments.map((e) => String(e.studentId)).filter(Boolean);
+    if (!studentIds.length && !studentStrs.length) return [];
+    return db.collection('users').find({ _id: { $in: [...studentIds, ...studentStrs] }, ...collegeFilter(req) }).toArray();
   }
 
   async function getEnrolledCourseIds(req, studentId) {
     const db = getDB();
     const sid = oid(studentId);
     if (!sid) return [];
-    const enrollments = await db.collection('course_enrollments').find({ studentId: sid, ...collegeFilter(req) }).toArray();
-    return enrollments.map((e) => oid(e.courseId)).filter(Boolean);
+    const studentIdValues = [sid, String(studentId)];
+    const enrollments = await db.collection('course_enrollments').find({ studentId: { $in: studentIdValues }, ...collegeFilter(req) }).toArray();
+    const oids = enrollments.map((e) => oid(e.courseId)).filter(Boolean);
+    const strs = enrollments.map((e) => String(e.courseId)).filter(Boolean);
+    return [...oids, ...strs];
   }
 
   async function getTaughtCourseIds(req, facultyId) {
     const db = getDB();
     const fid = oid(facultyId);
     if (!fid) return [];
-    const courses = await db.collection('courses').find({ facultyId: fid, ...collegeFilter(req) }).toArray();
+    const facultyValues = [fid, String(facultyId)];
+    const courses = await db.collection('courses').find({ facultyId: { $in: facultyValues }, ...collegeFilter(req) }).toArray();
     return courses.map((c) => c._id);
   }
 
@@ -84,14 +103,14 @@ function createAttendanceRouter(io) {
     const userId = String(user._id);
     const { paginationParams: pp } = require('../utils');
     const { skip, limit: pgLimit } = pp(req.query, { defaultSize: 100, maxSize: 500 });
-    const filter = { $or: [{ studentId: uid }, { studentId: userId }], ...collegeFilter(req) };
+    const filter = { studentId: { $in: [uid, userId] }, ...collegeFilter(req) };
     if (req.query.courseId) filter.courseId = oid(req.query.courseId);
     const total = await db.collection('attendance_records').countDocuments(filter);
     const records = await db.collection('attendance_records').find(filter).sort({ date: -1 }).skip(skip).limit(pgLimit).toArray();
     const courseIdsRaw = [...new Set(records.map((r) => String(r.courseId)))];
     const courseOids = courseIdsRaw.map(oid).filter(Boolean);
     const courses = courseOids.length || courseIdsRaw.length
-      ? await db.collection('courses').find({ $or: [{ _id: { $in: courseOids } }, { _id: { $in: courseIdsRaw } }], ...collegeFilter(req) }).toArray()
+      ? await db.collection('courses').find({ _id: { $in: [...courseOids, ...courseIdsRaw] }, ...collegeFilter(req) }).toArray()
       : [];
     const courseMap = Object.fromEntries(courses.map((c) => [String(c._id), c]));
     const mappedRecords = records.map((r) => ({
@@ -136,21 +155,35 @@ function createAttendanceRouter(io) {
       .toArray();
     const enriched = await Promise.all(
       sessions.map(async (session) => {
-        const course = await db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) });
-        const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
-        const checkedIn = entries.some((e) => String(e.studentId) === String(user._id));
+        const [course, faculty, entries] = await Promise.all([
+          db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) }),
+          session.facultyId ? db.collection('users').findOne({ _id: oid(session.facultyId), ...collegeFilter(req) }) : null,
+          db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray(),
+        ]);
+        const checkedIn = entries.some((e) => String(e.studentId) === String(user._id) && e.status !== 'absent');
+        const lat = session.location?.lat ?? null;
+        const lng = session.location?.lng ?? null;
+        const radius_m = session.radius || 150;
         return {
           id: String(session._id),
+          course_id: String(session.courseId),
           course_name: course?.name || '',
+          course_code: course?.code || '',
+          faculty_name: faculty?.name || '',
+          starts_at: session.startTime instanceof Date ? session.startTime.toISOString() : session.startTime,
           expires_at: session.endTime instanceof Date ? session.endTime.toISOString() : session.endTime,
           method: session.type,
           checked_in: checkedIn,
           code: session.qrCode,
+          lat,
+          lng,
+          radius_m,
+          location: session.location || null,
         };
       })
     );
     const userId = String(user._id);
-    const faceProfile = await db.collection('face_profiles').findOne({ $or: [{ userId: oid(user._id) }, { userId }], ...collegeFilter(req) });
+    const faceProfile = await db.collection('face_profiles').findOne({ userId: { $in: [oid(user._id), userId] }, ...collegeFilter(req) });
     res.json({ sessions: enriched, face_enrolled: !!faceProfile });
   });
 
@@ -170,13 +203,18 @@ function createAttendanceRouter(io) {
         const checkins = entries.filter((e) => e.status !== 'absent').length;
         return {
           id: String(session._id),
+          course_id: String(session.courseId),
           course_name: course?.name || '',
+          course_code: course?.code || '',
           method: session.type,
           code: session.qrCode,
           starts_at: session.startTime instanceof Date ? session.startTime.toISOString() : session.startTime,
           expires_at: session.endTime instanceof Date ? session.endTime.toISOString() : session.endTime,
           active: session.isActive,
           checkins,
+          lat: session.location?.lat ?? null,
+          lng: session.location?.lng ?? null,
+          radius_m: session.radius || 150,
         };
       })
     );
@@ -186,19 +224,41 @@ function createAttendanceRouter(io) {
   router.post('/attendance/sessions', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const user = await authUser(req);
     const db = getDB();
-    const course = await db.collection('courses').findOne({ _id: oid(req.body.courseId), ...collegeFilter(req) });
+    const courseId = req.body.courseId || req.body.course_id;
+    if (!courseId) return sendError(res, 'Course is required.', 400);
+    const course = await db.collection('courses').findOne({
+      $or: [{ _id: oid(courseId) }, { _id: String(courseId) }],
+      ...collegeFilter(req),
+    });
     if (!course) return sendError(res, 'Course not found.', 404);
+
+    const type = req.body.type || req.body.method || 'qr';
+    const startTime = new Date(req.body.startTime || req.body.starts_at || nowIso());
+    let endTime = req.body.endTime || req.body.expires_at || null;
+    const durationMin = Number(req.body.duration_min || req.body.durationMin || req.body.duration);
+    if (!endTime && durationMin > 0) {
+      endTime = new Date(startTime.getTime() + durationMin * 60 * 1000);
+    } else if (endTime) {
+      endTime = new Date(endTime);
+    }
+
+    let location = req.body.location || null;
+    if (!location && req.body.lat !== undefined && req.body.lng !== undefined) {
+      location = { lat: Number(req.body.lat), lng: Number(req.body.lng) };
+    }
+    const radius = Number(req.body.radius || req.body.radius_m) || 150;
+
     const doc = {
       courseId: course._id,
       facultyId: oid(user._id),
       date: req.body.date || isoDate(),
-      type: req.body.type || 'qr',
-      qrCode: req.body.qrCode || makeCode(),
-      startTime: new Date(req.body.startTime || nowIso()),
-      endTime: req.body.endTime || null,
+      type,
+      qrCode: req.body.qrCode || req.body.code || makeCode(),
+      startTime,
+      endTime,
       isActive: true,
-      location: req.body.location || null,
-      radius: Number(req.body.radius) || 150,
+      location,
+      radius,
       createdAt: new Date(),
       collegeId: oid(req.userCollegeId),
     };
@@ -207,13 +267,17 @@ function createAttendanceRouter(io) {
     emitAttendance(session, req.userCollegeId);
     res.json({
       id: String(insertedId),
+      course_id: String(course._id),
       course_name: course.name,
       method: doc.type,
       code: doc.qrCode,
       starts_at: doc.startTime instanceof Date ? doc.startTime.toISOString() : doc.startTime,
-      expires_at: doc.endTime,
+      expires_at: doc.endTime instanceof Date ? doc.endTime.toISOString() : doc.endTime,
       active: true,
       checkins: 0,
+      lat: location?.lat ?? null,
+      lng: location?.lng ?? null,
+      radius_m: radius,
     });
   });
 
@@ -226,8 +290,10 @@ function createAttendanceRouter(io) {
       .map((e) => ({
         name: e.student?.name || '',
         student_id: e.student?.studentCode || String(e.studentId),
+        student_code: e.student?.studentCode || '',
         check_in: e.checkInTime instanceof Date ? e.checkInTime.toISOString() : e.checkInTime,
         method: e.method,
+        status: e.status,
       }));
     res.json({
       session: {
@@ -236,8 +302,12 @@ function createAttendanceRouter(io) {
         course_code: session.course?.code || '',
         method: session.type,
         code: session.qrCode,
+        starts_at: session.startTime instanceof Date ? session.startTime.toISOString() : session.startTime,
         expires_at: session.endTime instanceof Date ? session.endTime.toISOString() : session.endTime,
         active: session.isActive,
+        lat: session.location?.lat ?? null,
+        lng: session.location?.lng ?? null,
+        radius_m: session.radius || 150,
       },
       roll,
       enrolled: enrolledStudents.length,
@@ -252,11 +322,46 @@ function createAttendanceRouter(io) {
     if (!session) return sendError(res, 'Session not found.', 404);
     if (!session.isActive) return sendError(res, 'This session has ended.');
     const uid = oid(user._id);
-    const enrolled = await db.collection('course_enrollments').findOne({ studentId: uid, courseId: oid(session.courseId), ...collegeFilter(req) });
+    const enrolled = await db.collection('course_enrollments').findOne({
+      studentId: { $in: [uid, String(user._id)] },
+      courseId: { $in: [oid(session.courseId), String(session.courseId)] },
+      ...collegeFilter(req),
+    });
     if (!enrolled) return sendError(res, 'You are not enrolled in this class.');
-    const existing = await db.collection('attendance_roll_entries').findOne({ sessionId: session._id, studentId: uid, ...collegeFilter(req) });
+    const existing = await db.collection('attendance_roll_entries').findOne({
+      sessionId: session._id,
+      studentId: { $in: [uid, String(user._id)] },
+      status: { $ne: 'absent' },
+      ...collegeFilter(req),
+    });
     if (existing) return sendError(res, 'You are already checked in.');
-    const method = req.body.method || session.type || 'qr';
+
+    // Normalize location
+    let studentLocation = req.body.location || null;
+    if (!studentLocation && req.body.lat !== undefined && req.body.lng !== undefined) {
+      studentLocation = { lat: Number(req.body.lat), lng: Number(req.body.lng) };
+    }
+
+    const method = req.body.method || session.type || (studentLocation ? 'gps' : 'qr');
+
+    // ── Location / GPS verification ──
+    if (method === 'gps' || method === 'auto' || session.type === 'gps' || session.type === 'location') {
+      if (session.location?.lat !== undefined && session.location?.lat !== null && session.location?.lng !== undefined && session.location?.lng !== null) {
+        if (!studentLocation || studentLocation.lat === undefined || studentLocation.lng === undefined) {
+          return sendError(res, 'Location coordinates are required for GPS check-in.', 400);
+        }
+        const dist = haversineDistanceMeters(
+          studentLocation.lat,
+          studentLocation.lng,
+          session.location.lat,
+          session.location.lng
+        );
+        const allowedRadius = Number(session.radius) || 150;
+        if (dist > allowedRadius) {
+          return sendError(res, `Outside classroom geofence (${Math.round(dist)}m away, limit is ${allowedRadius}m).`, 400);
+        }
+      }
+    }
 
     // ── Face verification ──
     if (method === 'face' || req.body.selfie_base64) {
@@ -264,7 +369,7 @@ function createAttendanceRouter(io) {
       if (!selfie) return sendError(res, 'Selfie is required for face check-in.', 400);
 
       // Get enrolled face profile
-      const faceProfile = await db.collection('face_profiles').findOne({ userId: uid, ...collegeFilter(req) });
+      const faceProfile = await db.collection('face_profiles').findOne({ userId: { $in: [uid, String(user._id)] }, ...collegeFilter(req) });
 
       // Run face verification pipeline
       const result = await verifyFace(selfie, faceProfile, req.body.prev_frame_base64 || null);
@@ -298,32 +403,79 @@ function createAttendanceRouter(io) {
     }
 
     // ── QR verification ──
-    if (method === 'qr' && req.body.qrCode && req.body.qrCode !== session.qrCode) {
-      return sendError(res, 'Attendance code does not match.');
+    const submittedCode = req.body.qrCode || req.body.code;
+    const isQrSession = method === 'qr' || session.type === 'qr';
+    if (isQrSession && session.qrCode) {
+      if (!submittedCode) {
+        return sendError(res, 'Attendance code is required.', 400);
+      }
+      if (String(submittedCode).trim() !== String(session.qrCode).trim()) {
+        return sendError(res, 'Attendance code does not match.', 400);
+      }
     }
 
-    // ── Record check-in ──
-    const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
-    const status = entries.length === 0 ? 'present' : 'late';
+    // ── Calculate status (present vs late based on session startTime and grace period) ──
     const now = new Date();
-    await db.collection('attendance_roll_entries').insertOne({
+    const graceMs = (session.graceMinutes ? Number(session.graceMinutes) : 15) * 60 * 1000;
+    const startTime = session.startTime instanceof Date ? session.startTime : session.startTime ? new Date(session.startTime) : null;
+    let status = 'present';
+    if (startTime && !isNaN(startTime.getTime()) && (now.getTime() - startTime.getTime() > graceMs)) {
+      status = 'late';
+    }
+
+    const isVerified = method === 'face'
+      ? true
+      : isQrSession
+        ? (submittedCode && String(submittedCode).trim() === String(session.qrCode).trim())
+        : true;
+
+    // Check if there was an absent roll entry that we are replacing or if new
+    const prevRoll = await db.collection('attendance_roll_entries').findOne({
       sessionId: session._id,
       studentId: uid,
-      checkInTime: now,
-      method,
-      status,
-      location: req.body.location || null,
-      verified: method === 'face' ? true : (req.body.qrCode === session.qrCode),
-      collegeId: oid(req.userCollegeId),
+      ...collegeFilter(req),
     });
-    await db.collection('attendance_records').insertOne({
-      studentId: uid,
-      courseId: session.courseId,
-      date: isoDate(),
-      status,
-      sessionId: session._id,
-      collegeId: oid(req.userCollegeId),
-    });
+    if (prevRoll) {
+      await db.collection('attendance_roll_entries').updateOne(
+        { _id: prevRoll._id },
+        {
+          $set: {
+            checkInTime: now,
+            method,
+            status,
+            location: studentLocation,
+            verified: isVerified,
+          },
+        }
+      );
+    } else {
+      await db.collection('attendance_roll_entries').insertOne({
+        sessionId: session._id,
+        studentId: uid,
+        checkInTime: now,
+        method,
+        status,
+        location: studentLocation,
+        verified: isVerified,
+        collegeId: oid(req.userCollegeId),
+      });
+    }
+
+    await db.collection('attendance_records').updateOne(
+      { studentId: uid, courseId: session.courseId, sessionId: session._id },
+      {
+        $set: {
+          status,
+          date: session.date || isoDate(),
+          method,
+        },
+        $setOnInsert: {
+          collegeId: oid(req.userCollegeId),
+        },
+      },
+      { upsert: true }
+    );
+
     emitAttendance(session, req.userCollegeId);
     const course = await db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) });
     await pushNotification(req, { audience: 'students', title: 'Attendance confirmed', body: `${course?.name || 'Course'} check-in recorded.` });
@@ -342,24 +494,32 @@ function createAttendanceRouter(io) {
     if (!session) return sendError(res, 'Session not found.', 404);
     const db = getDB();
     const now = new Date();
+    if (!session.isActive) {
+      return res.json({
+        ok: true,
+        message: 'Session is already closed.',
+        closed_at: session.endTime instanceof Date ? session.endTime.toISOString() : session.endTime,
+      });
+    }
     await db.collection('attendance_sessions').updateOne({ _id: session._id, ...collegeFilter(req) }, { $set: { isActive: false, endTime: now } });
     const enrolledStudents = await studentsForCourse(req, session.courseId);
     const entries = await db.collection('attendance_roll_entries').find({ sessionId: session._id, ...collegeFilter(req) }).toArray();
-    const checkedInIds = new Set(entries.map((e) => String(e.studentId)));
+    const checkedInIds = new Set(entries.filter((e) => e.status !== 'absent').map((e) => String(e.studentId)));
     const absentStudents = enrolledStudents.filter((s) => !checkedInIds.has(String(s._id)));
     if (absentStudents.length) {
-      await db.collection('attendance_records').insertMany(
-        absentStudents.map((s) => ({
-          studentId: s._id,
-          courseId: session.courseId,
-          date: isoDate(),
-          status: 'absent',
-          sessionId: session._id,
-          collegeId: oid(req.userCollegeId),
-        }))
-      );
+      const ops = absentStudents.map((s) => ({
+        updateOne: {
+          filter: { studentId: s._id, courseId: session.courseId, sessionId: session._id },
+          update: {
+            $set: { status: 'absent', date: session.date || isoDate(), method: 'auto-absent' },
+            $setOnInsert: { collegeId: oid(req.userCollegeId) },
+          },
+          upsert: true,
+        },
+      }));
+      await db.collection('attendance_records').bulkWrite(ops);
     }
-    emitAttendance(session, req.userCollegeId);
+    emitAttendance({ ...session, isActive: false, endTime: now }, req.userCollegeId);
     res.json({ ok: true, closed_at: now.toISOString() });
   });
 
@@ -367,10 +527,14 @@ function createAttendanceRouter(io) {
     const session = await getSessionById(req, req.params.id);
     if (!session) return sendError(res, 'Session not found.', 404);
     const db = getDB();
-    const studentId = oid(req.body.studentId);
+    const studentId = oid(req.body.studentId || req.body.student_id);
     if (!studentId) return sendError(res, 'Student not found.', 404);
     const newStatus = req.body.status || 'present';
-    const existing = await db.collection('attendance_roll_entries').findOne({ sessionId: session._id, studentId, ...collegeFilter(req) });
+    const existing = await db.collection('attendance_roll_entries').findOne({
+      sessionId: session._id,
+      studentId: { $in: [studentId, String(studentId)] },
+      ...collegeFilter(req),
+    });
     if (!existing) {
       await db.collection('attendance_roll_entries').insertOne({
         sessionId: session._id,
@@ -380,21 +544,31 @@ function createAttendanceRouter(io) {
         status: newStatus,
         location: null,
         verified: true,
+        overrideReason: req.body.reason || 'Manual override',
         collegeId: oid(req.userCollegeId),
       });
     } else {
       await db.collection('attendance_roll_entries').updateOne(
         { _id: existing._id },
-        { $set: { status: newStatus, checkInTime: newStatus === 'present' && !existing.checkInTime ? new Date() : existing.checkInTime } }
+        {
+          $set: {
+            status: newStatus,
+            checkInTime: newStatus === 'present' && !existing.checkInTime ? new Date() : existing.checkInTime,
+            overrideReason: req.body.reason || 'Manual override',
+          },
+        }
       );
     }
     await db.collection('attendance_records').updateOne(
       { studentId, courseId: session.courseId, sessionId: session._id },
-      { $set: { status: newStatus } },
+      {
+        $set: { status: newStatus, method: 'manual' },
+        $setOnInsert: { collegeId: oid(req.userCollegeId), date: session.date || isoDate() },
+      },
       { upsert: true }
     );
     emitAttendance(session, req.userCollegeId);
-    res.json({ ok: true });
+    res.json({ ok: true, status: newStatus });
   });
 
   // ── Admin routes ──

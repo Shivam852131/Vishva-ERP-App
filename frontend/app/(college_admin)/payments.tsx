@@ -134,9 +134,9 @@ export default function PaymentsScreen() {
   };
 
   const tabs = [
-    { key: 'overview', label: 'Overview', icon: <Wallet size={14} /> },
-    { key: 'receipts', label: 'Receipts', icon: <CheckCircle size={14} /> },
-    { key: 'fees', label: 'Fee Records', icon: <CreditCard size={14} /> },
+    { key: 'overview', label: 'Overview', Icon: Wallet },
+    { key: 'receipts', label: 'Receipts', Icon: CheckCircle },
+    { key: 'fees', label: 'Fee Records', Icon: CreditCard },
   ];
 
   return (
@@ -172,16 +172,19 @@ export default function PaymentsScreen() {
 
         {/* Tabs */}
         <View style={styles.tabBar}>
-          {tabs.map(t => (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.tabBtn, tab === t.key && styles.tabBtnActive]}
-              onPress={() => setTab(t.key as any)}
-            >
-              {t.icon}
-              <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>{t.label}</Text>
-            </TouchableOpacity>
-          ))}
+          {tabs.map(({ key, label, Icon }) => {
+            const active = tab === key;
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[styles.tabBtn, active && styles.tabBtnActive]}
+                onPress={() => setTab(key as any)}
+              >
+                <Icon size={14} color={active ? '#fff' : theme.colors.muted} />
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Overview Tab */}
@@ -401,10 +404,22 @@ const styles = StyleSheet.create({
   gatewayBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#DCFCE7', marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.md, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#A7F3D0' },
   gatewayText: { color: '#065F46', fontSize: 11, fontWeight: '700', flex: 1 },
   gatewayLink: { color: '#3B82F6', fontSize: 11, fontWeight: '700' },
-  tabBar: { flexDirection: 'row', paddingHorizontal: theme.spacing.lg, gap: 8, marginTop: theme.spacing.md },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  tabBar: { flexDirection: 'row', paddingHorizontal: theme.spacing.lg, gap: 6, marginTop: theme.spacing.md },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
   tabBtnActive: { backgroundColor: theme.colors.brandPrimary, borderColor: theme.colors.brandPrimary },
-  tabText: { color: theme.colors.muted, fontSize: 12, fontWeight: '600' },
+  tabText: { color: theme.colors.muted, fontSize: 10, fontWeight: '700', textAlign: 'center' },
   tabTextActive: { color: '#fff' },
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   breakdown: { flexDirection: 'row', justifyContent: 'space-around', marginTop: theme.spacing.md },

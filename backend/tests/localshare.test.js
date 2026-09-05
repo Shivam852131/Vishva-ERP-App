@@ -1,10 +1,10 @@
 const request = require('supertest');
 const { buildTestApp } = require('./helpers/testApp');
-const { getDB, oid, connectDB } = require('../src/db');
+const { getDB, oid, connectDB, closeDB } = require('../src/db');
 const { hashPassword, issueToken } = require('../src/auth');
+const { stopCleanupCron } = require('../src/routes/localshare');
 
-const app = buildTestApp();
-
+let app;
 let db;
 let facultyToken, studentToken, facultyId, studentId, collegeId;
 
@@ -14,6 +14,8 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  app = buildTestApp();
+
   await db.collection('colleges').deleteMany({});
   await db.collection('users').deleteMany({});
   await db.collection('localshare_sessions').deleteMany({});
@@ -23,7 +25,7 @@ beforeEach(async () => {
   await db.collection('localshare_audit_logs').deleteMany({});
 
   const college = await db.collection('colleges').insertOne({
-    name: 'Test College', code: 'TC01', createdAt: new Date().toISOString(),
+    name: 'Test College', code: `TC-${Date.now()}-${Math.floor(Math.random() * 10000)}`, createdAt: new Date().toISOString(),
   });
   collegeId = String(college.insertedId);
 
@@ -253,4 +255,8 @@ describe('Rate limiting on /api/localshare/sessions', () => {
     expect(res.status).toBe(429);
     expect(res.body.detail).toContain('Too many sessions');
   });
+});
+
+afterAll(async () => {
+  stopCleanupCron();
 });

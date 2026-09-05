@@ -75,7 +75,9 @@ export default function AssetManagement() {
           <View style={styles.tabs}>
             {(['assets', 'maintenance', 'report'] as const).map(t => (
               <Pressable key={t} onPress={() => setActiveTab(t)} style={[styles.tabBtn, activeTab === t && styles.tabActive]}>
-                <Text style={[styles.tabTxt, activeTab === t && { color: '#fff' }]}>{t === 'assets' ? 'Assets' : t === 'maintenance' ? 'Maintenance' : 'Report'}</Text>
+                <Text style={[styles.tabTxt, activeTab === t && { color: '#fff' }]} numberOfLines={1}>
+                  {t === 'assets' ? 'Assets' : t === 'maintenance' ? 'Maintenance' : 'Report'}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -224,9 +226,9 @@ const styles = StyleSheet.create({
   heroStatDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.2)' },
   backBtn: { position: 'absolute', top: 16, left: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   tabs: { flexDirection: 'row', backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3, marginHorizontal: 16, marginVertical: 12 },
-  tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: theme.radius.pill },
+  tabBtn: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
   tabActive: { backgroundColor: theme.colors.brand },
-  tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 12 },
+  tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 11, textAlign: 'center' },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: theme.colors.border },
   searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
   filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },

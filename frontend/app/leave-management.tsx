@@ -1002,7 +1002,7 @@ const styles = StyleSheet.create({
   detailTypeSub: { fontSize: 11, color: theme.colors.muted },
 
   detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  detailItem: { width: '48%', backgroundColor: theme.colors.bg, borderRadius: 8, padding: 10 },
+  detailItem: { flexBasis: '47%', flexGrow: 1, backgroundColor: theme.colors.bg, borderRadius: 8, padding: 10 },
   detailItemLabel: { fontSize: 10, fontWeight: '600', color: theme.colors.muted, textTransform: 'uppercase', marginBottom: 2 },
   detailItemValue: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
 

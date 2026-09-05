@@ -66,7 +66,7 @@ export async function downloadFile(
   onProgress?: (p: DownloadProgress) => void,
 ): Promise<DownloadResult> {
   const mimeType = guessMimeType(url);
-  const ext = getExtFromMime(mime) || '.' + (url.split('?')[0].split('.').pop() || 'bin');
+  const ext = getExtFromMime(mimeType) || '.' + (url.split('?')[0].split('.').pop() || 'bin');
   const name = sanitizeFileName(fileName || url.split('/').pop()?.split('?')[0] || `download_${Date.now()}`);
   const finalName = name.endsWith(ext) ? name : `${name}${ext}`;
   const dir = getDownloadDir();

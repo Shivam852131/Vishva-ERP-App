@@ -788,11 +788,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   tab: {
-    flex: 1, flexDirection: 'row', paddingVertical: 12,
-    alignItems: 'center', justifyContent: 'center', gap: 6,
+    flex: 1, flexDirection: 'column', paddingVertical: 8, paddingHorizontal: 2,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
   },
   tabActive: { borderBottomWidth: 2, borderBottomColor: theme.colors.brandPrimary },
-  tabText: { fontSize: 12, fontWeight: '600', color: theme.colors.muted },
+  tabText: { fontSize: 10, fontWeight: '700', color: theme.colors.muted, textAlign: 'center' },
   tabTextActive: { color: theme.colors.brandPrimary },
 
   content: { padding: theme.spacing.lg, paddingBottom: 100, gap: 16 },

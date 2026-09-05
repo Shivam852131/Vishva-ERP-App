@@ -142,7 +142,7 @@ router.get('/courses', async (req, res) => {
   }
 });
 
-router.post('/courses', requireRole('college_admin', 'super_admin', 'faculty'), async (req, res) => {
+router.post(['/courses', '/admin/courses'], requireRole('college_admin', 'super_admin', 'faculty'), async (req, res) => {
   try {
     const db = getDB();
     const { code, name, department, credits, semester, college } = req.body;
@@ -173,7 +173,7 @@ router.post('/courses', requireRole('college_admin', 'super_admin', 'faculty'), 
   }
 });
 
-router.put('/courses/:id', requireRole('college_admin', 'super_admin', 'faculty'), async (req, res) => {
+router.put(['/courses/:id', '/admin/courses/:id'], requireRole('college_admin', 'super_admin', 'faculty'), async (req, res) => {
   try {
     const db = getDB();
     const _id = oid(req.params.id);
@@ -203,7 +203,7 @@ router.put('/courses/:id', requireRole('college_admin', 'super_admin', 'faculty'
   }
 });
 
-router.delete('/courses/:id', requireRole('college_admin', 'super_admin'), async (req, res) => {
+router.delete(['/courses/:id', '/admin/courses/:id'], requireRole('college_admin', 'super_admin'), async (req, res) => {
   try {
     const db = getDB();
     const _id = oid(req.params.id);

@@ -99,7 +99,7 @@ export default function UserManagement() {
   }, [users]);
 
   const list = useMemo(() => {
-    let filtered = users.filter((u: any) => {
+    const filtered = users.filter((u: any) => {
       if (filter !== 'all' && u.role !== filter) return false;
       if (statusFilter !== 'all' && u.status !== statusFilter) return false;
       if (q) {

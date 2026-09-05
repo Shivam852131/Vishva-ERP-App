@@ -522,9 +522,9 @@ const styles = StyleSheet.create({
   heroStatDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.2)' },
 
   tabs: { flexDirection: 'row', backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3, marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm },
-  tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: theme.radius.pill },
+  tabBtn: { flex: 1, paddingVertical: 9, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
   tabActive: { backgroundColor: theme.colors.brandPrimary, ...theme.shadow.sm },
-  tabTxt: { color: theme.colors.muted, fontWeight: theme.font.weight.bold, fontSize: theme.font.size.sm },
+  tabTxt: { color: theme.colors.muted, fontWeight: theme.font.weight.bold, fontSize: 11.5, textAlign: 'center' },
   tabTxtActive: { color: theme.colors.onBrandPrimary },
 
   searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: theme.spacing.lg, marginBottom: theme.spacing.sm, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border },

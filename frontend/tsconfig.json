@@ -9,6 +9,7 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "strict": true,
+    "allowJs": true,
     "paths": {
       "@/*": [
         "./*"
@@ -18,6 +19,8 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
     "index.js"
   ],
   "exclude": [

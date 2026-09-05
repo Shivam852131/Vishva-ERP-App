@@ -62,6 +62,21 @@ export default function AdminDashboard() {
     refreshDash();
     refreshAna();
   }), [refreshAna, refreshDash]);
+  React.useEffect(() => {
+    const unsub1 = subscribeRealtime('attendance:session:update', () => {
+      refreshDash();
+      refreshAna();
+    });
+    const unsub2 = subscribeRealtime('fees:update', () => {
+      refreshDash();
+      refreshAna();
+    });
+    const unsub3 = subscribeRealtime('users:update', () => {
+      refreshDash();
+      refreshAna();
+    });
+    return () => { unsub1(); unsub2(); unsub3(); };
+  }, [refreshAna, refreshDash]);
 
   const submitAnnouncement = async () => {
     if (!annTitle.trim() || !annBody.trim()) {

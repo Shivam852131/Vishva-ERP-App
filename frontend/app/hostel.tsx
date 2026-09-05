@@ -187,7 +187,12 @@ export default function HostelManagementScreen() {
           ))}
         </View>
 
-        <View style={styles.tabs}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsScroll}
+          style={styles.tabsWrapper}
+        >
           {([
             { key: 'overview', label: 'Overview' },
             { key: 'myroom', label: 'My Room' },
@@ -200,7 +205,7 @@ export default function HostelManagementScreen() {
               <Text style={[styles.tabTxt, tab === t.key && styles.tabTxtActive]}>{t.label}</Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         <ScrollView
           style={styles.listScroll}
@@ -720,10 +725,11 @@ const styles = StyleSheet.create({
   statVal: { fontSize: 14, fontWeight: '800' },
   statLabel: { fontSize: 9, color: theme.colors.muted, fontWeight: '600' },
 
-  tabs: { flexDirection: 'row', backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3, marginHorizontal: 16, marginBottom: 8 },
-  tabBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: theme.radius.pill },
+  tabsWrapper: { marginHorizontal: 16, marginBottom: 8 },
+  tabsScroll: { flexDirection: 'row', gap: 6, backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3 },
+  tabBtn: { paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
   tabActive: { backgroundColor: theme.colors.brandPrimary },
-  tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 10 },
+  tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 11, textAlign: 'center' },
   tabTxtActive: { color: '#FFF' },
 
   searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: theme.colors.border },
@@ -769,7 +775,7 @@ const styles = StyleSheet.create({
   allocateBtnTxt: { color: '#FFF', fontSize: 13, fontWeight: '700' },
 
   quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  quickActionCard: { width: '48%', flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 10, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1 },
+  quickActionCard: { flexBasis: '47%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 10, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1 },
   quickActionIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   quickActionLabel: { fontSize: 12, fontWeight: '600', color: theme.colors.text, flex: 1, minWidth: 0 },
 
@@ -788,7 +794,7 @@ const styles = StyleSheet.create({
   myRoomStatusTxt: { fontSize: 10, fontWeight: '700', color: '#FFF' },
 
   roomInfoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  roomInfoCard: { width: '48%', backgroundColor: theme.colors.surfaceSecondary, borderRadius: 10, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border },
+  roomInfoCard: { flexBasis: '47%', flexGrow: 1, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 10, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border },
   roomInfoLabel: { fontSize: 10, fontWeight: '600', color: theme.colors.muted, marginTop: 4, textTransform: 'uppercase' },
   roomInfoValue: { fontSize: 14, fontWeight: '800', color: theme.colors.text, marginTop: 2 },
 

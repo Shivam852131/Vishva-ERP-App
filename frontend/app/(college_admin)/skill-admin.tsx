@@ -56,11 +56,11 @@ export default function SkillAdmin() {
   }, [catalog, searchQ]);
 
   const tabs = [
-    { key: 'catalog', label: 'Catalog', icon: <BookOpen size={14} /> },
-    { key: 'skills', label: 'Skills', icon: <Zap size={14} /> },
-    { key: 'certifications', label: 'Certs', icon: <Shield size={14} /> },
-    { key: 'projects', label: 'Projects', icon: <Briefcase size={14} /> },
-    { key: 'endorsements', label: 'Endorse', icon: <Award size={14} /> },
+    { key: 'catalog', label: 'Catalog', Icon: BookOpen },
+    { key: 'skills', label: 'Skills', Icon: Zap },
+    { key: 'certifications', label: 'Certs', Icon: Shield },
+    { key: 'projects', label: 'Projects', Icon: Briefcase },
+    { key: 'endorsements', label: 'Endorse', Icon: Award },
   ];
 
   const doEndorse = async () => {
@@ -162,12 +162,19 @@ export default function SkillAdmin() {
             </View>
 
             <View style={styles.tabBar}>
-              {tabs.map(t => (
-                <Pressable key={t.key} onPress={() => setTab(t.key as any)} style={[styles.tabBtn, tab === t.key && styles.tabBtnActive]}>
-                  {t.icon}
-                  <Text style={[styles.tabTxt, tab === t.key && styles.tabTxtActive]}>{t.label}</Text>
-                </Pressable>
-              ))}
+              {tabs.map(({ key, label, Icon }) => {
+                const active = tab === key;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => setTab(key as any)}
+                    style={[styles.tabBtn, active && styles.tabBtnActive]}
+                  >
+                    <Icon size={14} color={active ? '#fff' : theme.colors.muted} />
+                    <Text style={[styles.tabTxt, active && styles.tabTxtActive]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
 
@@ -465,10 +472,22 @@ const styles = StyleSheet.create({
   statMini: { flex: 1, backgroundColor: theme.colors.surfaceSecondary, padding: 10, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center' },
   statMiniVal: { fontSize: 16, fontWeight: '800', color: theme.colors.onSurface },
   statMiniLabel: { fontSize: 9, color: theme.colors.muted, fontWeight: '600', marginTop: 2 },
-  tabBar: { flexDirection: 'row', gap: 6, marginTop: theme.spacing.md },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  tabBar: { flexDirection: 'row', gap: 4, marginTop: theme.spacing.md },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 7,
+    paddingHorizontal: 1,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
   tabBtnActive: { backgroundColor: theme.colors.brandPrimary, borderColor: theme.colors.brandPrimary },
-  tabTxt: { fontSize: 11, fontWeight: '600', color: theme.colors.muted },
+  tabTxt: { fontSize: 9.5, fontWeight: '700', color: theme.colors.muted, textAlign: 'center' },
   tabTxtActive: { color: '#fff' },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, paddingHorizontal: 12, height: 40, marginBottom: 12 },
   searchInput: { flex: 1, fontSize: 13, color: theme.colors.onSurface },

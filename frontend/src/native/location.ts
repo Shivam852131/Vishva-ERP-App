@@ -1,4 +1,4 @@
-import { Platform, PermissionsAndroid } from 'react-native';
+import { Platform, PermissionsAndroid, type Permission } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 
 type PermissionResponse = {
@@ -23,7 +23,7 @@ async function requestAndroidPermissions(
 ): Promise<{ granted: boolean; canAskAgain: boolean }> {
   try {
     const alreadyGranted = await Promise.all(
-      permissions.map((p) => PermissionsAndroid.check(p)),
+      permissions.map((p) => PermissionsAndroid.check(p as Permission)),
     );
     if (alreadyGranted.every(Boolean)) {
       return { granted: true, canAskAgain: true };

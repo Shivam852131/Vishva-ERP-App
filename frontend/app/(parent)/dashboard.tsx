@@ -36,6 +36,7 @@ import {
   AsyncView,
 } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
+import { subscribeRealtime } from '@/src/realtime/socket';
 
 export default function ParentDashboard() {
   const { user: parent } = useAuth();
@@ -51,6 +52,14 @@ export default function ParentDashboard() {
     setRefreshing(true);
     refresh();
   };
+
+  useEffect(() => {
+    const unsub1 = subscribeRealtime('attendance:session:update', () => refresh());
+    const unsub2 = subscribeRealtime('fees:update', () => refresh());
+    const unsub3 = subscribeRealtime('payments:update', () => refresh());
+    const unsub4 = subscribeRealtime('notifications:update', () => refresh());
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+  }, [refresh]);
 
   if (loading && !data) {
     return (

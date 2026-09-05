@@ -679,9 +679,9 @@ const styles = StyleSheet.create({
 
   // Tabs
   tabBar: { flexDirection: 'row', backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tab: { flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 8, paddingHorizontal: 2, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabActive: { borderBottomColor: theme.colors.brandPrimary },
-  tabLabel: { fontSize: 12, color: theme.colors.muted, fontWeight: '600' },
+  tabLabel: { fontSize: 10, color: theme.colors.muted, fontWeight: '700', textAlign: 'center' },
 
   content: { padding: theme.spacing.lg, paddingBottom: 100 },
 

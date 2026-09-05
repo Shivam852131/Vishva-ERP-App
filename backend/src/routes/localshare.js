@@ -166,6 +166,7 @@ async function runCleanup(io) {
 function startCleanupCron(io) {
   if (cleanupTimer) return;
   cleanupTimer = setInterval(() => runCleanup(io), CLEANUP_INTERVAL_MS);
+  if (cleanupTimer && cleanupTimer.unref) cleanupTimer.unref();
 }
 
 function stopCleanupCron() {

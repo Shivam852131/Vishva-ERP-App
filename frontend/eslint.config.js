@@ -29,6 +29,7 @@ module.exports = tseslint.config(
         ...globals.node,
         ...globals['react-native'],
         __DEV__: 'readonly',
+        FileReader: 'readonly',
       },
     },
     plugins: {
@@ -41,6 +42,7 @@ module.exports = tseslint.config(
     rules: {
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      'no-empty': ['error', { allowEmptyCatch: true }],
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
       // Apostrophes in RN <Text> are plain string content, not HTML — there is no

@@ -2,7 +2,7 @@ import { FileAssembler } from '../src/localshare/utils/fileAssembler';
 import { splitIntoChunks, formatFileSize } from '../src/localshare/utils/fileChunker';
 
 describe('FileAssembler', () => {
-  let assembler;
+  let assembler: any;
 
   beforeEach(() => {
     assembler = new FileAssembler();

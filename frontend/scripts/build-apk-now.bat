@@ -6,6 +6,10 @@ REM its modules and fails to hash them when invoked from the substituted drive.
 
 setlocal
 
+set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot"
+set "ANDROID_HOME=C:\Users\shiva\AppData\Local\Android\Sdk"
+set "PATH=%JAVA_HOME%\bin;%PATH%"
+
 set "REAL=C:\Users\shiva\OneDrive\Desktop\vishva ERP app\frontend"
 set "LOG=%REAL%\build-log.txt"
 set "VISHVA_JS_ROOT=%REAL%"
