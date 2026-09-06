@@ -99,8 +99,18 @@ function createAttendanceRouter(io) {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    const uid = oid(user._id);
-    const userId = String(user._id);
+    let targetId = user._id;
+    if (user.role === 'parent') {
+      const qSid = req.query.studentId || req.query.wardId;
+      if (qSid) {
+        targetId = qSid;
+      } else {
+        const child = await db.collection('users').findOne({ parentId: oid(user._id), ...collegeFilter(req) });
+        if (child) targetId = child._id;
+      }
+    }
+    const uid = oid(targetId);
+    const userId = String(targetId);
     const { paginationParams: pp } = require('../utils');
     const { skip, limit: pgLimit } = pp(req.query, { defaultSize: 100, maxSize: 500 });
     const filter = { studentId: { $in: [uid, userId] }, ...collegeFilter(req) };
@@ -892,31 +902,43 @@ function createAttendanceRouter(io) {
     res.json({ ok: true });
   });
 
-  // ── Face Profile Routes ──
+  // ── Face Profile Routes (Accessible across all roles) ──
 
-  router.get('/face/profile', requireRole('student'), async (req, res) => {
+  const ALL_FACE_ROLES = ['student', 'faculty', 'college_admin', 'super_admin', 'parent'];
+
+  router.get('/face/profile', requireRole(...ALL_FACE_ROLES), async (req, res) => {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id), ...collegeFilter(req) });
+    const uid = oid(user._id);
+    const profile = await db.collection('face_profiles').findOne({
+      userId: { $in: [uid, String(user._id)] },
+      ...collegeFilter(req),
+    });
     if (!profile) return res.json({ enrolled: false });
     res.json({
       enrolled: true,
+      role: profile.role || user.role,
+      name: profile.name || user.name,
       enrolled_at: profile.enrolledAt,
       last_verified: profile.lastVerified,
       verification_count: profile.verificationCount || 0,
     });
   });
 
-  router.post('/face/enroll', requireRole('student'), async (req, res) => {
+  router.post('/face/enroll', requireRole(...ALL_FACE_ROLES), async (req, res) => {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
     const selfie = req.body.selfie_base64;
     if (!selfie) return sendError(res, 'Selfie is required.', 400);
 
+    const uid = oid(user._id);
     // Check existing profile
-    const existing = await db.collection('face_profiles').findOne({ userId: oid(user._id), ...collegeFilter(req) });
+    const existing = await db.collection('face_profiles').findOne({
+      userId: { $in: [uid, String(user._id)] },
+      ...collegeFilter(req),
+    });
 
     // Run full encode pipeline (ML or fallback + liveness)
     const encodeResult = await encodeFace(selfie);
@@ -928,7 +950,10 @@ function createAttendanceRouter(io) {
     }
 
     const faceDoc = {
-      userId: oid(user._id),
+      userId: uid,
+      role: user.role,
+      name: user.name || '',
+      email: user.email || '',
       encoding: encodeResult.encoding,
       enrolledAt: new Date(),
       lastVerified: new Date(),
@@ -948,17 +973,22 @@ function createAttendanceRouter(io) {
       message: 'Face enrolled successfully',
       enrolled_at: faceDoc.enrolledAt,
       ml_used: encodeResult.ml,
+      role: user.role,
     });
   });
 
-  router.post('/face/blink-report', requireRole('student'), async (req, res) => {
+  router.post('/face/blink-report', requireRole(...ALL_FACE_ROLES), async (req, res) => {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
     const { eyeAspectRatio, frameIndex } = req.body;
     if (eyeAspectRatio === undefined) return sendError(res, 'eyeAspectRatio is required.', 400);
 
-    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id), ...collegeFilter(req) });
+    const uid = oid(user._id);
+    const profile = await db.collection('face_profiles').findOne({
+      userId: { $in: [uid, String(user._id)] },
+      ...collegeFilter(req),
+    });
     if (!profile) return sendError(res, 'No face profile enrolled.', 400);
 
     const history = Array.isArray(profile.livenessHistory) ? profile.livenessHistory : [];
@@ -974,14 +1004,18 @@ function createAttendanceRouter(io) {
     res.json({ ok: true, history_length: history.length });
   });
 
-  router.post('/face/verify', requireRole('student'), async (req, res) => {
+  router.post('/face/verify', requireRole(...ALL_FACE_ROLES), async (req, res) => {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
     const selfie = req.body.selfie_base64;
     if (!selfie) return sendError(res, 'Selfie is required.', 400);
 
-    const profile = await db.collection('face_profiles').findOne({ userId: oid(user._id), ...collegeFilter(req) });
+    const uid = oid(user._id);
+    const profile = await db.collection('face_profiles').findOne({
+      userId: { $in: [uid, String(user._id)] },
+      ...collegeFilter(req),
+    });
     if (!profile) return sendError(res, 'No face profile enrolled. Please enroll first.', 400);
 
     const result = await verifyFace(selfie, profile);
@@ -1003,11 +1037,15 @@ function createAttendanceRouter(io) {
     });
   });
 
-  router.delete('/face/profile', requireRole('student'), async (req, res) => {
+  router.delete('/face/profile', requireRole(...ALL_FACE_ROLES), async (req, res) => {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    await db.collection('face_profiles').deleteOne({ userId: oid(user._id), ...collegeFilter(req) });
+    const uid = oid(user._id);
+    await db.collection('face_profiles').deleteOne({
+      userId: { $in: [uid, String(user._id)] },
+      ...collegeFilter(req),
+    });
     res.json({ ok: true, message: 'Face profile deleted' });
   });
 

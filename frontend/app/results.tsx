@@ -74,7 +74,12 @@ export default function Results() {
         </View>
 
         {semesters.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipScrollView}
+            contentContainerStyle={styles.chipRow}
+          >
             <ChipBtn label="All" active={!selectedSem} onPress={() => setSelectedSem(null)} testID="sem-all" />
             {semesters.map(s => (
               <ChipBtn key={s} label={s} active={selectedSem === s} onPress={() => setSelectedSem(s)} testID={`sem-${s}`} />
@@ -117,7 +122,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '800', color: theme.colors.onSurface },
   downloadBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.brandPrimary },
   statsRow: { flexDirection: 'row', gap: 10, paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md },
-  chipRow: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.md, gap: 8 },
+  chipScrollView: { flexGrow: 0, maxHeight: 48, marginBottom: 4 },
+  chipRow: { paddingHorizontal: theme.spacing.lg, paddingBottom: 4, gap: 8, alignItems: 'center' },
   code: { fontSize: 11, color: theme.colors.brand, fontWeight: '700' },
   name: { fontSize: 15, fontWeight: '700', color: theme.colors.onSurface, marginTop: 2 },
   semester: { fontSize: 11, color: theme.colors.muted, marginTop: 2 },

@@ -8,7 +8,7 @@ import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import {
   Package, Search, Wrench, CheckCircle, AlertTriangle, Clock,
-  Monitor, Projector, Printer, Server, Cpu, Wifi, ChevronRight,
+  Monitor, Projector, Printer, Server, Cpu, Wifi, ChevronRight, ArrowLeft,
 } from 'lucide-react-native';
 import { useFetch } from '@/src/hooks/useFetch';
 
@@ -50,14 +50,14 @@ export default function AssetManagement() {
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <View style={styles.hero}>
             <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
-              <Pressable onPress={() => router.back()} style={styles.backBtn}>
-                <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
-              </Pressable>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={styles.heroHeaderRow}>
+                <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+                  <ArrowLeft size={20} color="#fff" />
+                </Pressable>
                 <View style={styles.heroIcon}><Package size={22} color="#fff" /></View>
-                <View>
-                  <Text style={styles.heroTitle}>Asset Management</Text>
-                  <Text style={styles.heroSub}>Track campus equipment & inventory</Text>
+                <View style={styles.heroTitles}>
+                  <Text style={styles.heroTitle} numberOfLines={1}>Asset Management</Text>
+                  <Text style={styles.heroSub} numberOfLines={1}>Track campus equipment & inventory</Text>
                 </View>
               </View>
               <View style={styles.heroStats}>
@@ -91,7 +91,12 @@ export default function AssetManagement() {
                     placeholder="Search assets..." placeholderTextColor={theme.colors.muted} />
                 </View>
 
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryScrollContent}
+                  style={styles.categoryScrollView}
+                >
                   {CATEGORIES.map(c => (
                     <Pressable key={c} onPress={() => setSelectedCategory(c)}
                       style={[styles.filterChip, selectedCategory === c && styles.filterActive]}>
@@ -215,22 +220,26 @@ export default function AssetManagement() {
 
 const styles = StyleSheet.create({
   hero: { marginBottom: 0 },
-  heroGrad: { paddingHorizontal: 16, paddingVertical: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 10 },
-  heroIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  heroGrad: { paddingHorizontal: 16, paddingVertical: 18, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 14 },
+  heroHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroTitles: { flex: 1, minWidth: 0 },
   heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  heroSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
-  heroStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
+  heroStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 },
   heroStat: { alignItems: 'center' },
   heroStatVal: { color: '#fff', fontSize: 18, fontWeight: '800' },
   heroStatLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, marginTop: 2 },
   heroStatDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.2)' },
-  backBtn: { position: 'absolute', top: 16, left: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   tabs: { flexDirection: 'row', backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3, marginHorizontal: 16, marginVertical: 12 },
   tabBtn: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
   tabActive: { backgroundColor: theme.colors.brand },
   tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 11, textAlign: 'center' },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: theme.colors.border },
   searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
+  categoryScrollView: { marginHorizontal: -16 },
+  categoryScrollContent: { paddingHorizontal: 16, gap: 8, paddingVertical: 4 },
   filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
   filterActive: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },
   filterText: { fontSize: 12, fontWeight: '600', color: theme.colors.muted },

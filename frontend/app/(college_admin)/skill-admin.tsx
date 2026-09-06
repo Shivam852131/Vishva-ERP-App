@@ -8,7 +8,7 @@ import {
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
-import { Card, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn } from '@/src/ui';
+import { Card, SectionTitle, ProgressBar, ProgressRing, EmptyState, ChipBtn, BadgePill } from '@/src/ui';
 
 const LEVEL_COLORS: Record<string, string> = {
   beginner: '#6B7280', intermediate: '#3B82F6', advanced: '#8B5CF6', expert: '#10B981',
@@ -214,38 +214,43 @@ export default function SkillAdmin() {
               {skills.length === 0 ? (
                 <EmptyState title="No skills added" sub="Students add skills to their profiles" />
               ) : (
-                skills.map((s: any) => (
-                  <Card key={s.skill_key} style={{ marginBottom: 8 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.skillName}>{s.name}</Text>
-                        <Text style={styles.skillCat}>{s.category}</Text>
+                skills.map((s: any) => {
+                  const levelVariant = s.level === 'expert' ? 'success' : s.level === 'advanced' ? 'accent' : s.level === 'intermediate' ? 'info' : 'neutral';
+                  return (
+                    <Card key={s.skill_key} variant="elevated" style={{ marginBottom: 10 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.skillName}>{s.name}</Text>
+                          <Text style={styles.skillCat}>{s.category}</Text>
+                        </View>
+                        <BadgePill
+                          label={(s.level || 'Beginner').toUpperCase()}
+                          variant={levelVariant as any}
+                          size="sm"
+                        />
                       </View>
-                      <View style={[styles.levelBadge, { backgroundColor: (LEVEL_COLORS[s.level] || '#6B7280') + '15' }]}>
-                        <Text style={[styles.levelBadgeTxt, { color: LEVEL_COLORS[s.level] || '#6B7280' }]}>{s.level}</Text>
+                      <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+                        <View style={styles.skillMetric}>
+                          <Text style={styles.skillMetricVal}>{s.score}%</Text>
+                          <Text style={styles.skillMetricLabel}>Score</Text>
+                        </View>
+                        <View style={styles.skillMetric}>
+                          <Text style={styles.skillMetricVal}>{s.self_rating || '—'}/10</Text>
+                          <Text style={styles.skillMetricLabel}>Self</Text>
+                        </View>
+                        <View style={styles.skillMetric}>
+                          <Text style={styles.skillMetricVal}>{s.assessment_count || 0}</Text>
+                          <Text style={styles.skillMetricLabel}>Tests</Text>
+                        </View>
+                        <View style={styles.skillMetric}>
+                          <Text style={styles.skillMetricVal}>{s.endorsement_count || 0}</Text>
+                          <Text style={styles.skillMetricLabel}>Endorse</Text>
+                        </View>
                       </View>
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
-                      <View style={styles.skillMetric}>
-                        <Text style={styles.skillMetricVal}>{s.score}%</Text>
-                        <Text style={styles.skillMetricLabel}>Score</Text>
-                      </View>
-                      <View style={styles.skillMetric}>
-                        <Text style={styles.skillMetricVal}>{s.self_rating || '—'}/10</Text>
-                        <Text style={styles.skillMetricLabel}>Self</Text>
-                      </View>
-                      <View style={styles.skillMetric}>
-                        <Text style={styles.skillMetricVal}>{s.assessment_count || 0}</Text>
-                        <Text style={styles.skillMetricLabel}>Tests</Text>
-                      </View>
-                      <View style={styles.skillMetric}>
-                        <Text style={styles.skillMetricVal}>{s.endorsement_count || 0}</Text>
-                        <Text style={styles.skillMetricLabel}>Endorse</Text>
-                      </View>
-                    </View>
-                    <ProgressBar value={s.score} max={100} height={4} color={LEVEL_COLORS[s.level] || '#6B7280'} style={{ marginTop: 8 }} />
-                  </Card>
-                ))
+                      <ProgressBar value={s.score} max={100} height={4} color={LEVEL_COLORS[s.level] || '#6B7280'} style={{ marginTop: 8 }} />
+                    </Card>
+                  );
+                })
               )}
 
               <SectionTitle title="Career Matches" />
@@ -253,15 +258,18 @@ export default function SkillAdmin() {
                 <EmptyState title="No career matches" sub="Complete skill profiles to see matches" />
               ) : (
                 (careerMatches as any[]).slice(0, 5).map((m: any) => (
-                  <Card key={m.key} style={{ marginBottom: 8 }}>
+                  <Card key={m.key} variant="elevated" style={{ marginBottom: 10 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.matchTitle}>{m.title}</Text>
                         <Text style={styles.matchCat} numberOfLines={1}>{m.category} · {m.salary_range}</Text>
                       </View>
-                      <View style={styles.matchBadge}>
-                        <Text style={styles.matchBadgeTxt}>{m.match}%</Text>
-                      </View>
+                      <BadgePill
+                        label={`${m.match}% Match`}
+                        variant={m.match >= 75 ? 'success' : m.match >= 50 ? 'warning' : 'neutral'}
+                        size="sm"
+                        dot={m.match >= 75}
+                      />
                     </View>
                     <ProgressBar value={m.match} max={100} height={4} color="#10B981" style={{ marginTop: 8 }} />
                   </Card>

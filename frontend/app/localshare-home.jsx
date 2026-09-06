@@ -74,18 +74,26 @@ export default function LocalShareHome() {
         <View style={styles.content}>
           <View style={styles.actions}>
             {isTeacher ? (
-              <GradientButton
-                label="New Session"
-                icon={<Plus size={18} color="#fff" />}
-                onPress={() => router.push('/localshare-create')}
-                style={{ flex: 1 }}
-              />
+              <View style={styles.actionsRow}>
+                <GradientButton
+                  label="New Session"
+                  icon={<Plus size={18} color="#fff" />}
+                  onPress={() => router.push('/localshare-create')}
+                  style={styles.flexBtn}
+                />
+                <Button
+                  label="Join"
+                  icon={<Share size={18} color={theme.colors.brandPrimary} />}
+                  variant="secondary"
+                  onPress={() => setShowJoin(true)}
+                  style={styles.joinBtn}
+                />
+              </View>
             ) : (
               <GradientButton
                 label="Join Session"
                 icon={<Share size={18} color="#fff" />}
                 onPress={() => setShowJoin(true)}
-                style={{ flex: 1 }}
               />
             )}
           </View>
@@ -104,7 +112,10 @@ export default function LocalShareHome() {
             ))}
           </View>
 
-          <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+          >
             {loading && !sessions ? (
               <View style={styles.skeletons}>
                 {[1, 2, 3].map(i => (
@@ -185,22 +196,41 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerTitle: { color: '#fff', fontSize: theme.font.size.xl, fontWeight: theme.font.weight.bold },
   content: { flex: 1, backgroundColor: theme.colors.surface },
-  actions: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg },
+  actions: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.xs,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    alignItems: 'center',
+  },
+  flexBtn: {
+    flex: 1,
+  },
+  joinBtn: {
+    paddingHorizontal: theme.spacing.lg,
+  },
   filters: {
     flexDirection: 'row',
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
     gap: theme.spacing.sm,
   },
   filterBtn: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md + 2,
+    paddingVertical: theme.spacing.xs + 2,
     borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceTertiary,
   },
   filterActive: { backgroundColor: theme.colors.brand },
   filterText: { fontSize: theme.font.size.sm, color: theme.colors.muted, fontWeight: theme.font.weight.medium },
   filterTextActive: { color: '#fff' },
+  scrollContent: {
+    paddingBottom: theme.spacing.xxl,
+  },
   skeletons: { paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md },
   skeletonCard: { height: 80, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceTertiary },
   card: {

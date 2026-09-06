@@ -8,7 +8,7 @@ import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import {
   Sparkles, CalendarCheck, Check, Clock, Target, BookOpen,
-  ChevronRight, Plus, Trash2, RotateCcw, CheckCircle,
+  ChevronRight, Plus, Trash2, RotateCcw, CheckCircle, ArrowLeft,
 } from 'lucide-react-native';
 import { useFetch } from '@/src/hooks/useFetch';
 
@@ -64,11 +64,15 @@ export default function StudyPlanner() {
           <SafeAreaView edges={['top']} style={{ flex: 1 }}>
             <View style={styles.hero}>
               <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
-                <Pressable onPress={() => setSelectedPlan(null)} style={styles.backBtn}>
-                  <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
-                </Pressable>
-                <Text style={styles.heroTitle}>{plan.title || 'Study Plan'}</Text>
-                {plan.goal ? <Text style={styles.heroSub}>Goal: {plan.goal}</Text> : null}
+                <View style={styles.heroHeaderRow}>
+                  <Pressable onPress={() => setSelectedPlan(null)} hitSlop={10} style={styles.backBtn}>
+                    <ArrowLeft size={20} color="#fff" />
+                  </Pressable>
+                  <View style={styles.heroTitles}>
+                    <Text style={styles.heroTitle} numberOfLines={1}>{plan.title || 'Study Plan'}</Text>
+                    {plan.goal ? <Text style={styles.heroSub} numberOfLines={1}>Goal: {plan.goal}</Text> : null}
+                  </View>
+                </View>
                 {totalTasks > 0 && (
                   <View style={styles.progressRow}>
                     <View style={styles.progressBg}>
@@ -151,14 +155,14 @@ export default function StudyPlanner() {
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <View style={styles.hero}>
             <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
-              <Pressable onPress={() => router.back()} style={styles.backBtn}>
-                <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
-              </Pressable>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={styles.heroHeaderRow}>
+                <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+                  <ArrowLeft size={20} color="#fff" />
+                </Pressable>
                 <View style={styles.heroIcon}><Sparkles size={22} color="#fff" /></View>
-                <View>
-                  <Text style={styles.heroTitle}>AI Study Planner</Text>
-                  <Text style={styles.heroSub}>Organize your study schedule with AI</Text>
+                <View style={styles.heroTitles}>
+                  <Text style={styles.heroTitle} numberOfLines={1}>AI Study Planner</Text>
+                  <Text style={styles.heroSub} numberOfLines={1}>Organize your study schedule with AI</Text>
                 </View>
               </View>
             </LinearGradient>
@@ -227,11 +231,13 @@ export default function StudyPlanner() {
 
 const styles = StyleSheet.create({
   hero: { marginBottom: 0 },
-  heroGrad: { paddingHorizontal: 16, paddingVertical: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 8 },
-  heroIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  heroGrad: { paddingHorizontal: 16, paddingVertical: 18, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 14 },
+  heroHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroTitles: { flex: 1, minWidth: 0 },
   heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  heroSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
-  backBtn: { position: 'absolute', top: 16, left: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
   progressRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
   progressBg: { flex: 1, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.2)' },
   progressFill: { height: '100%', borderRadius: 4, backgroundColor: '#fff' },

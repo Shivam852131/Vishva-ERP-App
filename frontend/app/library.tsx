@@ -214,7 +214,12 @@ export default function LibraryScreen() {
         )}
 
         {tab === 'catalog' && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipScrollView}
+            contentContainerStyle={styles.chipScroll}
+          >
             {DEPARTMENTS.map(d => (
               <ChipBtn
                 key={d}
@@ -530,7 +535,8 @@ const styles = StyleSheet.create({
   searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: theme.spacing.lg, marginBottom: theme.spacing.sm, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border },
   searchInput: { flex: 1, fontSize: theme.font.size.base, color: theme.colors.onSurface, padding: 0 },
 
-  chipScroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.md, gap: 6 },
+  chipScrollView: { flexGrow: 0, maxHeight: 48, marginBottom: 4 },
+  chipScroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: 4, gap: 6, alignItems: 'center' },
 
   listScroll: { flex: 1 },
   listContent: { paddingHorizontal: theme.spacing.lg, paddingBottom: 32 },

@@ -153,21 +153,21 @@ export default function AdminDashboard() {
   const quickLinks = [
     { icon: <Users size={18} color="#fff" />, label: 'Users', color: '#047857', route: '/(college_admin)/users' },
     { icon: <Building size={18} color="#fff" />, label: 'Academics', color: '#059669', route: '/(college_admin)/academics' },
-    { icon: <Library size={18} color="#fff" />, label: 'Library', color: '#10B981', route: '/library' },
-    { icon: <Home size={18} color="#fff" />, label: 'Hostel', color: '#065F46', route: '/(college_admin)/hostel-admin' },
-    { icon: <Bus size={18} color="#fff" />, label: 'Transport', color: '#0F766E', route: '/transport' },
-    { icon: <MessageSquare size={18} color="#fff" />, label: 'Grievances', color: '#059669', route: '/grievances' },
+    { icon: <Activity size={18} color="#fff" />, label: 'Attendance', color: '#EF4444', route: '/(college_admin)/attendance' },
     { icon: <CreditCard size={18} color="#fff" />, label: 'Payments', color: '#0891b2', route: '/(college_admin)/payments' },
     { icon: <ShieldCheck size={18} color="#fff" />, label: 'Subscription', color: '#7c3aed', route: '/(college_admin)/subscription' },
     { icon: <BarChart3 size={18} color="#fff" />, label: 'Reports', color: '#047857', route: '/(college_admin)/reports' },
-    { icon: <Activity size={18} color="#fff" />, label: 'Attendance', color: '#EF4444', route: '/(college_admin)/attendance' },
-    { icon: <Bell size={18} color="#fff" />, label: 'Notifications', color: '#8B5CF6', route: '/notifications' },
-    { icon: <MapPin size={18} color="#fff" />, label: 'Campus', color: '#0891b2', route: '/grievances' },
-    { icon: <Zap size={18} color="#fff" />, label: 'Career Hub', color: '#4F46E5', route: '/(college_admin)/career-hub' },
+    { icon: <UserCheck size={18} color="#fff" />, label: 'Visitors', color: '#4F46E5', route: '/visitor' },
+    { icon: <Home size={18} color="#fff" />, label: 'Hostel', color: '#065F46', route: '/(college_admin)/hostel-admin' },
+    { icon: <Library size={18} color="#fff" />, label: 'Library', color: '#10B981', route: '/library' },
+    { icon: <Bus size={18} color="#fff" />, label: 'Transport', color: '#0F766E', route: '/transport' },
+    { icon: <MessageSquare size={18} color="#fff" />, label: 'Grievances', color: '#059669', route: '/grievances' },
     { icon: <Briefcase size={18} color="#fff" />, label: 'Placements', color: '#3B82F6', route: '/(college_admin)/placements' },
+    { icon: <Zap size={18} color="#fff" />, label: 'Career Hub', color: '#4F46E5', route: '/(college_admin)/career-hub' },
     { icon: <Target size={18} color="#fff" />, label: 'Assessments', color: '#8B5CF6', route: '/(college_admin)/assessments-admin' },
     { icon: <Users size={18} color="#fff" />, label: 'Mentorship', color: '#EC4899', route: '/(college_admin)/mentorship-admin' },
     { icon: <Star size={18} color="#fff" />, label: 'Skills', color: '#10B981', route: '/(college_admin)/skill-admin' },
+    { icon: <Bell size={18} color="#fff" />, label: 'Notifications', color: '#8B5CF6', route: '/notifications' },
   ];
 
   const visibleLinks = showAllLinks ? quickLinks : quickLinks.slice(0, 8);
@@ -213,7 +213,7 @@ export default function AdminDashboard() {
             {analytics && (
               <View style={styles.heroStats}>
                 <View style={styles.heroStat}>
-                  <Text style={styles.heroStatVal}>{analytics.student_faculty_ratio || '—'}:1</Text>
+                  <Text style={styles.heroStatVal}>{analytics.student_faculty_ratio ? `${analytics.student_faculty_ratio}:1` : '—'}</Text>
                   <Text style={styles.heroStatLbl}>Student-Faculty Ratio</Text>
                 </View>
                 <View style={styles.heroDivider} />
@@ -234,24 +234,24 @@ export default function AdminDashboard() {
           {todayStats && (
             <View style={styles.quickStatsRow}>
               <View style={styles.quickStat}>
-                <CheckCircle size={16} color="#10B981" />
+                <CheckCircle size={14} color="#10B981" />
                 <Text style={styles.quickStatVal}>{todayStats.present}</Text>
-                <Text style={styles.quickStatLabel}>Present</Text>
+                <Text style={styles.quickStatLabel} numberOfLines={1} adjustsFontSizeToFit>Present</Text>
               </View>
               <View style={styles.quickStat}>
-                <AlertTriangle size={16} color="#EF4444" />
+                <AlertTriangle size={14} color="#EF4444" />
                 <Text style={[styles.quickStatVal, { color: '#EF4444' }]}>{todayStats.absent}</Text>
-                <Text style={styles.quickStatLabel}>Absent</Text>
+                <Text style={styles.quickStatLabel} numberOfLines={1} adjustsFontSizeToFit>Absent</Text>
               </View>
               <View style={styles.quickStat}>
-                <Clock size={16} color="#F59E0B" />
+                <Clock size={14} color="#F59E0B" />
                 <Text style={[styles.quickStatVal, { color: '#F59E0B' }]}>{liveScheduleCount}</Text>
-                <Text style={styles.quickStatLabel}>Classes</Text>
+                <Text style={styles.quickStatLabel} numberOfLines={1} adjustsFontSizeToFit>Classes</Text>
               </View>
               <View style={styles.quickStat}>
-                <Activity size={16} color="#3B82F6" />
+                <Activity size={14} color="#3B82F6" />
                 <Text style={[styles.quickStatVal, { color: '#3B82F6' }]}>{dash?.courses || 0}</Text>
-                <Text style={styles.quickStatLabel}>Courses</Text>
+                <Text style={styles.quickStatLabel} numberOfLines={1} adjustsFontSizeToFit>Courses</Text>
               </View>
             </View>
           )}
@@ -302,7 +302,7 @@ export default function AdminDashboard() {
                     sub={`${analytics.attendance_rate || 0}% overall`}
                   />
                 </Card>
-                <Card style={styles.perfCard}>
+                <Card style={[styles.perfCard, styles.perfCardBar]}>
                   <ProgressBar
                     value={dash?.pending_fees || 0}
                     max={Math.max(dash?.pending_fees || 0, 100)}
@@ -488,9 +488,9 @@ const styles = StyleSheet.create({
   heroStatVal: { color: '#fff', fontSize: 18, fontWeight: '800' },
   heroStatLbl: { color: 'rgba(255,255,255,0.7)', fontSize: 9, marginTop: 2 },
   heroDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)' },
-  quickStatsRow: { flexDirection: 'row', marginHorizontal: theme.spacing.lg, gap: 8, marginBottom: theme.spacing.md },
-  quickStat: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.colors.surfaceSecondary, padding: 10, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border },
-  quickStatVal: { fontSize: 16, fontWeight: '800', color: '#10B981' },
+  quickStatsRow: { flexDirection: 'row', marginHorizontal: theme.spacing.lg, gap: 6, marginBottom: theme.spacing.md },
+  quickStat: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: theme.colors.surfaceSecondary, paddingVertical: 8, paddingHorizontal: 6, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border },
+  quickStatVal: { fontSize: 15, fontWeight: '800', color: '#10B981' },
   quickStatLabel: { fontSize: 9, color: theme.colors.muted, fontWeight: '600' },
   announceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.colors.brandPrimary, marginHorizontal: theme.spacing.lg, paddingVertical: 14, borderRadius: theme.radius.md, ...theme.shadow.md },
   announceTxt: { color: '#fff', fontWeight: '700', fontSize: 14, flex: 1, textAlign: 'center' },
@@ -500,8 +500,9 @@ const styles = StyleSheet.create({
   metricVal: { fontSize: 22, fontWeight: '800', color: theme.colors.onSurface, marginTop: 8 },
   metricLbl: { fontSize: 11, color: theme.colors.muted, fontWeight: '600', marginTop: 2 },
   perfRow: { flexDirection: 'row', gap: 12, paddingHorizontal: theme.spacing.lg },
-  perfCard: { flex: 1, alignItems: 'center', paddingVertical: theme.spacing.lg },
-  perfNote: { fontSize: 11, color: theme.colors.muted, marginTop: 8, fontWeight: '600' },
+  perfCard: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: theme.spacing.lg, paddingHorizontal: 12 },
+  perfCardBar: { alignItems: 'stretch', justifyContent: 'center', paddingHorizontal: 16 },
+  perfNote: { fontSize: 11, color: theme.colors.muted, marginTop: 8, fontWeight: '600', textAlign: 'center' },
   linkGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: theme.spacing.lg, gap: 8 },
   linkCard: { flexBasis: '22%', flexGrow: 1, flexShrink: 1, alignItems: 'center', gap: 6 },
   linkIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', ...theme.shadow.sm },

@@ -260,11 +260,20 @@ function createAttendanceAnalyticsRouter(io) {
   });
 
   // ── Leave request submission ──
-  router.post('/attendance/leave-request', requireRole('student'), async (req, res) => {
+  router.post('/attendance/leave-request', requireRole('student', 'parent'), async (req, res) => {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
-    const uid = oid(user._id);
+    let studentUser = user;
+    if (user.role === 'parent') {
+      const qSid = req.body.student_id || req.body.studentId;
+      if (qSid) {
+        studentUser = await db.collection('users').findOne({ _id: oid(qSid), ...collegeFilter(req) }) || user;
+      } else {
+        studentUser = await db.collection('users').findOne({ parentId: oid(user._id), ...collegeFilter(req) }) || user;
+      }
+    }
+    const uid = oid(studentUser._id);
 
     const { date, reason, course_id } = req.body;
     if (!date || !reason) {
@@ -273,8 +282,9 @@ function createAttendanceAnalyticsRouter(io) {
 
     const leaveRequest = {
       studentId: uid,
-      studentName: user.name,
-      studentEmail: user.email,
+      studentName: studentUser.name,
+      studentEmail: studentUser.email,
+      submittedBy: user.role === 'parent' ? 'parent' : 'student',
       date,
       reason,
       courseId: course_id ? oid(course_id) : null,
@@ -314,7 +324,7 @@ function createAttendanceAnalyticsRouter(io) {
   });
 
   // ── Get leave requests ──
-  router.get('/attendance/leave-requests', requireRole('student', 'faculty', 'college_admin'), async (req, res) => {
+  router.get('/attendance/leave-requests', requireRole('student', 'faculty', 'college_admin', 'parent'), async (req, res) => {
     const user = await authUser(req);
     if (!user) return sendError(res, 'Unauthorized.', 401);
     const db = getDB();
@@ -322,6 +332,9 @@ function createAttendanceAnalyticsRouter(io) {
     let filter = {};
     if (user.role === 'student') {
       filter = { studentId: oid(user._id) };
+    } else if (user.role === 'parent') {
+      const child = await db.collection('users').findOne({ parentId: oid(user._id), ...collegeFilter(req) });
+      filter = { studentId: child ? oid(child._id) : oid(user._id) };
     } else if (user.role === 'faculty') {
       // Get requests for faculty's courses
       const courses = await db.collection('courses').find({ facultyId: oid(user._id), ...collegeFilter(req) }).toArray();

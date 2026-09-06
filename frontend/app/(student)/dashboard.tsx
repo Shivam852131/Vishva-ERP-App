@@ -95,6 +95,7 @@ export default function StudentDashboard() {
 
   const quickActions = [
     { icon: <QrCode size={20} color="#fff" />, label: 'Attendance', to: '/attendance-advanced', color: theme.colors.brandPrimary },
+    { icon: <Sparkles size={20} color="#fff" />, label: 'Skills', to: '/skill-assessment', color: '#8B5CF6' },
     { icon: <BookOpen size={20} color="#fff" />, label: 'Notes', to: '/notes', color: theme.colors.brandPrimary },
     { icon: <Award size={20} color="#fff" />, label: 'Results', to: '/results', color: '#10B981' },
     { icon: <Wallet size={20} color="#fff" />, label: 'Fees', to: '/(student)/fees', color: theme.colors.brand },
@@ -450,7 +451,7 @@ export default function StudentDashboard() {
 }
 
 const styles = StyleSheet.create({
-  hero: { height: 330, overflow: 'hidden' },
+  hero: { minHeight: 330, paddingBottom: 16, overflow: 'hidden' },
   heroTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',

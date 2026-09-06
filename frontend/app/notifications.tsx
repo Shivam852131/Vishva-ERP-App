@@ -244,7 +244,12 @@ export default function NotificationsScreen() {
           )}
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipScrollView}
+          contentContainerStyle={styles.chipScroll}
+        >
           {FILTER_CHIPS.map(c => {
             const active = categoryFilter === c.key;
             const count = categoryCounts[c.key] || 0;
@@ -499,8 +504,9 @@ const styles = StyleSheet.create({
   searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 12, marginBottom: 8, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: theme.colors.border },
   searchInput: { flex: 1, fontSize: 13, color: theme.colors.text, padding: 0 },
 
-  chipScroll: { paddingHorizontal: 16, paddingBottom: 10, gap: 6 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  chipScrollView: { flexGrow: 0, maxHeight: 44, marginBottom: 8 },
+  chipScroll: { paddingHorizontal: 16, paddingVertical: 2, gap: 6, alignItems: 'center' },
+  chip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', height: 34, gap: 4, paddingHorizontal: 12, borderRadius: 17, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
   chipActive: { backgroundColor: theme.colors.brandPrimary, borderColor: theme.colors.brandPrimary },
   chipText: { fontSize: 11, fontWeight: '600', color: theme.colors.muted },
   chipTextActive: { color: '#FFF' },

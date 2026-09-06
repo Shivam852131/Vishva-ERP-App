@@ -9,7 +9,7 @@ import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { api } from '@/src/api';
 import {
   Sparkles, Mic, Play, Pause, RotateCcw, CheckCircle, AlertTriangle,
-  ChevronRight, Clock, Target, TrendingUp, MessageSquare, Award,
+  ChevronRight, Clock, Target, TrendingUp, MessageSquare, Award, ArrowLeft,
 } from 'lucide-react-native';
 
 type InterviewQuestion = { q: string; tips: string[]; sampleAnswer: string };
@@ -79,12 +79,12 @@ export default function InterviewPractice() {
             <SafeAreaView edges={['top']} style={{ flex: 1 }}>
               <View style={styles.hero}>
                 <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
-                  <Pressable onPress={() => { setSelectedType(null); setCurrentQ(0); setShowAnswer(false); setTimerRunning(false); setTimer(0); }} style={styles.backBtn}>
-                    <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
-                  </Pressable>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={styles.heroHeaderRow}>
+                    <Pressable onPress={() => { setSelectedType(null); setCurrentQ(0); setShowAnswer(false); setTimerRunning(false); setTimer(0); }} hitSlop={10} style={styles.backBtn}>
+                      <ArrowLeft size={20} color="#fff" />
+                    </Pressable>
                     <View style={styles.heroIcon}><Sparkles size={22} color="#fff" /></View>
-                    <View>
+                    <View style={styles.heroTitles}>
                       <Text style={styles.heroTitle}>Loading Questions...</Text>
                       <Text style={styles.heroSub}>{INTERVIEW_TYPES.find(t => t.id === selectedType)?.title}</Text>
                     </View>
@@ -108,12 +108,12 @@ export default function InterviewPractice() {
             <SafeAreaView edges={['top']} style={{ flex: 1 }}>
               <View style={styles.hero}>
                 <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
-                  <Pressable onPress={() => { setSelectedType(null); setCurrentQ(0); setShowAnswer(false); setTimerRunning(false); setTimer(0); }} style={styles.backBtn}>
-                    <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
-                  </Pressable>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={styles.heroHeaderRow}>
+                    <Pressable onPress={() => { setSelectedType(null); setCurrentQ(0); setShowAnswer(false); setTimerRunning(false); setTimer(0); }} hitSlop={10} style={styles.backBtn}>
+                      <ArrowLeft size={20} color="#fff" />
+                    </Pressable>
                     <View style={styles.heroIcon}><Sparkles size={22} color="#fff" /></View>
-                    <View>
+                    <View style={styles.heroTitles}>
                       <Text style={styles.heroTitle}>No Questions Available</Text>
                       <Text style={styles.heroSub}>{INTERVIEW_TYPES.find(t => t.id === selectedType)?.title}</Text>
                     </View>
@@ -139,17 +139,17 @@ export default function InterviewPractice() {
           <SafeAreaView edges={['top']} style={{ flex: 1 }}>
             <View style={styles.hero}>
               <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
-                <Pressable onPress={() => { setSelectedType(null); setCurrentQ(0); setShowAnswer(false); setTimerRunning(false); setTimer(0); }} style={styles.backBtn}>
-                  <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
-                </Pressable>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View>
-                    <Text style={styles.heroTitle}>Question {currentQ + 1}/{questions.length}</Text>
-                    <Text style={styles.heroSub}>{INTERVIEW_TYPES.find(t => t.id === selectedType)?.title}</Text>
+                <View style={styles.heroHeaderRow}>
+                  <Pressable onPress={() => { setSelectedType(null); setCurrentQ(0); setShowAnswer(false); setTimerRunning(false); setTimer(0); }} hitSlop={10} style={styles.backBtn}>
+                    <ArrowLeft size={20} color="#fff" />
+                  </Pressable>
+                  <View style={styles.heroTitles}>
+                    <Text style={styles.heroTitle} numberOfLines={1}>Question {currentQ + 1}/{questions.length}</Text>
+                    <Text style={styles.heroSub} numberOfLines={1}>{INTERVIEW_TYPES.find(t => t.id === selectedType)?.title}</Text>
                   </View>
                   <View style={{ alignItems: 'center' }}>
                     <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800' }}>{formatTime(timer)}</Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10 }}>{completedQs.length}/{questions.length} done</Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 10 }}>{completedQs.length}/{questions.length} done</Text>
                   </View>
                 </View>
               </LinearGradient>
@@ -224,14 +224,14 @@ export default function InterviewPractice() {
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <View style={styles.hero}>
             <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
-              <Pressable onPress={() => router.back()} style={styles.backBtn}>
-                <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
-              </Pressable>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={styles.heroHeaderRow}>
+                <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+                  <ArrowLeft size={20} color="#fff" />
+                </Pressable>
                 <View style={styles.heroIcon}><Sparkles size={22} color="#fff" /></View>
-                <View>
-                  <Text style={styles.heroTitle}>AI Interview Practice</Text>
-                  <Text style={styles.heroSub}>Master your next interview with AI coaching</Text>
+                <View style={styles.heroTitles}>
+                  <Text style={styles.heroTitle} numberOfLines={1}>AI Interview Practice</Text>
+                  <Text style={styles.heroSub} numberOfLines={1}>Master your next interview with AI coaching</Text>
                 </View>
               </View>
             </LinearGradient>
@@ -284,11 +284,13 @@ export default function InterviewPractice() {
 
 const styles = StyleSheet.create({
   hero: { marginBottom: 0 },
-  heroGrad: { paddingHorizontal: 16, paddingVertical: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 12 },
-  heroIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  heroGrad: { paddingHorizontal: 16, paddingVertical: 18, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 14 },
+  heroHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroTitles: { flex: 1, minWidth: 0 },
   heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  heroSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
-  backBtn: { position: 'absolute', top: 16, left: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
   typeIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: theme.colors.brandTertiary, alignItems: 'center', justifyContent: 'center' },
   qBadge: { backgroundColor: theme.colors.brand, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   controlBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },

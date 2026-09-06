@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Animated, Dimensions, ActivityIndicator } from 'react-native';
+import {
+  View, Text, StyleSheet, ScrollView, Pressable,
+  Platform, Animated, Dimensions,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch } from '@/src/hooks/useFetch';
@@ -9,8 +11,9 @@ import ChatTab from '@/src/screens/ai/ChatTab';
 import {
   Sparkles, MessageCircle, CalendarCheck, Wand2, ClipboardCheck, FileText,
   Briefcase, GraduationCap, Mic, Zap, Brain, BookOpen, Target, Clock,
-  ChevronRight, Lightbulb, Star, Cpu, Globe, ArrowLeft,
+  ChevronRight, Lightbulb, Star, Cpu, Globe, ArrowLeft, ArrowRight,
 } from 'lucide-react-native';
+import { router } from '@/src/navigation/router';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -34,30 +37,18 @@ const PERSONAS = [
 ];
 
 const QUICK_PROMPTS = [
-  { icon: Lightbulb, label: 'Explain', color: '#F59E0B', prompt: 'Explain this concept in simple terms' },
-  { icon: BookOpen, label: 'Summarize', color: '#059669', prompt: 'Summarize the key points of this chapter' },
-  { icon: Target, label: 'Practice', color: '#4F46E5', prompt: 'Give me practice problems on this topic' },
-  { icon: Brain, label: 'Quiz Me', color: '#7C3AED', prompt: 'Test my knowledge with a quiz' },
+  { icon: Lightbulb, label: 'Explain', color: '#F59E0B', prompt: 'Explain this concept in simple terms', desc: 'Clear explanations' },
+  { icon: BookOpen, label: 'Summarize', color: '#059669', prompt: 'Summarize the key points of this chapter', desc: 'Key insights' },
+  { icon: Target, label: 'Practice', color: '#4F46E5', prompt: 'Give me practice problems on this topic', desc: 'Problem solving' },
+  { icon: Brain, label: 'Quiz Me', color: '#7C3AED', prompt: 'Test my knowledge with a quiz', desc: 'Self assessment' },
 ];
-
-function EmptyChatState() {
-  return (
-    <View style={styles.emptyState}>
-      <View style={styles.emptyIconWrap}>
-        <Sparkles size={28} color={theme.colors.brandPrimary} />
-      </View>
-      <Text style={styles.emptyTitle}>How can I help you today?</Text>
-      <Text style={styles.emptySub}>Ask a question, get study tips, or explore career paths</Text>
-    </View>
-  );
-}
 
 function ToolCard({ tool, onPress }: { tool: typeof AI_TOOLS[0]; onPress: () => void }) {
   const Icon = tool.icon;
   return (
     <Pressable style={styles.toolCard} onPress={onPress}>
-      <View style={[styles.toolIconWrap, { backgroundColor: tool.color + '10' }]}>
-        <Icon size={20} color={tool.color} />
+      <View style={[styles.toolIconWrap, { backgroundColor: tool.color + '15' }]}>
+        <Icon size={22} color={tool.color} />
       </View>
       <View style={styles.toolInfo}>
         <View style={styles.toolTitleRow}>
@@ -70,7 +61,9 @@ function ToolCard({ tool, onPress }: { tool: typeof AI_TOOLS[0]; onPress: () => 
         </View>
         <Text style={styles.toolDesc} numberOfLines={1}>{tool.desc}</Text>
       </View>
-      <ChevronRight size={16} color={theme.colors.muted} />
+      <View style={styles.toolArrow}>
+        <ChevronRight size={16} color={theme.colors.muted} />
+      </View>
     </Pressable>
   );
 }
@@ -78,8 +71,8 @@ function ToolCard({ tool, onPress }: { tool: typeof AI_TOOLS[0]; onPress: () => 
 function StatBadge({ icon: Icon, value, label, color }: { icon: any; value: string; label: string; color: string }) {
   return (
     <View style={styles.statBadge}>
-      <View style={[styles.statBadgeIcon, { backgroundColor: color + '12' }]}>
-        <Icon size={14} color={color} />
+      <View style={[styles.statBadgeIcon, { backgroundColor: color + '14' }]}>
+        <Icon size={16} color={color} />
       </View>
       <Text style={styles.statBadgeValue}>{value}</Text>
       <Text style={styles.statBadgeLabel}>{label}</Text>
@@ -87,40 +80,64 @@ function StatBadge({ icon: Icon, value, label, color }: { icon: any; value: stri
   );
 }
 
-function HomeView({ aiStats, conversations, onNavigate, onStartChat }: { aiStats: any; conversations: any[]; onNavigate: (r: string) => void; onStartChat: (p: string) => void }) {
+function HomeView({
+  aiStats,
+  conversations,
+  onNavigate,
+  onStartChat,
+  onSelectPersona,
+}: {
+  aiStats: any;
+  conversations: any[];
+  onNavigate: (r: string) => void;
+  onStartChat: (p: string) => void;
+  onSelectPersona: (key: string) => void;
+}) {
   return (
     <ScrollView contentContainerStyle={styles.homeScroll} showsVerticalScrollIndicator={false}>
-      <View style={styles.greetingSection}>
-        <View style={styles.greetingRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.greetingTitle}>AI Campus Assistant</Text>
-            <Text style={styles.greetingSub}>What would you like to learn?</Text>
-          </View>
-          <View style={styles.aiAvatarSmall}>
-            <Sparkles size={16} color="#fff" />
-          </View>
+      {/* Quick Ask / Search Bar */}
+      <Pressable style={styles.askBar} onPress={() => onStartChat('')}>
+        <View style={styles.askBarIcon}>
+          <Sparkles size={18} color={theme.colors.brandPrimary} />
         </View>
-        <View style={styles.statRow}>
-          <StatBadge icon={MessageCircle} value={String(aiStats?.questions || 0)} label="Questions" color="#4F46E5" />
-          <StatBadge icon={Clock} value={aiStats?.studyHours || '0h'} label="Study" color="#059669" />
-          <StatBadge icon={Zap} value={String(aiStats?.tasksDone || 0)} label="Tasks" color="#7C3AED" />
-          <StatBadge icon={Star} value={aiStats?.streak || '0d'} label="Streak" color="#F59E0B" />
+        <Text style={styles.askBarPlaceholder}>Ask a doubt, solve homework, or explore...</Text>
+        <View style={styles.askBarArrow}>
+          <ArrowRight size={14} color="#fff" />
         </View>
+      </Pressable>
+
+      {/* Stats Summary */}
+      <View style={styles.statRow}>
+        <StatBadge icon={MessageCircle} value={String(aiStats?.questions || 0)} label="Questions" color="#4F46E5" />
+        <StatBadge icon={Clock} value={aiStats?.studyHours || '0h'} label="Study" color="#059669" />
+        <StatBadge icon={Zap} value={String(aiStats?.tasksDone || 0)} label="Tasks" color="#7C3AED" />
+        <StatBadge icon={Star} value={aiStats?.streak || '0d'} label="Streak" color="#F59E0B" />
       </View>
 
-      <View style={styles.personaSection}>
-        <Text style={styles.sectionLabel}>Choose AI Persona</Text>
+      {/* AI Persona Selector */}
+      <View style={styles.sectionWrap}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeading}>Choose AI Persona</Text>
+          <Text style={styles.sectionSubHeading}>Specialized academic assistants</Text>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.personaRow}>
           {PERSONAS.map(p => {
             const Icon = p.icon;
             return (
-              <Pressable key={p.key} style={styles.personaPill} onPress={() => onStartChat('')}>
-                <View style={[styles.personaPillIcon, { backgroundColor: p.color + '15' }]}>
-                  <Icon size={14} color={p.color} />
+              <Pressable
+                key={p.key}
+                style={styles.personaCard}
+                onPress={() => {
+                  onSelectPersona(p.key);
+                  onStartChat('');
+                }}
+              >
+                <View style={[styles.personaIconWrap, { backgroundColor: p.color + '15' }]}>
+                  <Icon size={18} color={p.color} />
                 </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.personaPillName} numberOfLines={1}>{p.label}</Text>
-                  <Text style={styles.personaPillDesc} numberOfLines={1}>{p.desc}</Text>
+                <View style={styles.personaTextWrap}>
+                  <Text style={styles.personaName} numberOfLines={1}>{p.label}</Text>
+                  <Text style={styles.personaDesc} numberOfLines={1}>{p.desc}</Text>
                 </View>
               </Pressable>
             );
@@ -128,57 +145,68 @@ function HomeView({ aiStats, conversations, onNavigate, onStartChat }: { aiStats
         </ScrollView>
       </View>
 
-      <View style={styles.quickSection}>
-        <Text style={styles.sectionLabel}>Quick Start</Text>
-        <View style={styles.quickRow}>
+      {/* Quick Start Prompts */}
+      <View style={styles.sectionWrap}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeading}>Quick Start</Text>
+          <Text style={styles.sectionSubHeading}>One-tap instant AI help</Text>
+        </View>
+        <View style={styles.quickGrid}>
           {QUICK_PROMPTS.map((action, i) => {
             const Icon = action.icon;
             return (
-              <Pressable key={i} style={styles.quickChip} onPress={() => onStartChat(action.prompt)}>
-                <View style={[styles.quickChipIcon, { backgroundColor: action.color + '15' }]}>
-                  <Icon size={16} color={action.color} />
+              <Pressable key={i} style={styles.quickCard} onPress={() => onStartChat(action.prompt)}>
+                <View style={[styles.quickCardIcon, { backgroundColor: action.color + '16' }]}>
+                  <Icon size={20} color={action.color} />
                 </View>
-                <Text style={styles.quickChipLabel} numberOfLines={1}>{action.label}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.quickCardLabel}>{action.label}</Text>
+                  <Text style={styles.quickCardDesc} numberOfLines={1}>{action.desc}</Text>
+                </View>
               </Pressable>
             );
           })}
         </View>
       </View>
 
+      {/* Recent Sessions */}
       {conversations && conversations.length > 0 && (
-        <View style={styles.recentSection}>
+        <View style={styles.sectionWrap}>
           <View style={styles.sectionRow}>
-            <Text style={styles.sectionLabel}>Recent</Text>
-            <Pressable><Text style={styles.sectionAction}>See All</Text></Pressable>
+            <Text style={styles.sectionHeading}>Recent Discussions</Text>
+            <Pressable onPress={() => onStartChat('')}><Text style={styles.sectionAction}>Open Chat</Text></Pressable>
           </View>
           {conversations.slice(0, 3).map((conv: any) => (
-            <Pressable key={conv.id} style={styles.convCard}>
-              <View style={[styles.convDot, { backgroundColor: '#4F46E5' }]} />
+            <Pressable key={conv.id} style={styles.convCard} onPress={() => onStartChat('')}>
+              <View style={[styles.convDot, { backgroundColor: theme.colors.brandPrimary }]} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.convTitle} numberOfLines={1}>{conv.title}</Text>
-                <Text style={styles.convMeta}>{conv.persona} · {conv.messages} msgs</Text>
+                <Text style={styles.convMeta}>{conv.persona || 'Doubt Solver'} · {conv.messages || 1} msgs</Text>
               </View>
-              <Text style={styles.convTime}>{conv.time}</Text>
+              <Text style={styles.convTime}>{conv.time || 'Today'}</Text>
             </Pressable>
           ))}
         </View>
       )}
 
+      {/* AI Tip of the Day */}
       <View style={styles.tipSection}>
         <View style={styles.tipCard}>
           <View style={styles.tipIconWrap}>
-            <Lightbulb size={14} color="#D97706" />
+            <Lightbulb size={18} color="#D97706" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.tipTitle}>AI Tip of the Day</Text>
-            <Text style={styles.tipText} numberOfLines={2}>
-              Try the Pomodoro Technique: Study for 25 minutes, then take a 5-minute break.
+            <View style={styles.tipBadgeRow}>
+              <Text style={styles.tipBadgeText}>AI Tip of the Day</Text>
+            </View>
+            <Text style={styles.tipText}>
+              Try the Pomodoro Technique: Study with laser focus for 25 minutes, then take a 5-minute break.
             </Text>
           </View>
         </View>
       </View>
 
-      <View style={{ height: 16 }} />
+      <View style={{ height: 28 }} />
     </ScrollView>
   );
 }
@@ -187,13 +215,13 @@ function ToolsView({ onNavigate }: { onNavigate: (r: string) => void }) {
   return (
     <ScrollView contentContainerStyle={styles.toolsScroll} showsVerticalScrollIndicator={false}>
       <View style={styles.toolsHeader}>
-        <Text style={styles.toolsTitle}>AI-Powered Tools</Text>
-        <Text style={styles.toolsSub}>{AI_TOOLS.length} tools available</Text>
+        <Text style={styles.toolsTitle}>Academic & Career Tools</Text>
+        <Text style={styles.toolsSub}>{AI_TOOLS.length} intelligent tools ready for you</Text>
       </View>
       {AI_TOOLS.map(tool => (
         <ToolCard key={tool.key} tool={tool} onPress={() => onNavigate(tool.route)} />
       ))}
-      <View style={{ height: 16 }} />
+      <View style={{ height: 28 }} />
     </ScrollView>
   );
 }
@@ -201,44 +229,44 @@ function ToolsView({ onNavigate }: { onNavigate: (r: string) => void }) {
 function ChatView({ onBack, persona }: { onBack: () => void; persona: string }) {
   const personaInfo = PERSONAS.find(p => p.key === persona);
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <View style={styles.chatHeader}>
-        <Pressable onPress={onBack} style={styles.chatBackBtn}>
-          <ArrowLeft size={18} color={theme.colors.text} />
+        <Pressable onPress={onBack} style={styles.chatBackBtn} accessibilityLabel="Back to AI Hub">
+          <ArrowLeft size={20} color={theme.colors.text} />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.chatTitle}>{personaInfo?.label || 'AI Chat'}</Text>
-          <Text style={styles.chatSub}>Online</Text>
+          <Text style={styles.chatTitle}>{personaInfo?.label || 'AI Campus Assistant'}</Text>
+          <Text style={styles.chatSub}>Always active · Real-time AI support</Text>
         </View>
-        <View style={styles.chatOnlineDot} />
+        <View style={styles.onlineBadge}>
+          <View style={styles.onlineDot} />
+          <Text style={styles.onlineText}>Online</Text>
+        </View>
       </View>
       <View style={{ flex: 1 }}>
-        <EmptyChatState />
+        <ChatTab />
       </View>
-      <ChatTab />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 export default function AIHub() {
   const { data: aiStats } = useFetch<any>('/ai/stats');
   const { data: conversations } = useFetch<any[]>('/ai/sessions');
-  const [tab, setTab] = useState('home');
+  const [tab, setTab] = useState<'home' | 'chat' | 'tools'>('home');
   const [selectedPersona, setSelectedPersona] = useState('doubt');
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+    Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
   }, []);
 
-  const handleStartChat = (prompt: string) => {
+  const handleStartChat = (_prompt: string) => {
     setTab('chat');
   };
 
   const handleNavigate = (route: string) => {
     try {
-      const { router } = require('@/src/navigation/router');
       router.push(route as any);
     } catch {}
   };
@@ -256,6 +284,47 @@ export default function AIHub() {
   return (
     <ErrorBoundary>
       <SafeAreaView edges={['top']} style={styles.screen}>
+        {/* Top Header */}
+        <View style={styles.topHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>AI Campus Assistant</Text>
+            <Text style={styles.headerSubtitle}>What would you like to learn today?</Text>
+          </View>
+          <View style={styles.headerAvatar}>
+            <Sparkles size={20} color="#fff" />
+          </View>
+        </View>
+
+        {/* Modern Top Segmented Control - Replaces awkward secondary bottom bar */}
+        <View style={styles.segmentContainer}>
+          <View style={styles.segmentTrack}>
+            {[
+              { key: 'home', icon: Sparkles, label: 'AI Hub' },
+              { key: 'chat', icon: MessageCircle, label: 'Ask AI' },
+              { key: 'tools', icon: Wand2, label: `Tools (${AI_TOOLS.length})` },
+            ].map(t => {
+              const Icon = t.icon;
+              const isActive = tab === t.key;
+              return (
+                <Pressable
+                  key={t.key}
+                  onPress={() => setTab(t.key as any)}
+                  style={[styles.segmentBtn, isActive && styles.segmentBtnActive]}
+                >
+                  <Icon
+                    size={15}
+                    color={isActive ? theme.colors.brandPrimary : theme.colors.muted}
+                  />
+                  <Text style={[styles.segmentBtnText, isActive && styles.segmentBtnTextActive]}>
+                    {t.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Main Content Area */}
         <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
           {tab === 'home' && (
             <HomeView
@@ -263,31 +332,13 @@ export default function AIHub() {
               conversations={conversations || []}
               onNavigate={handleNavigate}
               onStartChat={handleStartChat}
+              onSelectPersona={setSelectedPersona}
             />
           )}
           {tab === 'tools' && (
             <ToolsView onNavigate={handleNavigate} />
           )}
         </Animated.View>
-
-        <View style={styles.bottomBar}>
-          {[
-            { key: 'home', icon: Sparkles, label: 'Home', color: '#4F46E5' },
-            { key: 'chat', icon: MessageCircle, label: 'Chat', color: '#059669' },
-            { key: 'tools', icon: Wand2, label: 'Tools', color: '#7C3AED' },
-          ].map(t => {
-            const Icon = t.icon;
-            const isActive = tab === t.key;
-            return (
-              <Pressable key={t.key} onPress={() => t.key === 'chat' ? handleStartChat('') : setTab(t.key)} style={styles.bottomBarItem}>
-                <View style={[styles.bottomBarIcon, isActive && { backgroundColor: t.color + '15' }]}>
-                  <Icon size={20} color={isActive ? t.color : theme.colors.muted} />
-                </View>
-                <Text style={[styles.bottomBarLabel, isActive && { color: t.color, fontWeight: '700' }]}>{t.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
       </SafeAreaView>
     </ErrorBoundary>
   );
@@ -296,80 +347,467 @@ export default function AIHub() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.bg },
 
-  homeScroll: { paddingBottom: 20 },
+  // Top Header
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: theme.colors.text,
+    letterSpacing: -0.4,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: theme.colors.muted,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  headerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadow.sm,
+  },
 
-  greetingSection: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
-  greetingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  greetingTitle: { fontSize: 22, fontWeight: '800', color: theme.colors.text, letterSpacing: -0.3 },
-  greetingSub: { fontSize: 13, color: theme.colors.muted, marginTop: 2 },
-  aiAvatarSmall: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.colors.brand, alignItems: 'center', justifyContent: 'center' },
-  statRow: { flexDirection: 'row', gap: 8 },
-  statBadge: { flex: 1, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, padding: 10, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border },
-  statBadgeIcon: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  statBadgeValue: { fontSize: 14, fontWeight: '800', color: theme.colors.text },
-  statBadgeLabel: { fontSize: 9, color: theme.colors.muted, fontWeight: '600', marginTop: 1 },
+  // Top Segmented Bar
+  segmentContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  segmentTrack: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: 14,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
+  },
+  segmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  segmentBtnActive: {
+    backgroundColor: theme.colors.brandTertiary,
+  },
+  segmentBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.muted,
+  },
+  segmentBtnTextActive: {
+    color: theme.colors.brandPrimary,
+    fontWeight: '700',
+  },
 
-  personaSection: { marginTop: 16, paddingLeft: 16 },
-  personaRow: { gap: 8, paddingRight: 16 },
-  personaPill: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: theme.colors.border, width: 160 },
-  personaPillIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  personaPillName: { fontSize: 12, fontWeight: '700', color: theme.colors.text },
-  personaPillDesc: { fontSize: 10, color: theme.colors.muted, marginTop: 1 },
+  // Home Scroll
+  homeScroll: {
+    paddingHorizontal: 20,
+    paddingTop: 6,
+    paddingBottom: 24,
+  },
 
-  quickSection: { marginTop: 16, paddingHorizontal: 16 },
-  quickRow: { flexDirection: 'row', gap: 8 },
-  quickChip: { flex: 1, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, padding: 12, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: theme.colors.border },
-  quickChipIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  quickChipLabel: { fontSize: 11, fontWeight: '700', color: theme.colors.text },
+  // Ask Bar
+  askBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.brandPrimary + '30',
+    ...theme.shadow.sm,
+  },
+  askBarIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: theme.colors.brandTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  askBarPlaceholder: {
+    flex: 1,
+    fontSize: 13,
+    color: theme.colors.muted,
+    fontWeight: '500',
+  },
+  askBarArrow: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: theme.colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  sectionLabel: { fontSize: 14, fontWeight: '800', color: theme.colors.text, marginBottom: 8 },
-  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  sectionAction: { fontSize: 12, fontWeight: '700', color: theme.colors.brandPrimary },
+  // Stat Row
+  statRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  statBadge: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
+  },
+  statBadgeIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  statBadgeValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: theme.colors.text,
+  },
+  statBadgeLabel: {
+    fontSize: 10,
+    color: theme.colors.muted,
+    fontWeight: '600',
+    marginTop: 2,
+  },
 
-  recentSection: { marginTop: 16, paddingHorizontal: 16 },
-  convCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 10, padding: 12, marginTop: 6, borderWidth: 1, borderColor: theme.colors.border },
-  convDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  convTitle: { fontSize: 13, fontWeight: '700', color: theme.colors.text },
-  convMeta: { fontSize: 11, color: theme.colors.muted, marginTop: 2 },
-  convTime: { fontSize: 10, color: theme.colors.muted, flexShrink: 0 },
+  // Section Wrap
+  sectionWrap: {
+    marginBottom: 20,
+  },
+  sectionHeaderRow: {
+    marginBottom: 10,
+  },
+  sectionHeading: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: theme.colors.text,
+    letterSpacing: -0.2,
+  },
+  sectionSubHeading: {
+    fontSize: 12,
+    color: theme.colors.muted,
+    marginTop: 1,
+  },
+  sectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sectionAction: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.brandPrimary,
+  },
 
-  tipSection: { marginTop: 16, paddingHorizontal: 16 },
-  tipCard: { flexDirection: 'row', gap: 10, backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#FDE68A' },
-  tipIconWrap: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  tipTitle: { fontSize: 12, fontWeight: '800', color: '#92400E', marginBottom: 2 },
-  tipText: { fontSize: 11, color: '#78350F', lineHeight: 16 },
+  // Persona
+  personaRow: {
+    gap: 10,
+    paddingVertical: 2,
+  },
+  personaCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    minWidth: 180,
+    ...theme.shadow.sm,
+  },
+  personaIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  personaTextWrap: {
+    flex: 1,
+  },
+  personaName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  personaDesc: {
+    fontSize: 11,
+    color: theme.colors.muted,
+    marginTop: 2,
+  },
 
-  toolsScroll: { padding: 16 },
-  toolsHeader: { marginBottom: 12 },
-  toolsTitle: { fontSize: 20, fontWeight: '800', color: theme.colors.text, letterSpacing: -0.3 },
-  toolsSub: { fontSize: 12, color: theme.colors.muted, marginTop: 2 },
+  // Quick Start Grid
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  quickCard: {
+    width: (SCREEN_WIDTH - 50) / 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
+  },
+  quickCardIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickCardLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  quickCardDesc: {
+    fontSize: 10,
+    color: theme.colors.muted,
+    marginTop: 2,
+  },
 
-  toolCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, padding: 14, marginTop: 8, borderWidth: 1, borderColor: theme.colors.border },
-  toolIconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  toolInfo: { flex: 1, minWidth: 0 },
-  toolTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  toolTitle: { fontSize: 14, fontWeight: '700', color: theme.colors.text },
-  toolDesc: { fontSize: 12, color: theme.colors.muted, marginTop: 2 },
-  toolTag: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
-  tagPopular: { backgroundColor: '#FEF3C7' },
-  tagNew: { backgroundColor: '#DCFCE7' },
-  toolTagText: { fontSize: 9, fontWeight: '700' },
-  tagTextPopular: { color: '#D97706' },
-  tagTextNew: { color: '#16A34A' },
+  // Recent Sessions
+  convCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
+  },
+  convDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  convTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  convMeta: {
+    fontSize: 11,
+    color: theme.colors.muted,
+    marginTop: 2,
+  },
+  convTime: {
+    fontSize: 10,
+    color: theme.colors.muted,
+    flexShrink: 0,
+  },
 
-  bottomBar: { flexDirection: 'row', backgroundColor: theme.colors.surfaceSecondary, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingBottom: Platform.OS === 'ios' ? 20 : 8, paddingTop: 8, paddingHorizontal: 16 },
-  bottomBarItem: { flex: 1, alignItems: 'center', gap: 3 },
-  bottomBarIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  bottomBarLabel: { fontSize: 10, color: theme.colors.muted, fontWeight: '600' },
+  // Tip Card
+  tipSection: {
+    marginTop: 4,
+  },
+  tipCard: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    ...theme.shadow.sm,
+  },
+  tipIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  tipBadgeRow: {
+    marginBottom: 4,
+  },
+  tipBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#92400E',
+    letterSpacing: 0.2,
+  },
+  tipText: {
+    fontSize: 12,
+    color: '#78350F',
+    lineHeight: 18,
+    fontWeight: '500',
+  },
 
-  chatHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.surfaceSecondary },
-  chatBackBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.colors.bg, alignItems: 'center', justifyContent: 'center' },
-  chatTitle: { fontSize: 15, fontWeight: '700', color: theme.colors.text },
-  chatSub: { fontSize: 11, color: theme.colors.muted },
-  chatOnlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' },
+  // Tools Tab
+  toolsScroll: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 28,
+  },
+  toolsHeader: {
+    marginBottom: 12,
+  },
+  toolsTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: theme.colors.text,
+    letterSpacing: -0.3,
+  },
+  toolsSub: {
+    fontSize: 12,
+    color: theme.colors.muted,
+    marginTop: 2,
+  },
+  toolCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
+  },
+  toolIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  toolInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  toolTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  toolTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  toolDesc: {
+    fontSize: 12,
+    color: theme.colors.muted,
+    marginTop: 2,
+  },
+  toolTag: {
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  tagPopular: {
+    backgroundColor: '#FEF3C7',
+  },
+  tagNew: {
+    backgroundColor: '#DCFCE7',
+  },
+  toolTagText: {
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  tagTextPopular: {
+    color: '#D97706',
+  },
+  tagTextNew: {
+    color: '#16A34A',
+  },
+  toolArrow: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 12 },
-  emptyIconWrap: { width: 56, height: 56, borderRadius: 28, backgroundColor: theme.colors.brandTertiary, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.text, textAlign: 'center' },
-  emptySub: { fontSize: 13, color: theme.colors.muted, textAlign: 'center', lineHeight: 18 },
+  // Chat Header
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSecondary,
+  },
+  chatBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  chatSub: {
+    fontSize: 11,
+    color: theme.colors.muted,
+    marginTop: 1,
+  },
+  onlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  onlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  onlineText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+  },
 });

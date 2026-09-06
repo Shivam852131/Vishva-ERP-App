@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated as RNAnimated, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Animated as RNAnimated, ActivityIndicator, TextInput, ScrollView } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withRepeat, withTiming, withSequence } from 'react-native-reanimated';
+import { ArrowLeft, Search as SearchIcon, X as CloseIcon } from 'lucide-react-native';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { BlurView } from '@/src/components/BlurView';
+import { router } from '@/src/navigation/router';
 import { theme } from './theme';
 
 // ─── Glass Card ───────────────────────────────────
@@ -243,14 +245,14 @@ export function ProgressBar({ value, max = 100, height = 8, color, bg, label, sh
   const barColor = color || (pct >= 0.75 ? theme.colors.success : pct >= 0.5 ? theme.colors.warning : theme.colors.error);
 
   return (
-    <View style={[{ gap: 6 }, style]}>
+    <View style={[{ gap: 6, alignSelf: 'stretch' }, style]}>
       {(label || showPct) && (
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          {label && <Text style={{ fontSize: 12, color: theme.colors.muted, fontWeight: '600' }}>{label}</Text>}
-          {showPct && <Text style={{ fontSize: 12, color: barColor, fontWeight: '700' }}>{Math.round(pct * 100)}%</Text>}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', alignSelf: 'stretch' }}>
+          {label && <Text style={{ fontSize: 12, color: theme.colors.muted, fontWeight: '600' }} numberOfLines={1}>{label}</Text>}
+          {showPct && <Text style={{ fontSize: 12, color: barColor, fontWeight: '700', marginLeft: 8 }}>{Math.round(pct * 100)}%</Text>}
         </View>
       )}
-      <View style={[barStyles.bg, { height, backgroundColor: bg || theme.colors.surfaceTertiary, borderRadius: theme.radius.sm }]}>
+      <View style={[barStyles.bg, { height, backgroundColor: bg || theme.colors.surfaceTertiary, borderRadius: theme.radius.sm, alignSelf: 'stretch' }]}>
         <RNAnimated.View style={[barStyles.fill, { width: `${pct * 100}%`, height, backgroundColor: barColor, borderRadius: theme.radius.sm }]} />
       </View>
     </View>
@@ -263,16 +265,20 @@ const barStyles = StyleSheet.create({
 });
 
 // ─── Stat Card (enhanced) ──────────────────────────
-export function StatCard({ label, value, sub, color = theme.colors.brandPrimary, icon, trend, testID }: any) {
+export function StatCard({ label, value, sub, color = theme.colors.brandPrimary, icon, trend, testID, style }: any) {
   return (
-    <View testID={testID} style={[statStyles.card]}>
+    <View testID={testID} style={[statStyles.card, style]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingRight: 6 }}>
           <Text style={statStyles.label} numberOfLines={1}>{label}</Text>
           <Text style={[statStyles.value, { color: color || theme.colors.brandPrimary }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{value}</Text>
           {sub ? <Text style={statStyles.sub} numberOfLines={1}>{sub}</Text> : null}
         </View>
-        {icon && <View style={[statStyles.iconWrap, { backgroundColor: (color || theme.colors.brandPrimary) + '12' }]}>{icon}</View>}
+        {icon && (
+          <View style={[statStyles.iconWrap, { backgroundColor: (color || theme.colors.brandPrimary) + '14' }]}>
+            {icon}
+          </View>
+        )}
       </View>
       {trend !== undefined && (
         <View style={[statStyles.trend, { backgroundColor: trend >= 0 ? '#DCFCE7' : '#FEE2E2' }]}>
@@ -286,36 +292,54 @@ export function StatCard({ label, value, sub, color = theme.colors.brandPrimary,
 }
 
 const statStyles = StyleSheet.create({
-  card: { flex: 1, backgroundColor: theme.colors.surfaceSecondary, padding: theme.spacing.lg, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, ...theme.shadow.sm },
-  label: { color: theme.colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
-  value: { fontSize: 26, fontWeight: '800', marginTop: 4 },
-  sub: { fontSize: 12, color: theme.colors.muted, marginTop: 2 },
+  card: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceSecondary,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
+  },
+  label: { color: theme.colors.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  value: { fontSize: 26, fontWeight: '800', marginTop: 6, letterSpacing: -0.5 },
+  sub: { fontSize: 12, color: theme.colors.muted, marginTop: 3, fontWeight: '500' },
   iconWrap: { width: 44, height: 44, borderRadius: theme.radius.lg, alignItems: 'center', justifyContent: 'center' },
-  trend: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: theme.radius.sm, marginTop: 8 },
+  trend: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: theme.radius.sm, marginTop: 10 },
 });
 
 // ─── Empty State ──────────────────────────────────
-export function EmptyState({ title, sub, icon }: any) {
+export function EmptyState({ title, sub, icon, actionLabel, onAction }: any) {
   const iconNode = React.isValidElement(icon) ? (
     <View style={{ marginBottom: 16 }}>{icon}</View>
   ) : (
-    <Text style={{ fontSize: 56, marginBottom: 16 }}>{icon || '📭'}</Text>
+    <Text style={{ fontSize: 52, marginBottom: 16 }}>{icon || '📭'}</Text>
   );
 
   return (
-    <View style={{ padding: 40, alignItems: 'center' }}>
+    <View style={emptyStyles.center}>
       {iconNode}
-      <Text style={{ fontSize: 18, fontWeight: '700', color: theme.colors.onSurface }}>{title}</Text>
-      {sub ? <Text style={{ color: theme.colors.muted, marginTop: 8, textAlign: 'center', fontSize: 14, lineHeight: 20 }}>{sub}</Text> : null}
+      <Text style={emptyStyles.title}>{title}</Text>
+      {sub ? <Text style={emptyStyles.sub}>{sub}</Text> : null}
+      {actionLabel && onAction && (
+        <Pressable onPress={onAction} style={emptyStyles.actionBtn}>
+          <Text style={emptyStyles.actionText}>{actionLabel}</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
 
+const emptyStyles = StyleSheet.create({
+  center: { padding: 40, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 17, fontWeight: '700', color: theme.colors.onSurface, textAlign: 'center' },
+  sub: { color: theme.colors.muted, marginTop: 8, textAlign: 'center', fontSize: 13, lineHeight: 20, maxWidth: 300 },
+  actionBtn: { marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, borderRadius: theme.radius.pill, backgroundColor: theme.colors.brandPrimary },
+  actionText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+});
+
 // ─── Async View ────────────────────────────────────
-// Canonical loading -> error -> empty -> content sequence for screens backed by
-// useFetch. Pass useFetch's {loading, error, refresh} straight through as
-// {loading, error, onRetry}, plus `empty` computed from the fetched data.
-export function AsyncView({ loading, error, empty, onRetry, emptyTitle, emptySub, emptyIcon, children }: any) {
+export function AsyncView({ loading, error, empty, onRetry, emptyTitle, emptySub, emptyIcon, emptyActionLabel, onEmptyAction, children }: any) {
   if (loading) {
     return (
       <View style={asyncViewStyles.center}>
@@ -341,7 +365,7 @@ export function AsyncView({ loading, error, empty, onRetry, emptyTitle, emptySub
     );
   }
   if (empty) {
-    return <EmptyState title={emptyTitle || 'Nothing here yet'} sub={emptySub} icon={emptyIcon} />;
+    return <EmptyState title={emptyTitle || 'Nothing here yet'} sub={emptySub} icon={emptyIcon} actionLabel={emptyActionLabel} onAction={onEmptyAction} />;
   }
   return children;
 }
@@ -354,36 +378,304 @@ const asyncViewStyles = StyleSheet.create({
 });
 
 // ─── Chip Button ──────────────────────────────────
-export function ChipBtn({ label, active, onPress, testID, icon }: any) {
+export function ChipBtn({ label, active, onPress, testID, icon, badge }: any) {
   return (
     <Pressable testID={testID} onPress={onPress} style={[chipStyles.chip, active && chipStyles.active]}>
       {icon}
       <Text style={[chipStyles.txt, active && chipStyles.txtActive]}>{label}</Text>
+      {badge !== undefined && (
+        <View style={[chipStyles.badge, active && chipStyles.badgeActive]}>
+          <Text style={[chipStyles.badgeTxt, active && chipStyles.badgeTxtActive]}>{badge}</Text>
+        </View>
+      )}
     </Pressable>
   );
 }
 
 const chipStyles = StyleSheet.create({
-  chip: { paddingHorizontal: 16, height: 38, justifyContent: 'center', borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border, flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  active: { backgroundColor: theme.colors.brandTertiary, borderColor: theme.colors.brandPrimary },
+  chip: {
+    paddingHorizontal: 16,
+    height: 38,
+    justifyContent: 'center',
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    ...theme.shadow.xs,
+  },
+  active: {
+    backgroundColor: theme.colors.brandTertiary,
+    borderColor: theme.colors.brandPrimary,
+  },
   txt: { color: theme.colors.onSurfaceTertiary, fontSize: 13, fontWeight: '600' },
-  txtActive: { color: theme.colors.onBrandTertiary },
+  txtActive: { color: theme.colors.onBrandTertiary, fontWeight: '700' },
+  badge: { backgroundColor: theme.colors.surfaceTertiary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
+  badgeActive: { backgroundColor: theme.colors.brandPrimary },
+  badgeTxt: { fontSize: 11, fontWeight: '700', color: theme.colors.muted },
+  badgeTxtActive: { color: '#fff' },
+});
+
+// ─── Badge Pill ───────────────────────────────────
+export const BADGE_PILL_VARIANTS: Record<string, { bg: string; color: string; border: string }> = {
+  success: { bg: '#DCFCE7', color: '#15803D', border: '#BBF7D0' },
+  warning: { bg: '#FEF3C7', color: '#B45309', border: '#FDE68A' },
+  error: { bg: '#FEE2E2', color: '#B91C1C', border: '#FECACA' },
+  info: { bg: '#EFF6FF', color: '#1D4ED8', border: '#BFDBFE' },
+  brand: { bg: theme.colors.brandTertiary, color: theme.colors.brand, border: '#C7D2FE' },
+  neutral: { bg: theme.colors.surfaceTertiary, color: theme.colors.onSurfaceTertiary, border: theme.colors.border },
+};
+
+export function BadgePill({ label, variant = 'neutral', icon, style }: any) {
+  const meta = BADGE_PILL_VARIANTS[variant] || BADGE_PILL_VARIANTS.neutral;
+  return (
+    <View style={[badgePillStyles.pill, { backgroundColor: meta.bg, borderColor: meta.border }, style]}>
+      {icon && <View style={{ marginRight: 4 }}>{icon}</View>}
+      <Text style={[badgePillStyles.text, { color: meta.color }]}>{label}</Text>
+    </View>
+  );
+}
+
+const badgePillStyles = StyleSheet.create({
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  text: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
 });
 
 // ─── Card ─────────────────────────────────────────
-export function Card({ children, style, onPress }: any) {
+export function Card({ children, style, onPress, variant = 'default' }: any) {
+  const cardStyle = [
+    cardStyles.card,
+    variant === 'elevated' && cardStyles.elevated,
+    variant === 'outlined' && cardStyles.outlined,
+    variant === 'accent' && cardStyles.accent,
+    style,
+  ];
+
   if (onPress) {
     return (
-      <Pressable onPress={onPress} style={[cardStyles.card, style]}>
+      <Pressable onPress={onPress} style={cardStyle}>
         {children}
       </Pressable>
     );
   }
-  return <View style={[cardStyles.card, style]}>{children}</View>;
+  return <View style={cardStyle}>{children}</View>;
 }
 
 const cardStyles = StyleSheet.create({
-  card: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, ...theme.shadow.sm },
+  card: {
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: theme.radius.xl,
+    padding: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
+  },
+  elevated: {
+    borderWidth: 0,
+    ...theme.shadow.md,
+  },
+  outlined: {
+    backgroundColor: 'transparent',
+    borderColor: theme.colors.borderStrong,
+  },
+  accent: {
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.brandPrimary,
+  },
+});
+
+// ─── Page Header ──────────────────────────────────
+export function PageHeader({ title, subtitle, onBack, rightAction, badge, style }: any) {
+  const handleBack = onBack !== undefined ? onBack : () => router.back();
+  return (
+    <View style={[pageHeaderStyles.container, style]}>
+      <View style={pageHeaderStyles.left}>
+        {handleBack ? (
+          <Pressable
+            onPress={handleBack}
+            hitSlop={12}
+            style={pageHeaderStyles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <ArrowLeft size={20} color={theme.colors.onSurface} />
+          </Pressable>
+        ) : null}
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={pageHeaderStyles.title} numberOfLines={1}>{title}</Text>
+            {badge}
+          </View>
+          {subtitle ? <Text style={pageHeaderStyles.sub} numberOfLines={1}>{subtitle}</Text> : null}
+        </View>
+      </View>
+      {rightAction && <View style={pageHeaderStyles.right}>{rightAction}</View>}
+    </View>
+  );
+}
+
+const pageHeaderStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  left: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: { fontSize: 18, fontWeight: '800', color: theme.colors.onSurface, letterSpacing: -0.3 },
+  sub: { fontSize: 12, color: theme.colors.muted, marginTop: 2 },
+  right: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+});
+
+// ─── Tab Selector ─────────────────────────────────
+export function TabSelector({ tabs, activeTab, onSelect, style, options, selected }: any) {
+  const items = Array.isArray(tabs) ? tabs : Array.isArray(options) ? options : [];
+  const currentActive = activeTab !== undefined ? activeTab : selected;
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={[tabSelectorStyles.container, style]}
+    >
+      {items.map((t: any) => {
+        const key = typeof t === 'string' ? t : t.key;
+        const label = typeof t === 'string' ? t : t.label;
+        const Icon = typeof t === 'object' ? t.icon || t.Icon : null;
+        const badge = typeof t === 'object' ? t.badge : undefined;
+        const active = currentActive === key;
+        return (
+          <Pressable
+            key={key}
+            onPress={() => onSelect && onSelect(key)}
+            style={[tabSelectorStyles.tab, active && tabSelectorStyles.activeTab]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+          >
+            {Icon && <Icon size={15} color={active ? theme.colors.brandPrimary : theme.colors.muted} />}
+            <Text style={[tabSelectorStyles.label, active && tabSelectorStyles.activeLabel]}>
+              {label}
+            </Text>
+            {badge !== undefined && (
+              <View style={[tabSelectorStyles.badge, active && tabSelectorStyles.badgeActive]}>
+                <Text style={[tabSelectorStyles.badgeText, active && tabSelectorStyles.badgeTextActive]}>
+                  {badge}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+const tabSelectorStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  activeTab: {
+    backgroundColor: theme.colors.brandTertiary,
+    borderColor: theme.colors.brandPrimary,
+  },
+  label: { fontSize: 13, fontWeight: '600', color: theme.colors.muted },
+  activeLabel: { color: theme.colors.brand, fontWeight: '700' },
+  badge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceTertiary,
+    marginLeft: 2,
+  },
+  badgeActive: {
+    backgroundColor: theme.colors.brandPrimary,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: theme.colors.muted,
+  },
+  badgeTextActive: {
+    color: '#fff',
+  },
+});
+
+// ─── Search Bar ───────────────────────────────────
+export function SearchBar({ value, onChangeText, placeholder = 'Search...', onClear, style }: any) {
+  return (
+    <View style={[searchBarStyles.container, style]}>
+      <SearchIcon size={18} color={theme.colors.muted} />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={theme.colors.muted}
+        style={searchBarStyles.input}
+      />
+      {value ? (
+        <Pressable onPress={onClear || (() => onChangeText(''))} hitSlop={10}>
+          <CloseIcon size={16} color={theme.colors.muted} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+const searchBarStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.lg,
+    paddingHorizontal: 14,
+    height: 44,
+  },
+  input: {
+    flex: 1,
+    fontSize: 14,
+    color: theme.colors.onSurface,
+    paddingVertical: 0,
+  },
 });
 
 // ─── Section Title ────────────────────────────────

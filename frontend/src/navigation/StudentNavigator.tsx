@@ -1,4 +1,5 @@
 import React from 'react';
+import { View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Home, Calendar, ClipboardList, Bot, User } from 'lucide-react-native';
 import { theme } from '../theme';
@@ -22,19 +23,71 @@ const tabOptions = {
     height: 64,
     paddingBottom: 8,
     paddingTop: 6,
-    ...theme.shadow.sm,
+    ...theme.shadow.md,
   },
-  tabBarLabelStyle: { fontSize: 11, fontWeight: '600' as const },
+  tabBarLabelStyle: { fontSize: 11, fontWeight: '700' as const, marginTop: -2 },
 };
+
+function TabIcon({ Icon, color, size, focused }: { Icon: any; color: string; size: number; focused: boolean }) {
+  return (
+    <View
+      style={{
+        paddingHorizontal: 12,
+        paddingVertical: 3,
+        borderRadius: theme.radius.pill,
+        backgroundColor: focused ? theme.colors.brandTertiary : 'transparent',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Icon color={color} size={size} strokeWidth={focused ? 2.4 : 1.8} />
+    </View>
+  );
+}
 
 export default function StudentTabNavigator() {
   return (
     <Tabs.Navigator screenOptions={tabOptions}>
-      <Tabs.Screen name="/(student)/dashboard" component={StudentDashboardScreen} options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Home color={color} size={size} /> }} />
-      <Tabs.Screen name="/(student)/timetable" component={StudentTimetableScreen} options={{ title: 'Timetable', tabBarIcon: ({ color, size }) => <Calendar color={color} size={size} /> }} />
-      <Tabs.Screen name="/(student)/assignments" component={StudentAssignmentsScreen} options={{ title: 'Tasks', tabBarIcon: ({ color, size }) => <ClipboardList color={color} size={size} /> }} />
-      <Tabs.Screen name="/(student)/ai" component={StudentAiScreen} options={{ title: 'AI Hub', tabBarIcon: ({ color, size }) => <Bot color={color} size={size} /> }} />
-      <Tabs.Screen name="/(student)/profile" component={StudentProfileScreen} options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <User color={color} size={size} /> }} />
+      <Tabs.Screen
+        name="/(student)/dashboard"
+        component={StudentDashboardScreen}
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, size, focused }) => <TabIcon Icon={Home} color={color} size={size} focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="/(student)/timetable"
+        component={StudentTimetableScreen}
+        options={{
+          title: 'Timetable',
+          tabBarIcon: ({ color, size, focused }) => <TabIcon Icon={Calendar} color={color} size={size} focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="/(student)/assignments"
+        component={StudentAssignmentsScreen}
+        options={{
+          title: 'Tasks',
+          tabBarIcon: ({ color, size, focused }) => <TabIcon Icon={ClipboardList} color={color} size={size} focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="/(student)/ai"
+        component={StudentAiScreen}
+        options={{
+          title: 'AI Hub',
+          tabBarIcon: ({ color, size, focused }) => <TabIcon Icon={Bot} color={color} size={size} focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="/(student)/profile"
+        component={StudentProfileScreen}
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, size, focused }) => <TabIcon Icon={User} color={color} size={size} focused={focused} />,
+        }}
+      />
     </Tabs.Navigator>
   );
 }

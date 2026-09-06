@@ -174,7 +174,11 @@ export default function FacultyClasses() {
                         >
                           <Radio color="#fff" size={12} />
                         </View>
-                        <View style={{ flex: 1 }}>
+                        <Pressable
+                          onPress={() => router.push(`/session?id=${s.id}` as any)}
+                          style={{ flex: 1 }}
+                          accessibilityLabel={`View ${s.course_name} live session`}
+                        >
                           <Text style={styles.sessionName}>
                             {s.course_name}
                           </Text>
@@ -187,10 +191,10 @@ export default function FacultyClasses() {
                               color={theme.colors.brandSecondary}
                             />
                             <Text style={styles.checkinText}>
-                              {s.checkins} checked in · LIVE
+                              {s.checkins} checked in · TAP TO MONITOR LIVE
                             </Text>
                           </View>
-                        </View>
+                        </Pressable>
                         <Pressable
                           testID={`close-session-${s.id}`}
                           accessibilityLabel={`Close ${s.course_name} session`}
@@ -223,7 +227,11 @@ export default function FacultyClasses() {
                 <View style={styles.sessionsContainer}>
                   {endedSessions.slice(0, 10).map((s) => (
                     <Card key={s.id} style={styles.sessionCard}>
-                      <View style={styles.sessionRow}>
+                      <Pressable
+                        onPress={() => router.push(`/attendance-live-advanced?sid=${s.id}` as any)}
+                        style={styles.sessionRow}
+                        accessibilityLabel={`View ${s.course_name} past session roll`}
+                      >
                         <View
                           style={[
                             styles.liveDot,
@@ -238,11 +246,11 @@ export default function FacultyClasses() {
                             {s.method.toUpperCase()} · {s.checkins} checked in
                           </Text>
                         </View>
-                        <CheckCircle
+                        <ChevronRight
                           size={16}
                           color={theme.colors.muted}
                         />
-                      </View>
+                      </Pressable>
                     </Card>
                   ))}
                 </View>

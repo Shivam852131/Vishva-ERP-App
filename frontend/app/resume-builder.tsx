@@ -8,7 +8,7 @@ import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import {
   Sparkles, FileText, Download, User, Briefcase, GraduationCap,
-  Award, Plus, Trash2, ChevronDown, Eye, Edit3,
+  Award, Plus, Trash2, ChevronDown, Eye, Edit3, ArrowLeft,
 } from 'lucide-react-native';
 import RNFS from 'react-native-fs';
 import { useAuth } from '@/src/providers/AuthContext';
@@ -149,14 +149,14 @@ export default function ResumeBuilder() {
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <View style={styles.hero}>
             <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
-              <Pressable onPress={() => router.back()} style={styles.backBtn}>
-                <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
-              </Pressable>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={styles.heroHeaderRow}>
+                <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+                  <ArrowLeft size={20} color="#fff" />
+                </Pressable>
                 <View style={styles.heroIcon}><Sparkles size={22} color="#fff" /></View>
-                <View>
-                  <Text style={styles.heroTitle}>AI Resume Builder</Text>
-                  <Text style={styles.heroSub}>Create a professional resume in minutes</Text>
+                <View style={styles.heroTitles}>
+                  <Text style={styles.heroTitle} numberOfLines={1}>AI Resume Builder</Text>
+                  <Text style={styles.heroSub} numberOfLines={1}>Create a professional resume in minutes</Text>
                 </View>
               </View>
             </LinearGradient>
@@ -343,11 +343,13 @@ export default function ResumeBuilder() {
 
 const styles = StyleSheet.create({
   hero: { marginBottom: 0 },
-  heroGrad: { paddingHorizontal: 16, paddingVertical: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 12 },
-  heroIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  heroGrad: { paddingHorizontal: 16, paddingVertical: 18, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 14 },
+  heroHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroTitles: { flex: 1, minWidth: 0 },
   heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  heroSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
-  backBtn: { position: 'absolute', top: 16, left: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
   sectionBody: { paddingHorizontal: 16, paddingBottom: 16, gap: 8 },
   input: { backgroundColor: theme.colors.surface, borderRadius: 10, padding: 12, fontSize: 14, color: theme.colors.text, borderWidth: 1, borderColor: theme.colors.border },

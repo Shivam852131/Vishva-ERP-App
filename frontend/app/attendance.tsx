@@ -230,6 +230,17 @@ function CourseAnalyticsCard({ course, index }: { course: AttendanceByCourse; in
           <Text style={styles.courseMeta}>{course.present}/{course.total} classes</Text>
         </View>
 
+        {course.total > 0 && (
+          <View style={[styles.forecastPill, { backgroundColor: course.percentage >= 75 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)' }]}>
+            <Sparkles size={12} color={course.percentage >= 75 ? '#10B981' : '#EF4444'} />
+            <Text style={[styles.forecastPillText, { color: course.percentage >= 75 ? '#059669' : '#DC2626' }]}>
+              {course.percentage >= 75
+                ? `Safe: Can miss ${Math.max(0, Math.floor((course.present - 0.75 * course.total) / 0.75))} lecture(s) safely`
+                : `Action: Attend next ${Math.max(1, Math.ceil((0.75 * course.total - course.present) / 0.25))} lecture(s) to reach 75%`}
+            </Text>
+          </View>
+        )}
+
         {expanded && (
           <View style={styles.courseExpanded}>
             <View style={styles.courseDetailGrid}>
@@ -349,6 +360,48 @@ function StreakCounter({ streak, maxStreak }: { streak: number; maxStreak: numbe
   );
 }
 
+function AttendanceDoctorCard({ byCourse }: { byCourse: AttendanceByCourse[] }) {
+  const atRisk = (byCourse || []).filter(c => c.percentage < 75);
+
+  return (
+    <View style={styles.doctorCard}>
+      <View style={styles.doctorHeader}>
+        <View style={styles.doctorIconBox}>
+          <Sparkles size={16} color="#FFFFFF" />
+        </View>
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={styles.doctorTitle}>Attendance Doctor (AI Forecaster)</Text>
+          <Text style={styles.doctorSub}>Real-time semester examination eligibility targets</Text>
+        </View>
+      </View>
+
+      {atRisk.length > 0 ? (
+        <View style={styles.doctorAlertList}>
+          {atRisk.map(c => {
+            const needed = Math.max(1, Math.ceil((0.75 * c.total - c.present) / 0.25));
+            return (
+              <View key={c.course_id} style={styles.doctorAlertItem}>
+                <AlertCircle size={14} color="#EF4444" />
+                <Text style={styles.doctorAlertText}>
+                  <Text style={{ fontWeight: '800', color: theme.colors.onSurface }}>{c.course_name}:</Text> Attend next{' '}
+                  <Text style={{ fontWeight: '800', color: '#EF4444' }}>{needed} consecutive class{needed === 1 ? '' : 'es'}</Text> to reach 75%.
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ) : (
+        <View style={styles.doctorSafeBox}>
+          <CheckCircle2 size={16} color="#10B981" />
+          <Text style={styles.doctorSafeText}>
+            All subjects are in good standing (≥75%). You are fully eligible for semester examinations!
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function Attendance() {
   const { user } = useAuth();
   const { data, loading, error, refresh } = useFetch<AttendanceData>('/attendance/me');
@@ -373,6 +426,7 @@ export default function Attendance() {
   const [bgAutoStatus, setBgAutoStatus] = useState('');
   const bgWatcherRef = useRef<{ remove: () => void } | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'calendar' | 'trends'>('overview');
+  const [courseFilter, setCourseFilter] = useState<'all' | 'critical' | 'safe'>('all');
   const [heatmapMonth, setHeatmapMonth] = useState(new Date().getMonth());
   const [heatmapYear, setHeatmapYear] = useState(new Date().getFullYear());
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -747,6 +801,8 @@ export default function Attendance() {
                 </Animated.View>
               )}
 
+              <AttendanceDoctorCard byCourse={byCourse} />
+
               <StreakCounter streak={streak} maxStreak={maxStreak} />
 
               <Text style={styles.sectionTitle}>Overview</Text>
@@ -790,12 +846,37 @@ export default function Attendance() {
           {activeTab === 'courses' && (
             <>
               <Text style={styles.sectionTitle}>Course-wise Attendance</Text>
-              {byCourse.length === 0 ? (
-                <EmptyState title="No courses yet" sub="Records appear once classes begin" />
+              <View style={styles.courseFilterRow}>
+                {(['all', 'critical', 'safe'] as const).map(f => {
+                  const active = courseFilter === f;
+                  const count = f === 'all'
+                    ? byCourse.length
+                    : f === 'critical'
+                    ? byCourse.filter(c => c.percentage < 75).length
+                    : byCourse.filter(c => c.percentage >= 75).length;
+                  const label = f === 'all' ? `All (${count})` : f === 'critical' ? `Needs Attention (${count})` : `Safe (${count})`;
+                  return (
+                    <Pressable
+                      key={f}
+                      onPress={() => setCourseFilter(f)}
+                      style={[styles.courseFilterChip, active && styles.courseFilterChipActive]}
+                    >
+                      <Text style={[styles.courseFilterText, active && styles.courseFilterTextActive]}>
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {byCourse.filter(c => courseFilter === 'all' ? true : courseFilter === 'critical' ? c.percentage < 75 : c.percentage >= 75).length === 0 ? (
+                <EmptyState title="No courses found" sub="No courses matching the selected filter" />
               ) : (
-                byCourse.map((course, index) => (
-                  <CourseAnalyticsCard key={course.course_id} course={course} index={index} />
-                ))
+                byCourse
+                  .filter(c => courseFilter === 'all' ? true : courseFilter === 'critical' ? c.percentage < 75 : c.percentage >= 75)
+                  .map((course, index) => (
+                    <CourseAnalyticsCard key={course.course_id} course={course} index={index} />
+                  ))
               )}
             </>
           )}
@@ -1053,6 +1134,26 @@ const styles = StyleSheet.create({
   courseDetailItem: { width: '45%', flexDirection: 'row', alignItems: 'center', gap: 8 },
   courseDetailLabel: { fontSize: 12, color: theme.colors.muted, flex: 1 },
   courseDetailValue: { fontSize: 12, fontWeight: '700', color: theme.colors.onSurface },
+  forecastPill: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: theme.spacing.lg, marginBottom: 8, paddingHorizontal: 10, paddingVertical: 5, borderRadius: theme.radius.sm },
+  forecastPillText: { fontSize: 11, fontWeight: '700', flex: 1 },
+
+  doctorCard: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, padding: theme.spacing.lg, marginBottom: 16, borderWidth: 1, borderColor: theme.colors.border, ...theme.shadow.sm },
+  doctorHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  doctorIconBox: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
+  doctorTitle: { fontSize: 14, fontWeight: '800', color: theme.colors.onSurface },
+  doctorSub: { fontSize: 11, color: theme.colors.muted, marginTop: 1 },
+  doctorAlertList: { gap: 6 },
+  doctorAlertItem: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', paddingHorizontal: 10, paddingVertical: 7, borderRadius: theme.radius.sm },
+  doctorAlertText: { fontSize: 12, color: '#991B1B', flex: 1 },
+  doctorSafeBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#ECFDF5', paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.sm },
+  doctorSafeText: { fontSize: 12, color: '#065F46', fontWeight: '600', flex: 1 },
+
+  courseFilterRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  courseFilterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  courseFilterChipActive: { backgroundColor: theme.colors.brandPrimary, borderColor: theme.colors.brandPrimary },
+  courseFilterText: { fontSize: 12, fontWeight: '600', color: theme.colors.muted },
+  courseFilterTextActive: { color: '#FFFFFF', fontWeight: '800' },
+
 
   monthNavigation: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.md },
   monthTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.onSurface },

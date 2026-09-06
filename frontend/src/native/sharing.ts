@@ -1,4 +1,4 @@
-import { Share } from 'react-native';
+import { Share, Platform } from 'react-native';
 
 export async function isAvailableAsync() {
   return true;
@@ -8,5 +8,9 @@ export async function shareAsync(
   uri: string,
   options?: { dialogTitle?: string; mimeType?: string },
 ) {
-  await Share.share({ message: uri, title: options?.dialogTitle });
+  if (Platform.OS === 'ios') {
+    await Share.share({ url: uri, title: options?.dialogTitle });
+  } else {
+    await Share.share({ message: uri, title: options?.dialogTitle });
+  }
 }

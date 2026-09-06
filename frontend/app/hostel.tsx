@@ -725,9 +725,9 @@ const styles = StyleSheet.create({
   statVal: { fontSize: 14, fontWeight: '800' },
   statLabel: { fontSize: 9, color: theme.colors.muted, fontWeight: '600' },
 
-  tabsWrapper: { marginHorizontal: 16, marginBottom: 8 },
-  tabsScroll: { flexDirection: 'row', gap: 6, backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3 },
-  tabBtn: { paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
+  tabsWrapper: { marginHorizontal: 16, marginBottom: 8, flexGrow: 0, maxHeight: 44 },
+  tabsScroll: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3, height: 40 },
+  tabBtn: { paddingHorizontal: 14, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill, alignSelf: 'center' },
   tabActive: { backgroundColor: theme.colors.brandPrimary },
   tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 11, textAlign: 'center' },
   tabTxtActive: { color: '#FFF' },

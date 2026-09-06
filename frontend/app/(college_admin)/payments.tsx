@@ -11,7 +11,7 @@ import { useAuth } from '../../src/providers/AuthContext';
 import { useFetch, useMutate } from '../../src/hooks/useFetch';
 import { subscribeRealtime } from '@/src/realtime/socket';
 import { theme } from '@/src/theme';
-import { StatCard, Card, SectionTitle, ProgressBar, EmptyState } from '@/src/ui';
+import { StatCard, Card, SectionTitle, ProgressBar, EmptyState, BadgePill } from '@/src/ui';
 
 type Receipt = {
   id: string; type: string; amount: number; currency: string;
@@ -261,25 +261,33 @@ export default function PaymentsScreen() {
         {/* Receipts Tab */}
         {tab === 'receipts' && (
           <View style={{ padding: theme.spacing.lg }}>
-            {(receipts || []).map((r) => (
-              <Card key={r.id} style={{ marginBottom: 8 }}>
-                <View style={styles.receiptRow}>
-                  <View style={[styles.statusDot, { backgroundColor: r.status === 'paid' ? '#10B981' : '#F59E0B' }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.receiptType} numberOfLines={1}>{r.type === 'subscription' ? 'Subscription' : 'Fee Payment'}</Text>
-                    <Text style={styles.receiptDate}>{new Date(r.created_at).toLocaleDateString()}</Text>
+            {(receipts || []).map((r) => {
+              const isPaid = r.status === 'paid';
+              return (
+                <Card key={r.id} variant="elevated" style={{ marginBottom: 10 }}>
+                  <View style={styles.receiptRow}>
+                    <View style={[styles.statusDot, { backgroundColor: isPaid ? theme.colors.success : theme.colors.warning }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.receiptType} numberOfLines={1}>{r.type === 'subscription' ? 'Subscription' : 'Fee Payment'}</Text>
+                      <Text style={styles.receiptDate}>{new Date(r.created_at).toLocaleDateString()}</Text>
+                    </View>
+                    <Text style={styles.receiptAmount}>₹{(r.amount / 100).toLocaleString()}</Text>
                   </View>
-                  <Text style={styles.receiptAmount}>₹{(r.amount / 100).toLocaleString()}</Text>
-                </View>
-                <View style={styles.receiptFooter}>
-                  <View style={{ flex: 1 }}>
-                    {r.payment_id ? <Text style={styles.receiptId} numberOfLines={1}>Pay: {r.payment_id.slice(0, 20)}...</Text> : null}
-                    {r.order_id ? <Text style={styles.receiptId} numberOfLines={1}>Order: {r.order_id.slice(0, 22)}...</Text> : null}
+                  <View style={styles.receiptFooter}>
+                    <View style={{ flex: 1 }}>
+                      {r.payment_id ? <Text style={styles.receiptId} numberOfLines={1}>Pay: {r.payment_id.slice(0, 20)}...</Text> : null}
+                      {r.order_id ? <Text style={styles.receiptId} numberOfLines={1}>Order: {r.order_id.slice(0, 22)}...</Text> : null}
+                    </View>
+                    <BadgePill
+                      label={r.status.toUpperCase()}
+                      variant={isPaid ? 'success' : 'warning'}
+                      size="sm"
+                      dot={isPaid}
+                    />
                   </View>
-                  <Text style={[styles.receiptStatus, { color: r.status === 'paid' ? '#10B981' : '#F59E0B' }]}>{r.status}</Text>
-                </View>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
             {(!receipts || receipts.length === 0) && <EmptyState title="No receipts" sub="Payment receipts will appear here" />}
           </View>
         )}
@@ -323,36 +331,42 @@ export default function PaymentsScreen() {
               ))}
             </View>
 
-            {filteredFees.map((f: any) => (
-              <Card key={f.id} style={{ marginBottom: 8 }}>
-                <View style={styles.feeHeader}>
-                  <View style={[styles.feeTypeBadge, { backgroundColor: f.status === 'paid' ? '#DCFCE7' : '#FEF3C7' }]}>
-                    <Text style={[styles.feeTypeText, { color: f.status === 'paid' ? '#10B981' : '#F59E0B' }]}>{f.type}</Text>
+            {filteredFees.map((f: any) => {
+              const isPaid = f.status === 'paid';
+              return (
+                <Card key={f.id} variant="elevated" style={{ marginBottom: 10 }}>
+                  <View style={styles.feeHeader}>
+                    <BadgePill label={f.type} variant={isPaid ? 'success' : 'brand'} size="sm" />
+                    <Text style={styles.feeAmount}>₹{(f.amount / 100).toLocaleString()}</Text>
                   </View>
-                  <Text style={styles.feeAmount}>₹{(f.amount / 100).toLocaleString()}</Text>
-                </View>
-                <View style={styles.feeMeta}>
-                  <Text style={styles.feeMetaText} numberOfLines={1}>Student: {f.student_id.slice(0, 12)}...</Text>
-                  <Text style={styles.feeMetaText}>Due: {f.due_date || 'N/A'}</Text>
-                  <Text style={styles.feeMetaText}>Sem: {f.semester || 'N/A'}</Text>
-                </View>
-                <View style={styles.feeFooter}>
-                  <Text style={[styles.feeStatus, { color: f.status === 'paid' ? '#10B981' : '#F59E0B' }]}>{f.status}</Text>
-                  {f.status === 'pending' && (
-                    <TouchableOpacity
-                      style={styles.remindBtn}
-                      onPress={() => handleRemind(f.id)}
-                      disabled={sendingReminders.has(f.id)}
-                    >
-                      {sendingReminders.has(f.id)
-                        ? <ActivityIndicator size={12} color="#F59E0B" />
-                        : <Send size={12} color="#F59E0B" />}
-                      <Text style={styles.remindBtnText}>Remind</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </Card>
-            ))}
+                  <View style={styles.feeMeta}>
+                    <Text style={styles.feeMetaText} numberOfLines={1}>Student: {f.student_id.slice(0, 12)}...</Text>
+                    <Text style={styles.feeMetaText}>Due: {f.due_date || 'N/A'}</Text>
+                    <Text style={styles.feeMetaText}>Sem: {f.semester || 'N/A'}</Text>
+                  </View>
+                  <View style={styles.feeFooter}>
+                    <BadgePill
+                      label={f.status.toUpperCase()}
+                      variant={isPaid ? 'success' : 'warning'}
+                      size="sm"
+                      dot
+                    />
+                    {f.status === 'pending' && (
+                      <TouchableOpacity
+                        style={styles.remindBtn}
+                        onPress={() => handleRemind(f.id)}
+                        disabled={sendingReminders.has(f.id)}
+                      >
+                        {sendingReminders.has(f.id)
+                          ? <ActivityIndicator size={12} color="#F59E0B" />
+                          : <Send size={12} color="#F59E0B" />}
+                        <Text style={styles.remindBtnText}>Remind</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </Card>
+              );
+            })}
             {filteredFees.length === 0 && <EmptyState title="No fee records" sub="Create fee records for students" />}
           </View>
         )}

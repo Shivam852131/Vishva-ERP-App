@@ -2,7 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Pressable, Animated,
   ScrollView, Dimensions, RefreshControl, StatusBar,
+  Alert, Platform, Linking, ActivityIndicator,
 } from 'react-native';
+import RNFS from 'react-native-fs';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { AppImage as Image } from '@/src/components/AppImage';
 import { router } from '@/src/navigation/router';
@@ -10,10 +12,10 @@ import {
   ArrowLeft, Download, Share2, QrCode, Shield,
   Building2, GraduationCap, User, Check, Fingerprint, Wifi,
   Lock, Star, CreditCard, BadgeCheck, BookOpen, Users, Crown,
+  FileText, X,
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { captureRef } from 'react-native-view-shot';
-import * as Print from '@/src/native/print';
 import * as Sharing from '@/src/native/sharing';
 import { useAuth } from '@/src/providers/AuthContext';
 import { theme } from '@/src/theme';
@@ -179,7 +181,15 @@ const holoStyles = StyleSheet.create({
 });
 
 // ─── Front Card (vertical badge) ─────────────────
-function FrontCard({ user, cardRef }: { user: any; cardRef: React.RefObject<View | null> }) {
+function FrontCard({
+  user,
+  cardRef,
+  hideHolo = false,
+}: {
+  user: any;
+  cardRef?: React.RefObject<View | null>;
+  hideHolo?: boolean;
+}) {
   const roleTheme = themeForRole(user?.role);
   const RoleIcon = roleTheme.Icon;
   const displayId = displayIdFor(user);
@@ -187,7 +197,7 @@ function FrontCard({ user, cardRef }: { user: any; cardRef: React.RefObject<View
   const collegeName = collegeNameFor(user);
 
   return (
-    <View ref={cardRef} style={s.card}>
+    <View ref={cardRef} collapsable={false} style={s.card}>
       {/* White header with institute mark */}
       <View style={s.whiteHeader}>
         <View style={s.headerLogoRow}>
@@ -205,7 +215,7 @@ function FrontCard({ user, cardRef }: { user: any; cardRef: React.RefObject<View
         end={{ x: 1, y: 1 }}
         style={s.tealSection}
       >
-        <HolographicOverlay />
+        {!hideHolo && <HolographicOverlay />}
         <View style={s.geoDecor1} />
         <View style={s.geoDecor2} />
         <View style={s.geoDecor3} />
@@ -266,14 +276,20 @@ function FrontCard({ user, cardRef }: { user: any; cardRef: React.RefObject<View
 }
 
 // ─── Back Card ───────────────────────────────────
-function BackCard({ user }: { user: any }) {
+function BackCard({
+  user,
+  cardRef,
+}: {
+  user: any;
+  cardRef?: React.RefObject<View | null>;
+}) {
   const roleTheme = themeForRole(user?.role);
   const RoleIcon = roleTheme.Icon;
   const displayId = displayIdFor(user);
   const collegeName = collegeNameFor(user);
 
   return (
-    <View style={s.card}>
+    <View ref={cardRef} collapsable={false} style={s.card}>
       <View style={s.backContainer}>
         {/* Header */}
         <View style={s.backHeader}>
@@ -358,11 +374,18 @@ export default function IdCardScreen() {
   const [flipped, setFlipped] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showVerify, setShowVerify] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgressText, setDownloadProgressText] = useState('');
   const flipAnim = useRef(new Animated.Value(0)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
+
+  // Refs for interactive cards and clean offscreen capture cards
   const cardFrontRef = useRef<View>(null);
+  const cardBackRef = useRef<View>(null);
+  const staticFrontRef = useRef<View>(null);
+  const staticBackRef = useRef<View>(null);
 
   const frontInterpolate = flipAnim.interpolate({
     inputRange: [0, 180],
@@ -416,68 +439,278 @@ export default function IdCardScreen() {
     setRefreshing(false);
   };
 
+  const roleTheme = themeForRole(user?.role);
+  const accent = roleTheme.accent;
+  const displayId = displayIdFor(user);
+  const collegeName = collegeNameFor(user);
+
+  const getDownloadDir = () => {
+    if (Platform.OS === 'android') {
+      return RNFS.DownloadDirectoryPath || RNFS.ExternalDirectoryPath || RNFS.DocumentDirectoryPath;
+    }
+    return RNFS.DocumentDirectoryPath;
+  };
+
+  // Share visible card side cleanly
   const shareCard = async () => {
-    if (!cardFrontRef.current) return;
     try {
       setSharing(true);
-      const uri = await captureRef(cardFrontRef, { format: 'png', quality: 1 });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share Digital ID Card' });
+      const targetRef = flipped
+        ? (staticBackRef.current ? staticBackRef : cardBackRef)
+        : (staticFrontRef.current ? staticFrontRef : cardFrontRef);
+
+      if (!targetRef.current) {
+        throw new Error('Card is not ready yet. Please wait a moment and try again.');
       }
-    } catch (err) {
+
+      const side = flipped ? 'Back' : 'Front';
+      const uri = await captureRef(targetRef, { format: 'png', quality: 1 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle: `Share Digital ID Card (${side})`,
+        });
+      }
+    } catch (err: any) {
       console.warn('Share failed:', err);
+      Alert.alert('Share Error', err?.message || 'Could not share digital ID card.');
     } finally {
       setSharing(false);
     }
   };
 
-  const downloadPDF = async () => {
-    if (!cardFrontRef.current) return;
+  // Download high-resolution PNG of front or back
+  const downloadCardImage = async (side: 'front' | 'back') => {
     try {
       setDownloading(true);
-      const uri = await captureRef(cardFrontRef, { format: 'png', quality: 1 });
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        fetch(uri).then(res => res.blob()).then(blob => {
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        }).catch(reject);
+      setDownloadProgressText(`Exporting ${side === 'front' ? 'Front' : 'Back'} Card...`);
+
+      const targetRef = side === 'front'
+        ? (staticFrontRef.current ? staticFrontRef : cardFrontRef)
+        : (staticBackRef.current ? staticBackRef : cardBackRef);
+
+      if (!targetRef.current) {
+        throw new Error('Card view is not ready yet. Please try again.');
+      }
+
+      const base64 = await captureRef(targetRef, {
+        format: 'png',
+        quality: 1,
+        result: 'base64',
       });
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            @page { size: A4; margin: 40mm; }
-            body { display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; background:#f0f0f0; font-family: -apple-system, sans-serif; }
-            .card { max-width:100%; border-radius:16px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
-            .footer { text-align:center; margin-top:24px; color:#666; font-size:12px; }
-            .footer strong { color:#0D7377; }
-          </style>
-        </head>
-        <body>
-          <div>
-            <img class="card" src="${base64}" />
-            <div class="footer">
-              <strong>${collegeName}</strong> — Digital Identity Card<br/>
-              Generated on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
-            </div>
-          </div>
-        </body>
-        </html>`;
-      await Print.printAsync({ html });
-    } catch (err) {
-      console.warn('PDF failed:', err);
+
+      const dir = getDownloadDir();
+      const safeId = displayId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `ID_Card_${safeId}_${side.toUpperCase()}_${Date.now()}.png`;
+      const filePath = `${dir}/${fileName}`;
+
+      await RNFS.writeFile(filePath, base64, 'base64');
+      if (Platform.OS === 'android' && RNFS.scanFile) {
+        await RNFS.scanFile(filePath);
+      }
+
+      setShowDownloadModal(false);
+      Alert.alert(
+        'Card Downloaded Successfully',
+        `Saved ${side.toUpperCase()} card to Downloads folder:\n\n${fileName}`,
+        [
+          { text: 'OK' },
+          {
+            text: 'Open File',
+            onPress: () => {
+              const fileUrl = Platform.OS === 'android' ? `file://${filePath}` : filePath;
+              Linking.openURL(fileUrl).catch(() => {
+                Alert.alert('Notice', `File is saved at:\n${filePath}`);
+              });
+            },
+          },
+        ],
+      );
+    } catch (err: any) {
+      console.error('ID Card download image failed:', err);
+      Alert.alert(
+        'Download Failed',
+        err?.message || 'Could not save ID Card image. Please check storage permissions.',
+      );
     } finally {
       setDownloading(false);
+      setDownloadProgressText('');
     }
   };
 
-  const roleTheme = themeForRole(user?.role);
-  const accent = roleTheme.accent;
-  const displayId = displayIdFor(user);
-  const collegeName = collegeNameFor(user);
+  // Download combined Printable document (HTML / PDF)
+  const downloadPrintablePDF = async () => {
+    try {
+      setDownloading(true);
+      setDownloadProgressText('Generating Printable ID Document...');
+
+      const frontRef = staticFrontRef.current ? staticFrontRef : cardFrontRef;
+      const backRef = staticBackRef.current ? staticBackRef : cardBackRef;
+
+      if (!frontRef.current || !backRef.current) {
+        throw new Error('Card views are not ready yet. Please try again.');
+      }
+
+      const [frontBase64, backBase64] = await Promise.all([
+        captureRef(frontRef, { format: 'png', quality: 1, result: 'base64' }),
+        captureRef(backRef, { format: 'png', quality: 1, result: 'base64' }),
+      ]);
+
+      const dateStr = new Date().toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digital ID Card - ${user?.name || displayId}</title>
+  <style>
+    @page { size: A4 portrait; margin: 15mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f8fafc; color: #0f172a; padding: 24px;
+      display: flex; flex-direction: column; align-items: center; min-height: 100vh;
+    }
+    .page-container {
+      max-width: 780px; width: 100%; background: #ffffff;
+      border-radius: 20px; padding: 32px; box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    }
+    .header-banner {
+      text-align: center; padding-bottom: 16px; border-bottom: 2px solid #e2e8f0; margin-bottom: 24px;
+    }
+    .inst-name {
+      font-size: 20px; font-weight: 900; color: ${accent}; letter-spacing: 1px; text-transform: uppercase;
+    }
+    .doc-title {
+      font-size: 11px; color: #64748b; margin-top: 4px; letter-spacing: 2px; font-weight: 700;
+    }
+    .cards-wrapper {
+      display: flex; flex-direction: row; justify-content: center; align-items: flex-start;
+      gap: 28px; flex-wrap: wrap; margin: 20px 0;
+    }
+    .card-box { text-align: center; }
+    .card-side-label {
+      font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;
+    }
+    .card-image {
+      width: 300px; height: auto; border-radius: 16px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;
+    }
+    .meta-box {
+      margin-top: 24px; background: #f8fafc; border: 1px solid #e2e8f0;
+      border-radius: 12px; padding: 16px 20px;
+    }
+    .meta-row {
+      display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px;
+      border-bottom: 1px dashed #e2e8f0;
+    }
+    .meta-row:last-child { border-bottom: none; }
+    .meta-label { font-weight: 600; color: #64748b; }
+    .meta-val { font-weight: 700; color: #0f172a; }
+    .print-notes {
+      margin-top: 20px; text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.5;
+    }
+    .actions-bar {
+      margin-bottom: 20px; display: flex; gap: 12px; justify-content: center;
+    }
+    .print-btn {
+      background: ${accent}; color: #ffffff; border: none; padding: 12px 24px;
+      border-radius: 10px; font-weight: 700; font-size: 14px; cursor: pointer;
+      box-shadow: 0 4px 12px ${accent}40;
+    }
+    @media print {
+      body { background: #ffffff; padding: 0; }
+      .page-container { box-shadow: none; padding: 0; }
+      .actions-bar { display: none !important; }
+      .card-image { box-shadow: none; border: 1px solid #cbd5e1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="actions-bar">
+    <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+  </div>
+  <div class="page-container">
+    <div class="header-banner">
+      <div class="inst-name">${collegeName}</div>
+      <div class="doc-title">OFFICIAL DIGITAL IDENTITY CARD</div>
+    </div>
+    <div class="cards-wrapper">
+      <div class="card-box">
+        <div class="card-side-label">Front Side</div>
+        <img class="card-image" src="data:image/png;base64,${frontBase64}" alt="Front Card" />
+      </div>
+      <div class="card-box">
+        <div class="card-side-label">Back Side</div>
+        <img class="card-image" src="data:image/png;base64,${backBase64}" alt="Back Card" />
+      </div>
+    </div>
+    <div class="meta-box">
+      <div class="meta-row">
+        <span class="meta-label">Card Holder</span>
+        <span class="meta-val">${(user?.name || '—').toUpperCase()}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">ID Number</span>
+        <span class="meta-val">${displayId}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Role</span>
+        <span class="meta-val">${roleTheme.label}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Generated On</span>
+        <span class="meta-val">${dateStr}</span>
+      </div>
+    </div>
+    <div class="print-notes">
+      Official verification document generated by Vishva Campus ERP.<br/>
+      Can be printed on standard PVC card printer or A4 paper stock.
+    </div>
+  </div>
+</body>
+</html>`;
+
+      const dir = getDownloadDir();
+      const safeId = displayId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `ID_Card_${safeId}_Printable_${Date.now()}.html`;
+      const filePath = `${dir}/${fileName}`;
+
+      await RNFS.writeFile(filePath, html, 'utf8');
+      if (Platform.OS === 'android' && RNFS.scanFile) {
+        await RNFS.scanFile(filePath);
+      }
+
+      setShowDownloadModal(false);
+      Alert.alert(
+        'Printable Card Saved',
+        `Document saved to Downloads:\n\n${fileName}\n\nOpen it to print or save as PDF.`,
+        [
+          { text: 'OK' },
+          {
+            text: 'Open Document',
+            onPress: () => {
+              const fileUrl = Platform.OS === 'android' ? `file://${filePath}` : filePath;
+              Linking.openURL(fileUrl).catch(() => {
+                Alert.alert('Notice', `File saved at:\n${filePath}`);
+              });
+            },
+          },
+        ],
+      );
+    } catch (err: any) {
+      console.error('Download printable card error:', err);
+      Alert.alert('Export Error', err?.message || 'Failed to generate printable ID document.');
+    } finally {
+      setDownloading(false);
+      setDownloadProgressText('');
+    }
+  };
 
   const detailItems = [
     { label: 'Full Name', value: user?.name },
@@ -521,7 +754,7 @@ export default function IdCardScreen() {
                   <FrontCard user={user} cardRef={cardFrontRef} />
                 </Animated.View>
                 <Animated.View style={[s.cardWrapper, s.cardBackWrapper, { opacity: backOpacity, transform: [{ rotateY: backInterpolate }] }]}>
-                  <BackCard user={user} />
+                  <BackCard user={user} cardRef={cardBackRef} />
                 </Animated.View>
               </View>
             </Pressable>
@@ -533,17 +766,48 @@ export default function IdCardScreen() {
 
           {/* Action buttons */}
           <View style={s.actions}>
-            <Pressable style={({ pressed }) => [s.actionBtn, s.shareBtn, pressed && s.btnPressed]} onPress={shareCard} disabled={sharing}>
-              <Share2 size={16} color={accent} />
-              <Text style={[s.shareBtnText, { color: accent }]} numberOfLines={1}>{sharing ? 'Sharing...' : 'Share'}</Text>
+            <Pressable
+              style={({ pressed }) => [s.actionBtn, s.shareBtn, pressed && s.btnPressed]}
+              onPress={shareCard}
+              disabled={sharing}
+              accessibilityLabel="Share digital ID card"
+            >
+              {sharing ? (
+                <ActivityIndicator size="small" color={accent} />
+              ) : (
+                <Share2 size={16} color={accent} />
+              )}
+              <Text style={[s.shareBtnText, { color: accent }]} numberOfLines={1}>
+                {sharing ? 'Sharing...' : 'Share'}
+              </Text>
             </Pressable>
 
-            <Pressable style={({ pressed }) => [s.actionBtn, s.downloadBtn, { backgroundColor: accent, borderColor: accent }, pressed && s.btnPressed]} onPress={downloadPDF} disabled={downloading}>
-              <Download size={16} color="#fff" />
-              <Text style={s.downloadBtnText} numberOfLines={1}>{downloading ? 'Saving...' : 'PDF'}</Text>
+            <Pressable
+              style={({ pressed }) => [
+                s.actionBtn,
+                s.downloadBtn,
+                { backgroundColor: accent, borderColor: accent },
+                pressed && s.btnPressed,
+              ]}
+              onPress={() => setShowDownloadModal(true)}
+              disabled={downloading}
+              accessibilityLabel="Download ID card"
+            >
+              {downloading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Download size={16} color="#fff" />
+              )}
+              <Text style={s.downloadBtnText} numberOfLines={1}>
+                {downloading ? 'Saving...' : 'Download'}
+              </Text>
             </Pressable>
 
-            <Pressable style={({ pressed }) => [s.actionBtn, s.verifyBtn, pressed && s.btnPressed]} onPress={() => setShowVerify(true)}>
+            <Pressable
+              style={({ pressed }) => [s.actionBtn, s.verifyBtn, pressed && s.btnPressed]}
+              onPress={() => setShowVerify(true)}
+              accessibilityLabel="Verify ID card"
+            >
               <Fingerprint size={16} color={accent} />
               <Text style={[s.verifyBtnText, { color: accent }]} numberOfLines={1}>Verify</Text>
             </Pressable>
@@ -584,6 +848,92 @@ export default function IdCardScreen() {
             </View>
           </Card>
         </ScrollView>
+
+        {/* Download Format Modal */}
+        {showDownloadModal && (
+          <Pressable
+            style={s.modalOverlay}
+            onPress={() => !downloading && setShowDownloadModal(false)}
+          >
+            <Pressable style={s.downloadModal} onPress={e => e.stopPropagation()}>
+              <View style={s.downloadModalHeader}>
+                <View style={[s.downloadIconWrap, { backgroundColor: accent + '18' }]}>
+                  <Download size={24} color={accent} />
+                </View>
+                <Text style={s.downloadModalTitle}>Download ID Card</Text>
+                <Text style={s.downloadModalSub}>Choose format to save to your device storage</Text>
+              </View>
+
+              {downloading ? (
+                <View style={s.downloadLoadingWrap}>
+                  <ActivityIndicator size="large" color={accent} />
+                  <Text style={s.downloadLoadingText}>
+                    {downloadProgressText || 'Saving to Downloads...'}
+                  </Text>
+                </View>
+              ) : (
+                <View style={s.downloadOptionsList}>
+                  <Pressable
+                    style={({ pressed }) => [s.downloadOptionItem, pressed && s.btnPressed]}
+                    onPress={() => downloadCardImage('front')}
+                  >
+                    <View style={[s.optionIconBox, { backgroundColor: accent + '15' }]}>
+                      <CreditCard size={20} color={accent} />
+                    </View>
+                    <View style={s.optionTextBox}>
+                      <Text style={s.optionTitle}>Front Card (PNG)</Text>
+                      <Text style={s.optionDesc}>High-resolution front ID badge image</Text>
+                    </View>
+                    <Download size={16} color={theme.colors.muted} />
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [s.downloadOptionItem, pressed && s.btnPressed]}
+                    onPress={() => downloadCardImage('back')}
+                  >
+                    <View style={[s.optionIconBox, { backgroundColor: accent + '15' }]}>
+                      <QrCode size={20} color={accent} />
+                    </View>
+                    <View style={s.optionTextBox}>
+                      <Text style={s.optionTitle}>Back Card (PNG)</Text>
+                      <Text style={s.optionDesc}>Back badge with QR code and contact details</Text>
+                    </View>
+                    <Download size={16} color={theme.colors.muted} />
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [s.downloadOptionItem, pressed && s.btnPressed]}
+                    onPress={downloadPrintablePDF}
+                  >
+                    <View style={[s.optionIconBox, { backgroundColor: accent + '15' }]}>
+                      <FileText size={20} color={accent} />
+                    </View>
+                    <View style={s.optionTextBox}>
+                      <Text style={s.optionTitle}>Printable Document (PDF / HTML)</Text>
+                      <Text style={s.optionDesc}>Front & Back combined on A4 for printing</Text>
+                    </View>
+                    <Download size={16} color={theme.colors.muted} />
+                  </Pressable>
+                </View>
+              )}
+
+              <Pressable
+                style={({ pressed }) => [s.downloadCancelBtn, pressed && { opacity: 0.7 }]}
+                onPress={() => setShowDownloadModal(false)}
+                disabled={downloading}
+              >
+                <Text style={s.downloadCancelTxt}>Cancel</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        )}
+
+        {/* Offscreen un-animated capture targets */}
+        <View style={s.offscreenCapture} pointerEvents="none" collapsable={false}>
+          <FrontCard user={user} cardRef={staticFrontRef} hideHolo />
+          <View style={{ height: 20 }} />
+          <BackCard user={user} cardRef={staticBackRef} />
+        </View>
 
         {/* Verify Modal */}
         {showVerify && (
@@ -980,4 +1330,113 @@ const s = StyleSheet.create({
     backgroundColor: theme.colors.surfaceTertiary, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center',
   },
   verifyCloseTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 14 },
+
+  // Download Modal
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: theme.colors.overlay,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  downloadModal: {
+    width: SCREEN_WIDTH - 40,
+    maxWidth: 420,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 20,
+  },
+  downloadModalHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  downloadIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  downloadModalTitle: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  downloadModalSub: {
+    color: theme.colors.muted,
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  downloadLoadingWrap: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  downloadLoadingText: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  downloadOptionsList: {
+    gap: 10,
+    marginVertical: 6,
+  },
+  downloadOptionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surfaceTertiary,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 12,
+  },
+  optionIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionTextBox: {
+    flex: 1,
+  },
+  optionTitle: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  optionDesc: {
+    color: theme.colors.muted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  downloadCancelBtn: {
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: theme.colors.surfaceTertiary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+  },
+  downloadCancelTxt: {
+    color: theme.colors.muted,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  offscreenCapture: {
+    position: 'absolute',
+    left: -9999,
+    top: 0,
+    width: CARD_WIDTH,
+    opacity: 1,
+  },
 });

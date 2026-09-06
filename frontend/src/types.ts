@@ -24,6 +24,11 @@ export interface AuthResp { token: string; user: AuthUser; }
 export interface AttendanceRecord {
   id: string; student_id: string; course_id: string; date: string;
   present: boolean; method: string;
+  status?: 'present' | 'absent' | 'late' | string;
+  course_name?: string;
+  courseName?: string;
+  time?: string;
+  period?: string;
 }
 export interface AttendanceByCourse {
   course_id: string; course_name: string; course_code: string;

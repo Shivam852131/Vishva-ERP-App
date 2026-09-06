@@ -12,7 +12,7 @@ import { ErrorBoundary } from '@/src/ErrorBoundary';
 import {
   MessageCircle, Send, Check, CheckCheck, Phone, Video,
   Settings, Link, Unlink, Bell, BellOff, Shield, Clock,
-  ChevronRight, ExternalLink, QrCode, Smartphone, Wifi,
+  ChevronRight, ExternalLink, QrCode, Smartphone, Wifi, ArrowLeft,
 } from 'lucide-react-native';
 
 const QUICK_REPLIES = [
@@ -83,14 +83,14 @@ export default function WhatsAppIntegration() {
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <View style={styles.hero}>
             <LinearGradient colors={['#25D366', '#128C7E']} style={styles.heroGrad}>
-              <Pressable onPress={() => router.back()} style={styles.backBtn}>
-                <Text style={{ color: '#fff', fontSize: 18 }}>←</Text>
-              </Pressable>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={styles.heroHeaderRow}>
+                <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+                  <ArrowLeft size={20} color="#fff" />
+                </Pressable>
                 <View style={styles.heroIcon}><MessageCircle size={22} color="#fff" /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.heroTitle}>WhatsApp Integration</Text>
-                  <Text style={styles.heroSub}>{linked ? `Connected • ${user?.phone || 'Not set'}` : 'Not connected'}</Text>
+                <View style={styles.heroTitles}>
+                  <Text style={styles.heroTitle} numberOfLines={1}>WhatsApp Integration</Text>
+                  <Text style={styles.heroSub} numberOfLines={1}>{linked ? `Connected • ${user?.phone || 'Not set'}` : 'Not connected'}</Text>
                 </View>
                 <Pressable onPress={() => setLinked(!linked)}
                   style={[styles.linkBtn, linked ? styles.linkedBtn : styles.unlinkedBtn]}>
@@ -231,11 +231,13 @@ export default function WhatsAppIntegration() {
 
 const styles = StyleSheet.create({
   hero: { marginBottom: 0 },
-  heroGrad: { paddingHorizontal: 16, paddingVertical: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 10 },
-  heroIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  heroSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
-  backBtn: { position: 'absolute', top: 16, left: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  heroGrad: { paddingHorizontal: 16, paddingVertical: 18, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 12 },
+  heroHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroTitles: { flex: 1, minWidth: 0 },
+  heroTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 2 },
   linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   linkedBtn: { backgroundColor: 'rgba(255,255,255,0.2)' },
   unlinkedBtn: { backgroundColor: 'rgba(255,255,255,0.1)' },

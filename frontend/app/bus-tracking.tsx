@@ -60,14 +60,14 @@ export default function BusTracking() {
       <SafeAreaView edges={['top']} style={styles.container}>
         <View style={styles.hero}>
           <View style={styles.heroGrad}>
-            <Pressable onPress={() => router.back()} style={styles.backBtn}>
-              <ArrowLeft size={20} color="#fff" />
-            </Pressable>
-            <View style={styles.heroRow}>
+            <View style={styles.heroHeaderRow}>
+              <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+                <ArrowLeft size={20} color="#fff" />
+              </Pressable>
               <View style={styles.heroIcon}><Bus size={22} color="#fff" /></View>
-              <View>
-                <Text style={styles.heroTitle}>Bus Tracking</Text>
-                <Text style={styles.heroSub}>Live campus bus tracking & schedules</Text>
+              <View style={styles.heroTitles}>
+                <Text style={styles.heroTitle} numberOfLines={1}>Bus Tracking</Text>
+                <Text style={styles.heroSub} numberOfLines={1}>Live campus bus tracking & schedules</Text>
               </View>
             </View>
             <View style={styles.heroStats}>
@@ -251,13 +251,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.bg },
 
   hero: { marginBottom: 0 },
-  heroGrad: { backgroundColor: '#6366F1', paddingHorizontal: 16, paddingVertical: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 12 },
-  backBtn: { position: 'absolute', top: 16, left: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', zIndex: 1 },
-  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  heroIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  heroGrad: { backgroundColor: '#6366F1', paddingHorizontal: 16, paddingVertical: 18, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 14 },
+  heroHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroTitles: { flex: 1, minWidth: 0 },
   heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  heroSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
-  heroStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
+  heroStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 },
   heroStat: { alignItems: 'center' },
   heroStatVal: { color: '#fff', fontSize: 20, fontWeight: '800' },
   heroStatLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, marginTop: 2 },

@@ -24,6 +24,7 @@ import {
   BarChart3,
   FileText,
   Share,
+  QrCode,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch } from '@/src/hooks/useFetch';
@@ -152,13 +153,34 @@ export default function FacultyDashboard() {
                 </Pressable>
               </View>
               <GlassCard intensity={35} tint="dark">
-                <Text style={styles.todayCount}>
-                  {dashboard?.today_classes || 0}
-                </Text>
-                <Text style={styles.todaySub}>
-                  classes today · {dashboard?.students || 0} students enrolled
-                  across your courses
-                </Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.todayCount}>
+                      {dashboard?.today_classes || 0}
+                    </Text>
+                    <Text style={styles.todaySub}>
+                      classes today · {dashboard?.students || 0} students enrolled
+                    </Text>
+                  </View>
+                  <Pressable
+                    testID="faculty-take-att-btn"
+                    accessibilityLabel="Take Attendance"
+                    accessibilityRole="button"
+                    onPress={() => router.push('/start-session')}
+                    style={{
+                      backgroundColor: theme.colors.brandPrimary,
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      borderRadius: theme.radius.pill,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <QrCode size={16} color="#fff" />
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Take Attendance</Text>
+                  </Pressable>
+                </View>
               </GlassCard>
             </SafeAreaView>
           </View>
@@ -241,6 +263,12 @@ export default function FacultyDashboard() {
           <SectionTitle title="Quick Actions" />
           <View style={styles.actionsGrid}>
             {[
+              {
+                icon: <QrCode size={20} color="#fff" />,
+                label: 'Attendance',
+                to: '/start-session',
+                color: theme.colors.brandPrimary,
+              },
               {
                 icon: <ClipboardList size={20} color="#fff" />,
                 label: 'Create Task',

@@ -144,7 +144,7 @@ function ReadinessRing({ score, size = 130, strokeWidth = 10 }: {
   }));
 
   return (
-    <Animated.View style={[styles.ringOuter, animatedStyle]}>
+    <Animated.View style={[styles.ringOuter, { width: size, height: size }, animatedStyle]}>
       <View style={[styles.ringBg, {
         width: size, height: size, borderRadius: size / 2,
         borderWidth: strokeWidth, borderColor: theme.colors.surfaceTertiary,
@@ -155,7 +155,7 @@ function ReadinessRing({ score, size = 130, strokeWidth = 10 }: {
         borderLeftColor: 'transparent', borderBottomColor: 'transparent',
         transform: [{ rotate: `${(fill / 100) * 360 - 90}deg` }],
       }]} />
-      <View style={styles.ringCenter}>
+      <View style={[styles.ringCenter, { width: size, height: size }]}>
         <Text style={[styles.ringScore, { color }]}>{fill}</Text>
         <Text style={styles.ringMax}>/ 100</Text>
       </View>
@@ -684,15 +684,15 @@ export default function CareerDashboardScreen() {
           <LinearGradient colors={[color, '#4F46E5', '#7C3AED']} style={StyleSheet.absoluteFill} />
           <SafeAreaView edges={['top']} style={{ flex: 1 }}>
             <View style={styles.headerRow}>
-              <Pressable onPress={() => router.back()} hitSlop={10}>
-                <ArrowLeft color="#fff" size={22} />
+              <Pressable onPress={() => router.back()} hitSlop={10} style={styles.headerBackBtn}>
+                <ArrowLeft color="#fff" size={20} />
               </Pressable>
               <Text style={styles.headerTitle}>Career Dashboard</Text>
-              <View style={{ width: 22 }} />
+              <View style={{ width: 36 }} />
             </View>
 
             <View style={styles.heroContent}>
-              <ReadinessRing score={score} size={120} strokeWidth={10} />
+              <ReadinessRing score={score} size={104} strokeWidth={8} />
               <View style={styles.heroStats}>
                 <Text style={styles.heroGrade}>{readinessGrade(score)}</Text>
                 <Text style={styles.heroSubtext}>{readinessMessage(score)}</Text>
@@ -750,28 +750,33 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.bg },
 
   // Hero
-  hero: { height: 260, overflow: 'hidden' },
+  hero: { minHeight: 240, overflow: 'hidden' },
   headerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xs, paddingBottom: theme.spacing.sm,
   },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#fff' },
+  headerBackBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: '#fff' },
   heroContent: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.lg, gap: 16,
+    paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.md, gap: 14,
   },
-  heroStats: { flex: 1 },
-  heroGrade: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  heroSubtext: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4, lineHeight: 18 },
-  trendRow: { flexDirection: 'row', gap: 12, marginTop: 10 },
+  heroStats: { flex: 1, minWidth: 0 },
+  heroGrade: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  heroSubtext: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2, lineHeight: 16 },
+  trendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
 
   // Ring
-  ringOuter: { alignItems: 'center', justifyContent: 'center' },
+  ringOuter: { alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative' },
   ringBg: { position: 'absolute' },
   ringFill: { position: 'absolute', borderTopColor: 'transparent', borderRightColor: 'transparent' },
-  ringCenter: { alignItems: 'center', justifyContent: 'center' },
-  ringScore: { fontSize: 32, fontWeight: '900' },
-  ringMax: { fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
+  ringCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  ringScore: { fontSize: 26, fontWeight: '900' },
+  ringMax: { fontSize: 10, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
 
   // Trend
   trendCol: { alignItems: 'center' },

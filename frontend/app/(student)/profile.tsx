@@ -9,6 +9,7 @@ import {
   ScanFace, FileText, Pencil, Camera,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
+import { useFetch } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
 import { Card } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
@@ -16,6 +17,7 @@ import { ErrorBoundary } from '@/src/ErrorBoundary';
 export default function Profile() {
   const { user: u, logout: doLogout } = useAuth();
   const [tapCount, setTapCount] = useState(0);
+  const { data: faceProfile } = useFetch<{ enrolled: boolean }>('/face/profile');
 
   const logout = async () => {
     await doLogout();
@@ -31,19 +33,78 @@ export default function Profile() {
     }
   };
 
-  const links = [
-    { icon: <IdCard size={18} color={theme.colors.brand} />, label: 'Digital ID Card', to: '/id-card' },
-    { icon: <ScanFace size={18} color={theme.colors.brand} />, label: 'Face ID Enrollment', to: '/face-enroll' },
-    { icon: <FileText size={18} color={theme.colors.brand} />, label: 'Leave Requests', to: '/leave-management' },
-    { icon: <Bell size={18} color={theme.colors.brand} />, label: 'Notifications', to: '/notifications' },
-    { icon: <Award size={18} color={theme.colors.brand} />, label: 'Results', to: '/results' },
-    { icon: <Calendar size={18} color={theme.colors.brand} />, label: 'Events', to: '/events' },
-    { icon: <Users size={18} color={theme.colors.brand} />, label: 'Chat', to: '/chat' },
-    { icon: <Library size={18} color={theme.colors.brand} />, label: 'Library', to: '/library' },
-    { icon: <Home size={18} color={theme.colors.brand} />, label: 'Hostel', to: '/hostel' },
-    { icon: <Bus size={18} color={theme.colors.brand} />, label: 'Transport', to: '/transport' },
-    { icon: <MessageSquare size={18} color={theme.colors.brand} />, label: 'Grievances', to: '/grievances' },
-  ];
+  const getLinksForRole = () => {
+    const role = u?.role;
+    if (role === 'faculty') {
+      return [
+        { icon: <IdCard size={18} color={theme.colors.brand} />, label: 'Digital ID Card', to: '/id-card' },
+        { icon: <Calendar size={18} color={theme.colors.brand} />, label: 'Take Attendance', to: '/start-session' },
+        { icon: <BookOpen size={18} color={theme.colors.brand} />, label: 'Live Classes', to: '/live-classes' },
+        { icon: <Award size={18} color={theme.colors.brand} />, label: 'AI Exam Generator', to: '/(faculty)/exam-generator' },
+        { icon: <FileText size={18} color={theme.colors.brand} />, label: 'Leave Requests', to: '/leave-management' },
+        { icon: <Library size={18} color={theme.colors.brand} />, label: 'Library Resources', to: '/library' },
+        { icon: <Users size={18} color={theme.colors.brand} />, label: 'Faculty Chat', to: '/chat' },
+        { icon: <Bell size={18} color={theme.colors.brand} />, label: 'Notifications', to: '/notifications' },
+      ];
+    }
+    if (role === 'college_admin') {
+      return [
+        { icon: <Award size={18} color={theme.colors.brand} />, label: 'Fee Payments & Invoices', to: '/(college_admin)/payments' },
+        { icon: <IdCard size={18} color={theme.colors.brand} />, label: 'Campus Subscription', to: '/(college_admin)/subscription' },
+        { icon: <Home size={18} color={theme.colors.brand} />, label: 'Hostel Administration', to: '/(college_admin)/hostel-admin' },
+        { icon: <Users size={18} color={theme.colors.brand} />, label: 'Placement Management', to: '/(college_admin)/placements' },
+        { icon: <BookOpen size={18} color={theme.colors.brand} />, label: 'Skill Assessments Admin', to: '/(college_admin)/assessments-admin' },
+        { icon: <Calendar size={18} color={theme.colors.brand} />, label: 'Visitor Management', to: '/visitor' },
+        { icon: <Library size={18} color={theme.colors.brand} />, label: 'Campus Assets', to: '/assets' },
+        { icon: <MessageSquare size={18} color={theme.colors.brand} />, label: 'Complaints & Grievances', to: '/complaints' },
+        { icon: <Bell size={18} color={theme.colors.brand} />, label: 'Notifications', to: '/notifications' },
+      ];
+    }
+    if (role === 'super_admin') {
+      return [
+        { icon: <Home size={18} color={theme.colors.brand} />, label: 'Institutions & Colleges', to: '/(super_admin)/colleges' },
+        { icon: <Users size={18} color={theme.colors.brand} />, label: 'Platform Users', to: '/(super_admin)/users' },
+        { icon: <Award size={18} color={theme.colors.brand} />, label: 'Platform Analytics', to: '/analytics' },
+        { icon: <Bell size={18} color={theme.colors.brand} />, label: 'Broadcast Notifications', to: '/push-notifications' },
+        { icon: <MessageSquare size={18} color={theme.colors.brand} />, label: 'Email Integration', to: '/email' },
+        { icon: <MessageSquare size={18} color={theme.colors.brand} />, label: 'WhatsApp Integration', to: '/whatsapp' },
+      ];
+    }
+    if (role === 'parent') {
+      return [
+        { icon: <Calendar size={18} color={theme.colors.brand} />, label: 'Child Attendance Record', to: '/(parent)/attendance' },
+        { icon: <Award size={18} color={theme.colors.brand} />, label: 'Fee Payments & Invoices', to: '/(parent)/fees' },
+        { icon: <BookOpen size={18} color={theme.colors.brand} />, label: 'Report Card & Marks', to: '/report-card' },
+        { icon: <FileText size={18} color={theme.colors.brand} />, label: 'Parent AI Assistant', to: '/(parent)/ai' },
+        { icon: <Bus size={18} color={theme.colors.brand} />, label: 'Bus & Transport Tracker', to: '/bus-tracking' },
+        { icon: <MessageSquare size={18} color={theme.colors.brand} />, label: 'Submit Grievance', to: '/grievances' },
+        { icon: <Bell size={18} color={theme.colors.brand} />, label: 'Notifications', to: '/notifications' },
+      ];
+    }
+    // Default student links
+    return [
+      { icon: <IdCard size={18} color={theme.colors.brand} />, label: 'Digital ID Card', to: '/id-card' },
+      {
+        icon: <ScanFace size={18} color={theme.colors.brand} />,
+        label: 'Face ID Biometrics',
+        to: '/face-enroll',
+        badge: faceProfile?.enrolled ? 'Active' : undefined,
+      },
+      { icon: <Award size={18} color={theme.colors.brand} />, label: 'Skill Assessments', to: '/skill-assessment' },
+      { icon: <BookOpen size={18} color={theme.colors.brand} />, label: 'Career Dashboard', to: '/career-dashboard' },
+      { icon: <FileText size={18} color={theme.colors.brand} />, label: 'Leave Requests', to: '/leave-management' },
+      { icon: <Award size={18} color={theme.colors.brand} />, label: 'Results & Marks', to: '/results' },
+      { icon: <Calendar size={18} color={theme.colors.brand} />, label: 'Campus Events', to: '/events' },
+      { icon: <Users size={18} color={theme.colors.brand} />, label: 'Student Chat', to: '/chat' },
+      { icon: <Library size={18} color={theme.colors.brand} />, label: 'Digital Library', to: '/library' },
+      { icon: <Home size={18} color={theme.colors.brand} />, label: 'Hostel Portal', to: '/hostel' },
+      { icon: <Bus size={18} color={theme.colors.brand} />, label: 'Transport & Bus', to: '/transport' },
+      { icon: <MessageSquare size={18} color={theme.colors.brand} />, label: 'Grievances & Support', to: '/grievances' },
+      { icon: <Bell size={18} color={theme.colors.brand} />, label: 'Notifications', to: '/notifications' },
+    ];
+  };
+
+  const links = getLinksForRole();
 
   return (
     <ErrorBoundary>
@@ -121,6 +182,11 @@ export default function Profile() {
               >
                 <View style={styles.linkIcon}>{l.icon}</View>
                 <Text style={styles.linkTxt}>{l.label}</Text>
+                {l.badge ? (
+                  <View style={styles.badgePill}>
+                    <Text style={styles.badgeTxt}>{l.badge}</Text>
+                  </View>
+                ) : null}
                 <ChevronRight color={theme.colors.muted} size={16} />
               </Pressable>
             ))}
@@ -244,6 +310,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   linkTxt: { color: theme.colors.onSurface, fontWeight: '600', flex: 1 },
+  badgePill: {
+    backgroundColor: 'rgba(16,185,129,0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.25)',
+    marginRight: 6,
+  },
+  badgeTxt: {
+    color: '#10B981',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   logout: {
     flexDirection: 'row',
     alignItems: 'center',

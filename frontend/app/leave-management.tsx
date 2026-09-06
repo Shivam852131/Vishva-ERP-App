@@ -34,18 +34,19 @@ type LeaveRequest = {
 type LeaveType = {
   key: string;
   label: string;
+  shortLabel?: string;
   icon: React.ReactNode;
   color: string;
   bgColor: string;
 };
 
 const LEAVE_TYPES: LeaveType[] = [
-  { key: 'sick', label: 'Sick Leave', icon: <Stethoscope size={16} color="#EF4444" />, color: '#EF4444', bgColor: 'rgba(239,68,68,0.1)' },
-  { key: 'personal', label: 'Personal', icon: <User size={16} color="#6366F1" />, color: '#6366F1', bgColor: 'rgba(99,102,241,0.1)' },
-  { key: 'medical', label: 'Medical', icon: <Heart size={16} color="#EC4899" />, color: '#EC4899', bgColor: 'rgba(236,72,153,0.1)' },
-  { key: 'family', label: 'Family Emergency', icon: <Heart size={16} color="#F59E0B" />, color: '#F59E0B', bgColor: 'rgba(245,158,11,0.1)' },
-  { key: 'academic', label: 'Academic', icon: <GraduationCap size={16} color="#10B981" />, color: '#10B981', bgColor: 'rgba(16,185,129,0.1)' },
-  { key: 'official', label: 'Official Duty', icon: <Briefcase size={16} color="#3B82F6" />, color: '#3B82F6', bgColor: 'rgba(59,130,246,0.1)' },
+  { key: 'sick', label: 'Sick Leave', shortLabel: 'Sick', icon: <Stethoscope size={16} color="#EF4444" />, color: '#EF4444', bgColor: 'rgba(239,68,68,0.1)' },
+  { key: 'personal', label: 'Personal', shortLabel: 'Personal', icon: <User size={16} color="#6366F1" />, color: '#6366F1', bgColor: 'rgba(99,102,241,0.1)' },
+  { key: 'medical', label: 'Medical', shortLabel: 'Medical', icon: <Heart size={16} color="#EC4899" />, color: '#EC4899', bgColor: 'rgba(236,72,153,0.1)' },
+  { key: 'family', label: 'Family Emergency', shortLabel: 'Family', icon: <Heart size={16} color="#F59E0B" />, color: '#F59E0B', bgColor: 'rgba(245,158,11,0.1)' },
+  { key: 'academic', label: 'Academic', shortLabel: 'Academic', icon: <GraduationCap size={16} color="#10B981" />, color: '#10B981', bgColor: 'rgba(16,185,129,0.1)' },
+  { key: 'official', label: 'Official Duty', shortLabel: 'Official', icon: <Briefcase size={16} color="#3B82F6" />, color: '#3B82F6', bgColor: 'rgba(59,130,246,0.1)' },
 ];
 
 const QUICK_REASONS = [
@@ -400,7 +401,9 @@ export default function LeaveManagement() {
               {t.icon}
             </View>
             <Text style={styles.balanceCount}>{leaveBalance[t.key] ?? 0}</Text>
-            <Text style={styles.balanceLabel}>{t.label.replace(' Leave', '')}</Text>
+            <Text style={styles.balanceLabel} numberOfLines={1} ellipsizeMode="tail">
+              {t.shortLabel || t.label.replace(' Leave', '')}
+            </Text>
           </View>
         ))}
       </ScrollView>
@@ -437,7 +440,7 @@ export default function LeaveManagement() {
             </Pressable>
           )}
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar} contentContainerStyle={styles.filterBarContent}>
           {(['all', 'pending', 'approved', 'rejected'] as const).map(f => (
             <Pressable
               key={f}
@@ -893,12 +896,12 @@ const styles = StyleSheet.create({
   retryBtn: { marginTop: 8, paddingHorizontal: 24, paddingVertical: 10, backgroundColor: theme.colors.brandPrimary, borderRadius: 8 },
   retryTxt: { color: '#FFF', fontWeight: '700', fontSize: 14 },
 
-  balanceScroll: { maxHeight: 100 },
-  balanceContent: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
-  balanceCard: { width: 80, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 8, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, borderWidth: 1, marginRight: 8 },
+  balanceScroll: { flexGrow: 0, maxHeight: 110 },
+  balanceContent: { paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center' },
+  balanceCard: { minWidth: 84, minHeight: 94, alignItems: 'center', justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 6, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, borderWidth: 1, marginRight: 8 },
   balanceIconWrap: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  balanceCount: { fontSize: 18, fontWeight: '800', color: theme.colors.text },
-  balanceLabel: { fontSize: 9, color: theme.colors.muted, fontWeight: '600', textAlign: 'center' },
+  balanceCount: { fontSize: 18, fontWeight: '800', color: theme.colors.text, marginBottom: 2 },
+  balanceLabel: { fontSize: 10, color: theme.colors.muted, fontWeight: '600', textAlign: 'center' },
 
   statsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, marginBottom: 8 },
   statCard: { flex: 1, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: theme.colors.border },
@@ -909,7 +912,8 @@ const styles = StyleSheet.create({
   controls: { paddingHorizontal: 12, paddingBottom: 8 },
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: theme.colors.border },
   searchInput: { flex: 1, fontSize: 13, color: theme.colors.text, padding: 0 },
-  filterBar: { marginTop: 8 },
+  filterBar: { marginTop: 8, flexGrow: 0 },
+  filterBarContent: { alignItems: 'center' },
   filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: theme.colors.surfaceSecondary, marginRight: 8, borderWidth: 1, borderColor: theme.colors.border },
   filterText: { fontSize: 11, fontWeight: '600', color: theme.colors.text },
 
