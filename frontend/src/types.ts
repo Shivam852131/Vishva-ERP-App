@@ -13,6 +13,7 @@ export interface AuthUser {
   collegeLogo?: string;
   department?: string;
   student_id?: string;
+  roll_number?: string;
   year?: number;
   cgpa?: number;
   avatar?: string;
@@ -147,15 +148,67 @@ export interface PlanTask {
 }
 
 export interface Grievance {
-  id: string; student_id: string; student_name: string;
-  student_email: string; category: string; subject: string;
-  description: string; is_anonymous: boolean; status: string;
-  created_at: string; response?: string; resolved_at?: string;
+  id: string;
+  student_id?: string;
+  student_name?: string;
+  student_email?: string;
+  userId?: string;
+  category: string;
+  subject?: string;
+  title?: string;
+  description: string;
+  is_anonymous?: boolean;
+  status: 'open' | 'in_progress' | 'resolved' | 'closed' | string;
+  priority?: 'low' | 'medium' | 'high' | string;
+  created_at: string;
+  createdAt?: string;
+  response?: string;
+  resolved_at?: string;
+  ticketId?: string;
+  responses?: any[];
+  resolution_note?: string;
+  room_number?: string;
 }
 
 export interface LibraryBook {
-  id: string; title: string; author: string; isbn: string;
-  category: string; total_copies: number; shelf_location: string;
+  id?: string;
+  _id?: string;
+  title: string;
+  author: string;
+  isbn?: string;
+  category?: string;
+  department?: string;
+  total_copies?: number;
+  available_copies?: number;
+  shelf_location?: string;
+  available?: number;
+  total?: number;
+  shelf?: string;
+  rating?: number;
+  cover?: string;
+}
+
+export interface BookIssue {
+  _id: string;
+  bookId: string;
+  userId: string;
+  issueDate: string;
+  dueDate: string;
+  returnDate?: string | null;
+  fine: number;
+  status: 'issued' | 'returned' | 'overdue';
+  book?: LibraryBook;
+  user?: { id: string; name: string; email: string; student_id?: string } | null;
+  isOverdue?: boolean;
+}
+
+export interface LibraryStats {
+  total_titles: number;
+  total_copies: number;
+  available_copies: number;
+  issued_count: number;
+  overdue_count: number;
+  total_fines: number;
 }
 
 export interface LibraryIssue {
@@ -176,9 +229,30 @@ export interface HostelAllocation {
   student_email?: string; allocated_at: string; active: boolean;
 }
 
+export interface GatePass {
+  id: string;
+  student_id: string;
+  student_name: string;
+  hostel_id: string;
+  hostel_name: string;
+  reason: string;
+  destination: string;
+  out_time: string;
+  expected_return: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by?: string | null;
+  review_note?: string;
+  created_at?: string;
+  reviewed_at?: string;
+}
+
 export interface TransportRoute {
   id: string; route_name: string; vehicle_number: string;
   driver_name: string; driver_phone: string;
+  capacity?: number;
+  morning_time?: string;
+  evening_time?: string;
+  status?: 'on_time' | 'delayed' | 'maintenance';
   stops: TransportStop[]; active: boolean;
 }
 
@@ -186,11 +260,32 @@ export interface TransportStop {
   name: string; time: string;
 }
 
+export interface TransportStats {
+  total_routes: number;
+  active_buses: number;
+  total_capacity: number;
+  total_enrolled: number;
+  on_time_rate: number;
+}
+
+export interface TransportStudentPassenger {
+  id: string;
+  student_id: string;
+  name: string;
+  roll_number: string;
+  department: string;
+  phone: string;
+  pickup_stop: string;
+  enrolled_at: string;
+}
+
 export interface TransportEnrollment {
   id: string; route_id: string; route_name: string;
   vehicle_number: string; driver_name: string; driver_phone: string;
+  morning_time?: string; evening_time?: string; status?: string;
   stops: TransportStop[];
   student_id: string; student_name: string; active: boolean;
+  enrolled_at?: string; pickup_stop?: string;
 }
 
 export interface Exam {

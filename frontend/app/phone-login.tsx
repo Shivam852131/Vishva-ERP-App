@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, Pressable, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView,
-  Animated, Dimensions, StatusBar,
+  Animated, Dimensions, StatusBar, useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { AppImage as Image } from '@/src/components/AppImage';
@@ -25,6 +25,8 @@ type Step = 'phone' | 'otp' | 'role' | 'success';
 const COUNTRY_CODE = '+91';
 
 export default function PhoneOTPLogin() {
+  const { width: screenWidth } = useWindowDimensions();
+  const otpBoxWidth = Math.min(44, Math.max(34, Math.floor((screenWidth - 72 - 30) / 6)));
   const { login, register, user, refresh } = useAuth();
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
@@ -200,7 +202,7 @@ export default function PhoneOTPLogin() {
     <ErrorBoundary>
       <StatusBar barStyle="light-content" />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
         <ScrollView
@@ -224,8 +226,8 @@ export default function PhoneOTPLogin() {
                 <ViLogo size={72} animate={false} />
               </Animated.View>
               <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-                <Text style={styles.brandName}>Vishva ERP</Text>
-                <Text style={styles.brandSub}>Smart Campus Platform</Text>
+                <Text style={styles.brandName} numberOfLines={1} adjustsFontSizeToFit maxFontSizeMultiplier={1.2}>Vishva ERP</Text>
+                <Text style={styles.brandSub} numberOfLines={1} adjustsFontSizeToFit maxFontSizeMultiplier={1.2}>Smart Campus Platform</Text>
               </Animated.View>
             </View>
           </View>
@@ -334,7 +336,7 @@ export default function PhoneOTPLogin() {
                           keyboardType="number-pad"
                           maxLength={1}
                           secureTextEntry={false}
-                          style={[styles.otpBox, digit ? styles.otpBoxFilled : null, error ? styles.otpBoxError : null]}
+                          style={[styles.otpBox, { width: otpBoxWidth, height: Math.round(otpBoxWidth * 1.25) }, digit ? styles.otpBoxFilled : null, error ? styles.otpBoxError : null]}
                           placeholderTextColor="#475569"
                         />
                         {digit ? <View style={styles.otpDot} /> : null}
@@ -409,7 +411,7 @@ const styles = StyleSheet.create({
 
   cardSection: { flex: 1, marginTop: -20, paddingHorizontal: 20 },
   card: {
-    backgroundColor: '#1E293B', borderRadius: 24, padding: 24,
+    backgroundColor: '#1E293B', borderRadius: 24, paddingHorizontal: 16, paddingVertical: 24,
     borderWidth: 1, borderColor: '#334155',
   },
 
@@ -442,11 +444,11 @@ const styles = StyleSheet.create({
   phoneHintText: { color: '#F59E0B', fontSize: 11, fontWeight: '500' },
 
   // OTP Input
-  otpContainer: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: 16 },
+  otpContainer: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 16 },
   otpBoxWrapper: { position: 'relative' },
   otpBox: {
-    width: 48, height: 56, borderRadius: 12, borderWidth: 2, borderColor: '#334155',
-    backgroundColor: '#0F172A', color: '#fff', fontSize: 22, fontWeight: '800',
+    width: 42, height: 52, borderRadius: 12, borderWidth: 2, borderColor: '#334155',
+    backgroundColor: '#0F172A', color: '#fff', fontSize: 20, fontWeight: '800',
     textAlign: 'center', textAlignVertical: 'center',
   },
   otpBoxFilled: { borderColor: '#4F46E5', backgroundColor: '#4F46E510' },

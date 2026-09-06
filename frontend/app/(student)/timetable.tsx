@@ -118,8 +118,8 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontSize: 24, fontWeight: '800' },
   sub: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 4 },
   dayScroll: {
-    maxHeight: 56,
-    paddingVertical: theme.spacing.md,
+    minHeight: 56,
+    paddingVertical: 10,
     backgroundColor: theme.colors.surface,
   },
   classCard: {

@@ -109,7 +109,7 @@ export default function Login() {
     <ErrorBoundary>
       <StatusBar barStyle="light-content" />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
         <ScrollView
@@ -149,8 +149,8 @@ export default function Login() {
               </Animated.View>
 
               <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-                <Text style={styles.brandName}>Vishva ERP</Text>
-                <Text style={styles.brandSub}>Smart Campus Platform</Text>
+                <Text style={styles.brandName} numberOfLines={1} adjustsFontSizeToFit maxFontSizeMultiplier={1.2}>Vishva ERP</Text>
+                <Text style={styles.brandSub} numberOfLines={1} adjustsFontSizeToFit maxFontSizeMultiplier={1.2}>Smart Campus Platform</Text>
               </Animated.View>
 
               <Animated.Text
@@ -243,7 +243,7 @@ export default function Login() {
                             testID={`role-${r}`}
                             accessibilityLabel={`Select role ${r}`}
                           >
-                            <Text style={[styles.roleText, role === r && styles.roleTextActive]}>
+                            <Text style={[styles.roleText, role === r && styles.roleTextActive]} numberOfLines={1} adjustsFontSizeToFit maxFontSizeMultiplier={1.15}>
                               {r.charAt(0).toUpperCase() + r.slice(1).replace('_', ' ')}
                             </Text>
                           </Pressable>
@@ -451,8 +451,11 @@ const styles = StyleSheet.create({
   },
   featurePills: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: 8,
     marginTop: 16,
+    paddingHorizontal: 16,
   },
   featurePill: {
     flexDirection: 'row',

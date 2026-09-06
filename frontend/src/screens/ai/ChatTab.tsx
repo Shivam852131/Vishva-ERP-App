@@ -495,22 +495,29 @@ export default function ChatTab() {
         <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
           {/* Persona Selector */}
           <View style={styles.personaBar}>
-            {PERSONAS.map((p) => {
-              const Icon = p.icon;
-              const active = persona === p.key;
-              return (
-                <Pressable
-                  key={p.key}
-                  testID={`persona-${p.key}`}
-                  accessibilityLabel={p.label}
-                  onPress={() => setPersona(p.key)}
-                  style={[styles.personaBtn, active && { backgroundColor: p.color }]}
-                >
-                  <Icon size={14} color={active ? '#fff' : p.color} />
-                  <Text style={[styles.personaTxt, active && { color: '#fff' }]}>{p.label}</Text>
-                </Pressable>
-              );
-            })}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.personaScroll}
+              style={{ flex: 1 }}
+            >
+              {PERSONAS.map((p) => {
+                const Icon = p.icon;
+                const active = persona === p.key;
+                return (
+                  <Pressable
+                    key={p.key}
+                    testID={`persona-${p.key}`}
+                    accessibilityLabel={p.label}
+                    onPress={() => setPersona(p.key)}
+                    style={[styles.personaBtn, active && { backgroundColor: p.color }]}
+                  >
+                    <Icon size={14} color={active ? '#fff' : p.color} />
+                    <Text style={[styles.personaTxt, active && { color: '#fff' }]}>{p.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
             <Pressable
               onPress={() => setShowHistory(true)}
               style={styles.historyBtn}
@@ -635,12 +642,18 @@ const styles = StyleSheet.create({
   personaBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: theme.spacing.lg,
     paddingVertical: 8,
+    paddingLeft: theme.spacing.lg,
+    paddingRight: theme.spacing.md,
     backgroundColor: theme.colors.surfaceSecondary,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
+  },
+  personaScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 8,
   },
   personaBtn: {
     flexDirection: 'row',
@@ -658,7 +671,7 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceTertiary,
   },
   historyBtn: {
-    marginLeft: 'auto',
+    marginLeft: 4,
     width: 34,
     height: 34,
     borderRadius: 17,
@@ -667,6 +680,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: theme.colors.border,
+    flexShrink: 0,
   },
   errorBanner: {
     flexDirection: 'row',

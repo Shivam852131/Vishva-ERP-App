@@ -71,7 +71,7 @@ export default function Chat() {
   if (!sel) {
     return (
       <ErrorBoundary>
-        <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
+        <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
           <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.headerGrad}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Pressable onPress={() => router.back()} accessibilityLabel="Go back" accessibilityRole="button">
@@ -97,8 +97,8 @@ export default function Chat() {
                     <Text style={styles.avatarTxt}>{u.name?.[0]}</Text>
                   </LinearGradient>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.uName}>{u.name}</Text>
-                    <Text style={styles.uRole}>{u.role.replace('_', ' ')} · {u.email || '—'}</Text>
+                    <Text style={styles.uName} numberOfLines={1}>{u.name}</Text>
+                    <Text style={styles.uRole} numberOfLines={1}>{u.role.replace('_', ' ')} · {u.email || '—'}</Text>
                   </View>
                   <ChevronRight color={theme.colors.muted} size={18} />
                 </Pressable>
@@ -112,8 +112,8 @@ export default function Chat() {
 
   return (
     <ErrorBoundary>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
-        <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
+        <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1 }}>
           <LinearGradient colors={[theme.colors.brand, theme.colors.brandPrimary]} style={styles.chatHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <Pressable onPress={() => setSel(null)} accessibilityLabel="Back to contacts" accessibilityRole="button">
@@ -122,9 +122,9 @@ export default function Chat() {
               <View style={styles.chatAvatar}>
                 <Text style={styles.chatAvatarTxt}>{sel.name?.[0]}</Text>
               </View>
-              <View>
-                <Text style={styles.chatName}>{sel.name}</Text>
-                <Text style={styles.chatRole}>{sel.role.replace('_', ' ')}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.chatName} numberOfLines={1}>{sel.name}</Text>
+                <Text style={styles.chatRole} numberOfLines={1}>{sel.role.replace('_', ' ')}</Text>
               </View>
             </View>
           </LinearGradient>

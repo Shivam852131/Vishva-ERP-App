@@ -11,31 +11,16 @@ import CollegeAdminAcademicsScreen from '../../app/(college_admin)/academics';
 import CollegeAdminReportsScreen from '../../app/(college_admin)/reports';
 import CollegeAdminProfileScreen from '../../app/(college_admin)/profile';
 
-const Tabs = createBottomTabNavigator();
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getResponsiveTabOptions } from './tabOptions';
 
-const tabOptions = {
-  headerShown: false,
-  tabBarActiveTintColor: theme.colors.brand,
-  tabBarInactiveTintColor: theme.colors.muted,
-  tabBarStyle: {
-    backgroundColor: theme.colors.surfaceSecondary,
-    borderTopColor: theme.colors.border,
-    borderTopWidth: 1,
-    height: 64,
-    paddingBottom: 8,
-    paddingTop: 6,
-    ...theme.shadow.md,
-  },
-  tabBarItemStyle: {
-    paddingHorizontal: 0,
-  },
-};
+const Tabs = createBottomTabNavigator();
 
 function TabIcon({ Icon, color, size, focused }: { Icon: React.ElementType; color: string; size: number; focused?: boolean }) {
   return (
     <View
       style={{
-        paddingHorizontal: 8,
+        paddingHorizontal: 6,
         paddingVertical: 2,
         borderRadius: theme.radius.pill,
         backgroundColor: focused ? theme.colors.brandTertiary : 'transparent',
@@ -54,6 +39,7 @@ function TabLabel({ title, color, focused }: { title: string; color: string; foc
       numberOfLines={1}
       adjustsFontSizeToFit
       minimumFontScale={0.7}
+      maxFontSizeMultiplier={1.15}
       style={{
         fontSize: 10,
         fontWeight: focused ? '800' : '600',
@@ -68,6 +54,15 @@ function TabLabel({ title, color, focused }: { title: string; color: string; foc
 }
 
 export default function CollegeAdminTabNavigator() {
+  const insets = useSafeAreaInsets();
+  const baseOptions = getResponsiveTabOptions(insets);
+  const tabOptions = {
+    ...baseOptions,
+    tabBarItemStyle: {
+      paddingHorizontal: 0,
+    },
+  };
+
   return (
     <Tabs.Navigator screenOptions={tabOptions}>
       <Tabs.Screen

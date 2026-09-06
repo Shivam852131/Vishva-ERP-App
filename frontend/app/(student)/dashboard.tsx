@@ -151,7 +151,7 @@ export default function StudentDashboard() {
 
               <GlassCard intensity={35} tint="dark" style={styles.glassHero}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1 }}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.glassLabel}>Current CGPA</Text>
                     <Text style={styles.glassValue}>{analytics?.cgpa || data?.cgpa || '—'}</Text>
                     <View style={{ flexDirection: 'row', gap: 16, marginTop: 8 }}>
@@ -174,7 +174,7 @@ export default function StudentDashboard() {
                     accessibilityLabel="Attendance QR"
                     accessibilityRole="button"
                     onPress={() => router.push('/attendance-advanced' as any)}
-                    style={styles.qrBtn}
+                    style={[styles.qrBtn, { flexShrink: 0 }]}
                   >
                     <QrCode color="#fff" size={28} />
                   </Pressable>
@@ -305,7 +305,7 @@ export default function StudentDashboard() {
                   <LinearGradient colors={[a.color, a.color + 'cc']} style={styles.qaIconWrap}>
                     {a.icon}
                   </LinearGradient>
-                  <Text style={styles.qaLabel}>{a.label}</Text>
+                  <Text style={styles.qaLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} maxFontSizeMultiplier={1.15}>{a.label}</Text>
                 </Pressable>
               ))}
             </View>
@@ -419,7 +419,7 @@ export default function StudentDashboard() {
                 <Pressable key={i} onPress={() => router.push(item.route as any)}
                   style={{ width: '30%', alignItems: 'center', gap: 4, padding: 12, borderRadius: 12, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border }}>
                   <Text style={{ fontSize: 24 }}>{item.icon}</Text>
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.text, textAlign: 'center' }}>{item.label}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.text, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{item.label}</Text>
                 </Pressable>
               ))}
             </View>
@@ -439,7 +439,7 @@ export default function StudentDashboard() {
                 <Pressable key={i} onPress={() => router.push(item.route as any)}
                   style={{ width: '30%', alignItems: 'center', gap: 4, padding: 12, borderRadius: 12, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border }}>
                   <Text style={{ fontSize: 24 }}>{item.icon}</Text>
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.text }}>{item.label}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.text, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{item.label}</Text>
                 </Pressable>
               ))}
             </View>
@@ -469,6 +469,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   badge: {
     position: 'absolute',
@@ -538,9 +539,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: theme.spacing.lg,
-    gap: 10,
+    justifyContent: 'space-between',
+    rowGap: 14,
   },
-  qaCard: { width: (width - 52) / 4, alignItems: 'center', gap: 6 },
+  qaCard: { width: '22%', alignItems: 'center', gap: 6 },
   qaIconWrap: {
     width: 48,
     height: 48,

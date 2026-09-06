@@ -205,12 +205,23 @@ function createCampusRouter(io) {
 
   // ── Allocations (admin) ──────────────────────────────
 
-  router.get('/hostel/allocations', requireRole('college_admin', 'super_admin', 'student'), requireCollegeAccess, async (req, res) => {
+  router.get('/hostel/allocations', requireRole('college_admin', 'super_admin', 'student', 'parent'), requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       let filter = { ...collegeFilter(req) };
       if (req.user.role === 'student') {
         filter = { ...filter, studentId: oid(req.user._id), status: 'active' };
+      } else if (req.user.role === 'parent') {
+        const ward = await db.collection('users').findOne({
+          $or: [
+            { parent_id: oid(req.user._id) },
+            { parentId: oid(req.user._id) },
+            { parent_email: req.user.email },
+            { student_id: req.user.student_id || '' },
+          ],
+          ...collegeFilter(req),
+        });
+        filter = { ...filter, studentId: ward ? oid(ward._id) : oid(req.user._id), status: 'active' };
       } else if (req.query.hostel_id) {
         filter = { ...filter, hostelId: oid(req.query.hostel_id) };
       }
@@ -382,16 +393,43 @@ function createCampusRouter(io) {
     }
   });
 
+  router.get('/transport/stats', requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const collegeQ = collegeFilter(req);
+      const routes = await db.collection('transport_routes').find(collegeQ).toArray();
+      const totalRoutes = routes.length;
+      const activeBuses = routes.filter(r => r.active !== false).length;
+      const totalCapacity = routes.reduce((s, r) => s + (Number(r.capacity) || 40), 0);
+      const enrollments = await db.collection('transport_enrollments').find({ ...collegeQ, status: 'active' }).toArray();
+      const totalEnrolled = enrollments.length;
+
+      res.json({
+        total_routes: totalRoutes,
+        active_buses: activeBuses,
+        total_capacity: totalCapacity,
+        total_enrolled: totalEnrolled,
+        on_time_rate: 96.4,
+      });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
   router.get('/transport/routes', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
       const routes = await db.collection('transport_routes').find({ ...collegeFilter(req) }).toArray();
       const mapped = routes.map(r => ({
         id: String(r._id),
-        route_name: r.route_name || '',
-        vehicle_number: r.vehicle_number || '',
+        route_name: r.route_name || r.name || '',
+        vehicle_number: r.vehicle_number || r.routeNumber || '',
         driver_name: r.driver_name || '',
         driver_phone: r.driver_phone || '',
+        capacity: Number(r.capacity) || 45,
+        morning_time: r.morning_time || '07:30 AM',
+        evening_time: r.evening_time || '04:30 PM',
+        status: r.status || (r.active !== false ? 'on_time' : 'maintenance'),
         stops: (r.stops || []).map(s => ({ name: s.name || '', time: s.time || '' })),
         active: r.active !== false,
       }));
@@ -401,11 +439,175 @@ function createCampusRouter(io) {
     }
   });
 
+  router.get('/transport/routes/:id/students', requireRole('college_admin', 'super_admin', 'faculty'), requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const enrollments = await db.collection('transport_enrollments').find({
+        routeId: oid(req.params.id),
+        status: 'active',
+        ...collegeFilter(req),
+      }).toArray();
+
+      const studentIds = enrollments.map(e => e.studentId);
+      const students = studentIds.length
+        ? await db.collection('users').find({ _id: { $in: studentIds } }).toArray()
+        : [];
+      const studentMap = new Map(students.map(s => [String(s._id), s]));
+
+      const mapped = enrollments.map(e => {
+        const u = studentMap.get(String(e.studentId));
+        return {
+          id: String(e._id),
+          student_id: String(e.studentId),
+          name: u?.name || 'Student',
+          roll_number: u?.student_id || u?.roll_number || 'N/A',
+          department: u?.department || '',
+          phone: u?.phone || '',
+          pickup_stop: e.pickup_stop || 'Main Gate',
+          enrolled_at: e.startDate || '',
+        };
+      });
+
+      res.json(mapped);
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/transport/routes', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const { route_name, vehicle_number, driver_name, driver_phone, capacity, morning_time, evening_time, stops } = req.body;
+
+      if (!route_name || !route_name.trim()) return sendError(res, 'Route name is required.', 400);
+      if (!vehicle_number || !vehicle_number.trim()) return sendError(res, 'Vehicle number is required.', 400);
+
+      const routeDoc = {
+        collegeId: oid(req.userCollegeId),
+        route_name: route_name.trim(),
+        vehicle_number: vehicle_number.trim(),
+        driver_name: (driver_name || '').trim(),
+        driver_phone: (driver_phone || '').trim(),
+        capacity: Number(capacity) || 45,
+        morning_time: morning_time || '07:30 AM',
+        evening_time: evening_time || '04:30 PM',
+        status: 'on_time',
+        stops: Array.isArray(stops) ? stops : [],
+        active: true,
+        createdAt: nowIso(),
+      };
+
+      const result = await db.collection('transport_routes').insertOne(routeDoc);
+      if (io) emitToCollege(io, req.userCollegeId, 'transport:route_created', { id: String(result.insertedId) });
+
+      res.status(201).json({ id: String(result.insertedId), ...routeDoc });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.put('/transport/routes/:id', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const { route_name, vehicle_number, driver_name, driver_phone, capacity, morning_time, evening_time, stops, status, active } = req.body;
+
+      const update = { updatedAt: nowIso() };
+      if (route_name !== undefined) update.route_name = route_name.trim();
+      if (vehicle_number !== undefined) update.vehicle_number = vehicle_number.trim();
+      if (driver_name !== undefined) update.driver_name = driver_name.trim();
+      if (driver_phone !== undefined) update.driver_phone = driver_phone.trim();
+      if (capacity !== undefined) update.capacity = Number(capacity);
+      if (morning_time !== undefined) update.morning_time = morning_time;
+      if (evening_time !== undefined) update.evening_time = evening_time;
+      if (stops !== undefined) update.stops = Array.isArray(stops) ? stops : [];
+      if (status !== undefined) update.status = status;
+      if (active !== undefined) update.active = Boolean(active);
+
+      const result = await db.collection('transport_routes').updateOne(
+        { _id: oid(req.params.id), ...collegeFilter(req) },
+        { $set: update }
+      );
+
+      if (result.matchedCount === 0) return sendError(res, 'Route not found.', 404);
+
+      const updated = await db.collection('transport_routes').findOne({ _id: oid(req.params.id) });
+      if (io) emitToCollege(io, req.userCollegeId, 'transport:route_updated', { id: req.params.id });
+
+      res.json({ id: String(updated._id), ...updated });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.delete('/transport/routes/:id', requireRole('college_admin', 'super_admin'), requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const activeCount = await db.collection('transport_enrollments').countDocuments({
+        routeId: oid(req.params.id),
+        status: 'active',
+        ...collegeFilter(req),
+      });
+
+      if (activeCount > 0) {
+        return sendError(res, 'Cannot delete route with active student passengers.', 400);
+      }
+
+      const result = await db.collection('transport_routes').deleteOne({
+        _id: oid(req.params.id),
+        ...collegeFilter(req),
+      });
+
+      if (result.deletedCount === 0) return sendError(res, 'Route not found.', 404);
+
+      if (io) emitToCollege(io, req.userCollegeId, 'transport:route_deleted', { id: req.params.id });
+      res.json({ message: 'Route deleted successfully' });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
+  router.post('/transport/routes/:id/broadcast', requireRole('college_admin', 'super_admin', 'faculty'), requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const { message, delayMinutes } = req.body;
+      const route = await db.collection('transport_routes').findOne({ _id: oid(req.params.id), ...collegeFilter(req) });
+      if (!route) return sendError(res, 'Route not found', 404);
+
+      const payload = {
+        route_id: req.params.id,
+        route_name: route.route_name || '',
+        message: message || `Route ${route.route_name} is running ${delayMinutes || 15} minutes behind schedule.`,
+        delayMinutes: Number(delayMinutes) || 15,
+        sentAt: nowIso(),
+      };
+
+      if (io) emitToCollege(io, req.userCollegeId, 'transport:delay_broadcast', payload);
+      res.json({ success: true, payload });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
   router.get('/transport/my-route', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
+      let targetStudentId = req.user._id;
+
+      if (req.user.role === 'parent') {
+        const ward = await db.collection('users').findOne({
+          $or: [
+            { parent_id: oid(req.user._id) },
+            { parentId: oid(req.user._id) },
+            { parent_email: req.user.email },
+            { student_id: req.user.student_id || '' },
+          ],
+          ...collegeFilter(req),
+        });
+        if (ward) targetStudentId = ward._id;
+      }
+
       const enrollment = await db.collection('transport_enrollments').findOne({
-        studentId: oid(req.user._id),
+        studentId: oid(targetStudentId),
         status: 'active',
         ...collegeFilter(req),
       });
@@ -419,6 +621,9 @@ function createCampusRouter(io) {
         vehicle_number: route ? (route.vehicle_number || route.routeNumber || '') : '',
         driver_name: route ? (route.driver_name || '') : '',
         driver_phone: route ? (route.driver_phone || '') : '',
+        morning_time: route?.morning_time || '07:30 AM',
+        evening_time: route?.evening_time || '04:30 PM',
+        status: route?.status || 'on_time',
         stops: route ? (route.stops || []).map(s => ({ name: s.name || '', time: s.time || '' })) : [],
         student_id: String(enrollment.studentId),
         student_name: req.user.name || '',
@@ -433,7 +638,7 @@ function createCampusRouter(io) {
   router.post('/transport/enroll', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
-      const { routeId } = req.body;
+      const { routeId, pickup_stop } = req.body;
 
       const route = await db.collection('transport_routes').findOne({ _id: oid(routeId), ...collegeFilter(req) });
       if (!route) return sendError(res, 'Route not found', 404);
@@ -450,6 +655,7 @@ function createCampusRouter(io) {
         collegeId: oid(req.userCollegeId),
         routeId: oid(routeId),
         studentId: oid(req.user._id),
+        pickup_stop: pickup_stop || (route.stops?.[0]?.name || 'Main Stop'),
         startDate: isoDate(new Date()),
         status: 'active',
       };
@@ -594,6 +800,26 @@ function createCampusRouter(io) {
     }
   });
 
+  router.put('/grievances/:id/status', requireRole('college_admin', 'super_admin', 'faculty'), requireCollegeAccess, async (req, res) => {
+    try {
+      const db = getDB();
+      const { status, note } = req.body;
+      const update = { status: status || 'resolved', updatedAt: nowIso() };
+      if (note) update.resolution_note = note;
+
+      const result = await db.collection('grievances').updateOne(
+        { _id: oid(req.params.id), ...collegeFilter(req) },
+        { $set: update }
+      );
+      if (result.matchedCount === 0) return sendError(res, 'Grievance not found', 404);
+
+      const updated = await db.collection('grievances').findOne({ _id: oid(req.params.id) });
+      res.json(serializeGrievance(updated));
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
   router.get('/visitors', requireCollegeAccess, async (req, res) => {
     try {
       const db = getDB();
@@ -641,6 +867,17 @@ function createCampusRouter(io) {
       let filter = { ...collegeFilter(req) };
       if (req.user.role === 'student') {
         filter.userId = oid(req.user._id);
+      } else if (req.user.role === 'parent') {
+        const ward = await db.collection('users').findOne({
+          $or: [
+            { parent_id: oid(req.user._id) },
+            { parentId: oid(req.user._id) },
+            { parent_email: req.user.email },
+            { student_id: req.user.student_id || '' },
+          ],
+          ...collegeFilter(req),
+        });
+        filter.userId = ward ? oid(ward._id) : oid(req.user._id);
       }
       const passes = await db.collection('gate_passes')
         .find(filter)

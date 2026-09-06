@@ -1,7 +1,5 @@
 import { Dimensions, Platform } from 'react-native';
 
-const { width, height } = Dimensions.get('window');
-
 export const theme = {
   colors: {
     bg: '#F8FAFC',
@@ -94,7 +92,10 @@ export const theme = {
     accent: ['#6366F1', '#EC4899'],
     mesh: ['#4F46E5', '#06B6D4'],
   },
-  screen: { width, height },
+  get screen() {
+    const { width: w, height: h } = Dimensions.get('window');
+    return { width: w, height: h };
+  },
   isIOS: Platform.OS === 'ios',
   isAndroid: Platform.OS === 'android',
   isWeb: Platform.OS === 'web',

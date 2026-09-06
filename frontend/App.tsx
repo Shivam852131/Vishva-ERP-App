@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, StatusBar, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
@@ -110,6 +110,11 @@ export default function App() {
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
+          <StatusBar
+            barStyle="dark-content"
+            backgroundColor={theme.colors.surface}
+            translucent={false}
+          />
           <AuthProvider>
             <BottomSheetModalProvider>
               <NavigationContainer ref={navigationRef}>

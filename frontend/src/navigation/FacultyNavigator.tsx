@@ -10,30 +10,17 @@ import FacultyAssignmentsScreen from '../../app/(faculty)/assignments';
 import FacultyAiScreen from '../../app/(faculty)/ai';
 import FacultyProfileScreen from '../../app/(faculty)/profile';
 
-const Tabs = createBottomTabNavigator();
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getResponsiveTabOptions } from './tabOptions';
 
-const tabOptions = {
-  headerShown: false,
-  tabBarActiveTintColor: theme.colors.brand,
-  tabBarInactiveTintColor: theme.colors.muted,
-  tabBarStyle: {
-    backgroundColor: theme.colors.surfaceSecondary,
-    borderTopColor: theme.colors.border,
-    borderTopWidth: 1,
-    height: 64,
-    paddingBottom: 8,
-    paddingTop: 6,
-    ...theme.shadow.md,
-  },
-  tabBarLabelStyle: { fontSize: 11, fontWeight: '700' as const, marginTop: -2 },
-};
+const Tabs = createBottomTabNavigator();
 
 function TabIcon({ Icon, color, size, focused }: { Icon: React.ElementType; color: string; size: number; focused?: boolean }) {
   return (
     <View
       style={{
-        paddingHorizontal: 12,
-        paddingVertical: 3,
+        paddingHorizontal: 10,
+        paddingVertical: 2,
         borderRadius: theme.radius.pill,
         backgroundColor: focused ? theme.colors.brandTertiary : 'transparent',
         alignItems: 'center',
@@ -46,6 +33,9 @@ function TabIcon({ Icon, color, size, focused }: { Icon: React.ElementType; colo
 }
 
 export default function FacultyTabNavigator() {
+  const insets = useSafeAreaInsets();
+  const tabOptions = getResponsiveTabOptions(insets);
+
   return (
     <Tabs.Navigator screenOptions={tabOptions}>
       <Tabs.Screen name="/(faculty)/dashboard" component={FacultyDashboardScreen} options={{ title: 'Home', tabBarIcon: ({ color, size, focused }) => <TabIcon Icon={Home} color={color} size={size} focused={focused} /> }} />

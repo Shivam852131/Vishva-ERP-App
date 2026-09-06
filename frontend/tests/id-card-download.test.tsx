@@ -2,25 +2,28 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
-const mockWriteFile = jest.fn(() => Promise.resolve());
-const mockScanFile = jest.fn(() => Promise.resolve());
-const mockCaptureRef = jest.fn(() => Promise.resolve('data_base64_string'));
+const mockWriteFile = jest.fn((..._args: any[]) => Promise.resolve());
+const mockScanFile = jest.fn((..._args: any[]) => Promise.resolve());
+const mockCaptureRef = jest.fn((..._args: any[]) => Promise.resolve('data_base64_string'));
 
 jest.mock('react-native-fs', () => ({
+  __esModule: true,
   default: {
-    writeFile: mockWriteFile,
-    scanFile: mockScanFile,
+    writeFile: (...args: any[]) => mockWriteFile(...args),
+    scanFile: (...args: any[]) => mockScanFile(...args),
     DownloadDirectoryPath: '/mock/downloads',
     DocumentDirectoryPath: '/mock/documents',
   },
-  writeFile: mockWriteFile,
-  scanFile: mockScanFile,
+  writeFile: (...args: any[]) => mockWriteFile(...args),
+  scanFile: (...args: any[]) => mockScanFile(...args),
   DownloadDirectoryPath: '/mock/downloads',
   DocumentDirectoryPath: '/mock/documents',
 }));
 
 jest.mock('react-native-view-shot', () => ({
-  captureRef: mockCaptureRef,
+  __esModule: true,
+  default: { captureRef: (...args: any[]) => mockCaptureRef(...args) },
+  captureRef: (...args: any[]) => mockCaptureRef(...args),
 }));
 
 jest.mock('react-native-qrcode-svg', () => {
