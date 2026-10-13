@@ -511,6 +511,33 @@ export default function ExamPrepQuizBuilderScreen() {
                   </View>
                 </View>
               ))}
+              {analytics.attempts && analytics.attempts.length > 0 && (
+                <>
+                  <Text style={styles.sectionLabel}>All Attempts ({analytics.attempts.length})</Text>
+                  <View style={styles.attHead}>
+                    <Text style={[styles.attCell, styles.attName]}>Student</Text>
+                    <Text style={styles.attCell}>Score</Text>
+                    <Text style={styles.attCell}>Correct</Text>
+                    <Text style={styles.attCell}>Time</Text>
+                    <Text style={styles.attCell}>Date</Text>
+                  </View>
+                  {analytics.attempts.map(a => (
+                    <View key={a.attempt_id} style={styles.attRow}>
+                      <Text style={[styles.attCell, styles.attName]} numberOfLines={1}>{a.student_name}</Text>
+                      <Text style={[styles.attCell, { fontWeight: '700', color: a.passed ? '#059669' : '#EF4444' }]}>
+                        {a.score}%
+                      </Text>
+                      <Text style={styles.attCell}>{a.correct}/{a.total}</Text>
+                      <Text style={styles.attCell}>
+                        {Math.floor(a.time_taken_seconds / 60)}m{a.time_taken_seconds % 60}s
+                      </Text>
+                      <Text style={styles.attCell}>
+                        {a.submitted_at ? new Date(a.submitted_at).toLocaleDateString() : '—'}
+                      </Text>
+                    </View>
+                  ))}
+                </>
+              )}
             </>
           )}
         </ScrollView>
@@ -600,4 +627,10 @@ const styles = StyleSheet.create({
   topScore: { fontSize: 14, fontWeight: '800' },
   topBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   topBadgeText: { fontSize: 10, fontWeight: '700' },
+
+  // All-attempts detail table
+  attHead: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  attRow: { flexDirection: 'row', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  attCell: { flex: 1, fontSize: 11, color: theme.colors.textSecondary, textAlign: 'center' },
+  attName: { flex: 1.6, textAlign: 'left', fontWeight: '600', color: theme.colors.text },
 });

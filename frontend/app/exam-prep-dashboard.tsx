@@ -19,7 +19,7 @@ import {
 } from 'lucide-react-native';
 import { useFetch } from '@/src/hooks/useFetch';
 import { api } from '@/src/api';
-import type { ExamPrepDashboard, ExamPrepQuiz, TopicMastery } from '@/src/types';
+import type { ExamPrepDashboard, ExamPrepQuiz, TopicMastery, ExamPrepAttemptSummary } from '@/src/types';
 import { theme } from '@/src/theme';
 import Animated, { FadeInDown, SlideInRight } from 'react-native-reanimated';
 
@@ -129,14 +129,18 @@ function RecommendationCard({ rec, index }: { rec: any; index: number }) {
 
 export default function ExamPrepDashboardScreen() {
   const { data, loading, error, refresh } = useFetch<ExamPrepDashboard>('/exam-prep/dashboard');
+  // Full history incl. expired attempts. Declared unconditionally (before the
+  // early return below) so the hook order never changes between renders.
+  const { data: history, loading: historyLoading, refresh: refreshHistory } =
+    useFetch<ExamPrepAttemptSummary[]>('/exam-prep/my-attempts');
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'quizzes' | 'mastery' | 'recs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'quizzes' | 'mastery' | 'history' | 'recs'>('overview');
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refresh();
+    await Promise.all([refresh(), refreshHistory()]);
     setRefreshing(false);
-  }, [refresh]);
+  }, [refresh, refreshHistory]);
 
   if (loading && !data) {
     return (
@@ -153,6 +157,7 @@ export default function ExamPrepDashboardScreen() {
     { key: 'overview', label: 'Overview', icon: BarChart3 },
     { key: 'quizzes', label: 'Quizzes', icon: Play },
     { key: 'mastery', label: 'Mastery', icon: Target },
+    { key: 'history', label: 'History', icon: Clock },
     { key: 'recs', label: 'Tips', icon: Brain },
   ] as const;
 
@@ -339,6 +344,57 @@ export default function ExamPrepDashboardScreen() {
                 <Target size={48} color={theme.colors.textSecondary} />
                 <Text style={styles.emptyTitle}>No mastery data yet</Text>
                 <Text style={styles.emptyBody}>Complete practice sessions to see topic-wise mastery.</Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ── HISTORY TAB ── */}
+        {activeTab === 'history' && (
+          <>
+            <Text style={styles.sectionTitle}>Attempt History</Text>
+
+            {historyLoading && !history ? (
+              <ActivityIndicator style={{ marginTop: 30 }} color={theme.colors.brand} />
+            ) : history && history.length > 0 ? (
+              history.map((a, i) => (
+                <Animated.View key={a.id} entering={FadeInDown.delay(Math.min(i, 8) * 50)} style={styles.attemptRow}>
+                  <View style={styles.attemptLeft}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.attemptTitle} numberOfLines={1}>{a.quiz_title}</Text>
+                      {a.is_practice && (
+                        <View style={[styles.attemptBadge, { backgroundColor: '#EFF6FF' }]}>
+                          <Text style={[styles.attemptBadgeText, { color: '#2563EB' }]}>PRAC</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.attemptDate}>
+                      {new Date(a.submitted_at).toLocaleString()}
+                      {a.expired ? ' · timed out' : ''}
+                    </Text>
+                  </View>
+
+                  <View style={styles.attemptRight}>
+                    <Text style={[styles.attemptScore, { color: a.score_percent == null ? theme.colors.textSecondary : scoreColor(a.score_percent) }]}>
+                      {a.score_percent == null ? '—' : `${a.score_percent}%`}
+                    </Text>
+                    <View style={[styles.attemptBadge, {
+                      backgroundColor: a.expired ? '#FEF3C7' : a.passed ? '#DCFCE7' : '#FEE2E2',
+                    }]}>
+                      <Text style={[styles.attemptBadgeText, {
+                        color: a.expired ? '#92400E' : a.passed ? '#059669' : '#DC2626',
+                      }]}>
+                        {a.expired ? 'EXPIRED' : a.passed ? 'PASS' : 'FAIL'}
+                      </Text>
+                    </View>
+                  </View>
+                </Animated.View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Play size={48} color={theme.colors.textSecondary} />
+                <Text style={styles.emptyTitle}>No attempts yet</Text>
+                <Text style={styles.emptyBody}>Your submitted quizzes — including any that timed out — will appear here.</Text>
               </View>
             )}
           </>

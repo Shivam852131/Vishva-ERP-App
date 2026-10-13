@@ -797,17 +797,21 @@ export interface ExamPrepResult {
   by_difficulty: { difficulty: string; total: number; correct: number; percent: number }[];
 }
 
+// Shape returned by GET /exam-prep/my-attempts. score/correct are null when
+// the attempt settled without a usable score.
 export interface ExamPrepAttemptSummary {
   id: string;
   quiz_id: string;
   quiz_title: string;
-  score_percent: number;
-  correct: number;
+  score_percent: number | null;
+  correct: number | null;
   total: number;
   passed: boolean;
   time_taken_seconds: number;
   submitted_at: string;
   is_practice: boolean;
+  /** True when the attempt ran past its deadline and was graded on autosaves. */
+  expired: boolean;
 }
 
 export interface PracticeSessionQuestion {
@@ -897,6 +901,18 @@ export interface QuizAnalytics {
     student_name: string;
     score: number;
     passed: boolean;
+    submitted_at: string;
+  }[];
+  /** Up to 100 most recent attempts, ranked. Returns [] when nobody has sat. */
+  attempts: {
+    attempt_id: string;
+    student_name: string;
+    student_id: string;
+    score: number;
+    correct: number;
+    total: number;
+    passed: boolean;
+    time_taken_seconds: number;
     submitted_at: string;
   }[];
 }

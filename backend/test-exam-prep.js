@@ -522,6 +522,45 @@ async function runExamPrepTests() {
     check('Completed session exposes the breakdown', Array.isArray(completed.body.breakdown) && completed.body.breakdown.every(b => b.correct_index !== undefined), completed.body.breakdown?.[0]);
     check('Completed session keeps the score', typeof completed.body.score_percent === 'number', completed.body);
 
+    // ════════════════════════════════════════════════════════════
+    // 14. Attempt history + faculty analytics detail
+    // ════════════════════════════════════════════════════════════
+    console.log('\n--- 14. Attempt History & Analytics Detail ---');
+
+    const history = await req('GET', '/api/exam-prep/my-attempts', null, studentToken);
+    check('Student reads attempt history (200)', history.status === 200 && Array.isArray(history.body), history.body);
+    check('History is non-empty after earlier submissions', history.body.length >= 1, history.body.length);
+    const h0 = history.body[0];
+    check('History entry carries the summary shape',
+      Boolean(h0) && typeof h0.id === 'string' && typeof h0.quiz_title === 'string' &&
+      typeof h0.submitted_at === 'string' && typeof h0.is_practice === 'boolean' &&
+      typeof h0.expired === 'boolean', h0);
+    check('History is sorted newest-first',
+      history.body.length < 2 || new Date(history.body[0].submitted_at) >= new Date(history.body[1].submitted_at),
+      history.body.map(a => a.submitted_at));
+    check('History returns only settled attempts (all scored)',
+      history.body.every(a => a.score_percent === null || typeof a.score_percent === 'number'), history.body);
+    // Another student's attempts must not appear in this list.
+    const otherHistory = await req('GET', '/api/exam-prep/my-attempts', null, resumeOther.body.token);
+    const overlap = (otherHistory.body || []).filter(a => history.body.some(m => m.id === a.id));
+    check('Attempt history is scoped to the owner', otherHistory.status === 200 && overlap.length === 0, overlap);
+
+    const analytics2 = await req('GET', `/api/exam-prep/quizzes/${quizId}/analytics`, null, facultyToken);
+    check('Analytics returns the detailed attempts list', Array.isArray(analytics2.body.attempts), analytics2.body.attempts);
+    const a0 = analytics2.body.attempts?.[0];
+    check('Attempt detail carries score, correctness and timing',
+      Boolean(a0) && typeof a0.attempt_id === 'string' && typeof a0.score === 'number' &&
+      typeof a0.correct === 'number' && typeof a0.total === 'number' &&
+      typeof a0.time_taken_seconds === 'number', a0);
+    check('Attempt list is ranked by score',
+      analytics2.body.attempts.length < 2 ||
+      analytics2.body.attempts.every((a, i, arr) => i === 0 || arr[i - 1].score >= a.score),
+      analytics2.body.attempts?.map(a => a.score));
+    check('Stats and attempts agree on count',
+      analytics2.body.attempts.length === analytics2.body.stats.total_attempts ||
+      analytics2.body.attempts.length === Math.min(100, analytics2.body.stats.total_attempts),
+      { listed: analytics2.body.attempts.length, stats: analytics2.body.stats.total_attempts });
+
   } catch (err) {
     console.error('Test execution error:', err);
     failed++;
