@@ -2,7 +2,7 @@
  * exam-prep-quiz-builder.tsx
  * Faculty/Admin — Quiz Builder: select questions, configure, schedule, publish
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
   Alert, ActivityIndicator, Switch, FlatList,
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react-native';
 import { useFetch } from '@/src/hooks/useFetch';
 import { api } from '@/src/api';
-import type { QuestionBankItem, ExamPrepQuiz, QuizAnalytics, EducationLevel } from '@/src/types';
+import type { QuestionBankItem, ExamPrepQuiz, QuizAnalytics, EducationLevel, QuizStatus } from '@/src/types';
 import { theme } from '@/src/theme';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -25,6 +25,39 @@ type Tab = typeof TABS[number];
 
 function diffColor(d: string) {
   return d === 'easy' ? '#10B981' : d === 'hard' ? '#EF4444' : '#F59E0B';
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** Split an ISO instant into *local* date and time parts for the inputs. */
+function splitLocal(iso?: string | null): { date: string; time: string } {
+  if (!iso) return { date: '', time: '' };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: '', time: '' };
+  return {
+    date: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+    time: `${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
+  };
+}
+
+/**
+ * Join the date/time inputs into an ISO instant, or null when either half is
+ * missing. A half-filled window is stored but never enforced by the server,
+ * so the UI treats it as "unset" rather than silently doing nothing.
+ */
+function joinLocal(date: string, time: string): string | null {
+  if (!date || !time) return null;
+  const d = new Date(`${date}T${time}`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Local YYYY-MM-DD / HH:MM for an instant `offsetMs` from now. */
+function localParts(offsetMs: number): { date: string; time: string } {
+  const d = new Date(Date.now() + offsetMs);
+  return {
+    date: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+    time: `${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
+  };
 }
 
 function SelectableQuestion({ item, selected, onToggle }: {
@@ -41,6 +74,50 @@ function SelectableQuestion({ item, selected, onToggle }: {
         </View>
       </View>
     </Pressable>
+  );
+}
+
+/** Date + time pair with quick presets — replaces hand-typed ISO strings. */
+function WindowField({ label, hint, date, time, onDate, onTime, presets }: {
+  label: string;
+  hint: string;
+  date: string;
+  time: string;
+  onDate: (v: string) => void;
+  onTime: (v: string) => void;
+  presets: { label: string; run: () => void }[];
+}) {
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.dtRow}>
+        <TextInput
+          style={[styles.input, styles.dtDate]}
+          value={date}
+          onChangeText={onDate}
+          placeholder="YYYY-MM-DD"
+          placeholderTextColor={theme.colors.textSecondary}
+        />
+        <TextInput
+          style={[styles.input, styles.dtTime]}
+          value={time}
+          onChangeText={onTime}
+          placeholder="HH:MM"
+          placeholderTextColor={theme.colors.textSecondary}
+        />
+      </View>
+      <View style={styles.presetRow}>
+        {presets.map(p => (
+          <Pressable key={p.label} style={styles.presetChip} onPress={p.run}>
+            <Text style={styles.presetText}>{p.label}</Text>
+          </Pressable>
+        ))}
+        <Pressable style={[styles.presetChip, styles.presetClear]} onPress={() => { onDate(''); onTime(''); }}>
+          <Text style={[styles.presetText, { color: '#DC2626' }]}>Clear</Text>
+        </Pressable>
+      </View>
+      <Text style={styles.hint}>{hint}</Text>
+    </View>
   );
 }
 
@@ -68,12 +145,41 @@ export default function ExamPrepQuizBuilderScreen() {
   const [shuffleQ, setShuffleQ] = useState(true);
   const [shuffleOpts, setShuffleOpts] = useState(true);
 
-  // Schedule
-  const [windowStart, setWindowStart] = useState('');
-  const [windowEnd, setWindowEnd] = useState('');
-  const [status, setStatus] = useState<'draft' | 'published'>('draft');
+  // Schedule — split into date and time so the field is editable without
+  // hand-typing an ISO string.
+  const [startDate, setStartDate] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [status, setStatus] = useState<QuizStatus>('draft');
 
   const [saving, setSaving] = useState(false);
+
+  // Editing a quiz must start from its stored values — previously this screen
+  // fetched existingQuiz and then never read it, so saving an edit wiped the
+  // title, settings and question selection.
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    if (!existingQuiz || prefilledRef.current) return;
+    prefilledRef.current = true;
+
+    setTitle(existingQuiz.title ?? '');
+    setDescription(existingQuiz.description ?? '');
+    setSubject(existingQuiz.subject ?? '');
+    setDuration(String(existingQuiz.duration_minutes ?? 30));
+    setPassScore(String(existingQuiz.pass_score ?? 60));
+    setMaxAttempts(existingQuiz.max_attempts != null ? String(existingQuiz.max_attempts) : '');
+    setIsPractice(Boolean(existingQuiz.is_practice));
+    setShuffleQ(existingQuiz.shuffle_questions !== false);
+    setShuffleOpts(existingQuiz.shuffle_options !== false);
+    setStatus(existingQuiz.status ?? 'draft');
+    setSelectedIds(new Set(existingQuiz.question_ids || []));
+
+    const s = splitLocal(existingQuiz.window_start);
+    const e = splitLocal(existingQuiz.window_end);
+    setStartDate(s.date); setStartTime(s.time);
+    setEndDate(e.date); setEndTime(e.time);
+  }, [existingQuiz]);
 
   const filteredQuestions = useMemo(() => {
     return (questions || []).filter(q => {
@@ -101,6 +207,17 @@ export default function ExamPrepQuizBuilderScreen() {
     if (!title.trim()) return Alert.alert('Error', 'Quiz title is required.');
     if (selectedIds.size === 0) return Alert.alert('Error', 'Select at least one question.');
 
+    const window_start = joinLocal(startDate, startTime);
+    const window_end = joinLocal(endDate, endTime);
+
+    // A half-filled window is never enforced server-side — make it explicit.
+    if ((startDate || startTime) && (endDate || endTime) && (!window_start || !window_end)) {
+      return Alert.alert('Incomplete window', 'Enter both a date and a time for the start and the end.');
+    }
+    if (window_start && window_end && new Date(window_end) <= new Date(window_start)) {
+      return Alert.alert('Invalid window', 'The window must end after it starts.');
+    }
+
     setSaving(true);
     try {
       const body: any = {
@@ -115,8 +232,8 @@ export default function ExamPrepQuizBuilderScreen() {
         shuffle_questions: shuffleQ,
         shuffle_options: shuffleOpts,
         status: publishNow ? 'published' : status,
-        window_start: windowStart || null,
-        window_end: windowEnd || null,
+        window_start,
+        window_end,
       };
 
       let result: ExamPrepQuiz;
@@ -283,31 +400,55 @@ export default function ExamPrepQuizBuilderScreen() {
         <ScrollView contentContainerStyle={styles.configContent}>
           <View style={styles.infoBox}>
             <Calendar size={14} color="#7C3AED" />
-            <Text style={styles.infoText}>Set a window during which students can access this quiz. Leave blank for always-available.</Text>
+            <Text style={styles.infoText}>Set a window during which students can access this quiz. Leave both blank for always-available.</Text>
           </View>
 
-          <Text style={styles.fieldLabel}>Window Start (ISO date-time, e.g. 2026-11-01T09:00:00)</Text>
-          <TextInput
-            style={styles.input}
-            value={windowStart}
-            onChangeText={setWindowStart}
-            placeholder="2026-11-01T09:00:00"
-            placeholderTextColor={theme.colors.textSecondary}
+          <WindowField
+            label="Opens"
+            hint="Students cannot start the quiz before this time."
+            date={startDate} time={startTime}
+            onDate={setStartDate} onTime={setStartTime}
+            presets={[
+              { label: 'Now', run: () => { const p = localParts(0); setStartDate(p.date); setStartTime(p.time); } },
+              { label: 'In 1 hour', run: () => { const p = localParts(60 * 60 * 1000); setStartDate(p.date); setStartTime(p.time); } },
+              { label: 'Tomorrow 9:00', run: () => { const p = localParts(24 * 60 * 60 * 1000); setStartDate(p.date); setStartTime('09:00'); } },
+            ]}
           />
 
-          <Text style={styles.fieldLabel}>Window End</Text>
-          <TextInput
-            style={styles.input}
-            value={windowEnd}
-            onChangeText={setWindowEnd}
-            placeholder="2026-11-01T11:00:00"
-            placeholderTextColor={theme.colors.textSecondary}
+          <WindowField
+            label="Closes"
+            hint="After this time the quiz is no longer available."
+            date={endDate} time={endTime}
+            onDate={setEndDate} onTime={setEndTime}
+            presets={[
+              {
+                label: 'Start + duration',
+                run: () => {
+                  if (!startDate || !startTime) return Alert.alert('Set the start first', 'Enter when the quiz opens before adding the duration.');
+                  const end = new Date(new Date(`${startDate}T${startTime}`).getTime() + (parseInt(duration, 10) || 30) * 60000);
+                  setEndDate(`${end.getFullYear()}-${pad2(end.getMonth() + 1)}-${pad2(end.getDate())}`);
+                  setEndTime(`${pad2(end.getHours())}:${pad2(end.getMinutes())}`);
+                },
+              },
+              { label: 'End of tomorrow', run: () => { const p = localParts(48 * 60 * 60 * 1000); setEndDate(p.date); setEndTime('23:59'); } },
+            ]}
           />
+
+          {(startDate || endDate) && (
+            <View style={styles.windowSummary}>
+              <Clock size={13} color={theme.colors.textSecondary} />
+              <Text style={styles.windowSummaryText}>
+                {startDate && startTime ? `Opens ${startDate} ${startTime}` : 'Opens immediately'}
+                {'  →  '}
+                {endDate && endTime ? `closes ${endDate} ${endTime}` : 'never closes'}
+              </Text>
+            </View>
+          )}
 
           <Text style={styles.fieldLabel}>Status</Text>
           <View style={styles.chipRow}>
-            {(['draft', 'published', 'archived'] as const).map(s => (
-              <Pressable key={s} style={[styles.chip, status === s && styles.chipActive]} onPress={() => setStatus(s as any)}>
+            {(['draft', 'published', 'closed'] as const).map(s => (
+              <Pressable key={s} style={[styles.chip, status === s && styles.chipActive]} onPress={() => setStatus(s)}>
                 <Text style={[styles.chipText, status === s && styles.chipTextActive]}>{s}</Text>
               </Pressable>
             ))}
@@ -417,6 +558,19 @@ const styles = StyleSheet.create({
   configRow: { flexDirection: 'row', gap: 12 },
   configField: { flex: 1, gap: 6 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: theme.colors.textSecondary },
+
+  // Schedule window inputs
+  fieldGroup: { gap: 8 },
+  dtRow: { flexDirection: 'row', gap: 8 },
+  dtDate: { flex: 2 },
+  dtTime: { flex: 1, textAlign: 'center' },
+  presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  presetChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.brand, backgroundColor: '#EFF6FF' },
+  presetClear: { borderColor: '#FECACA', backgroundColor: '#FEF2F2' },
+  presetText: { fontSize: 11, fontWeight: '600', color: theme.colors.brand },
+  hint: { fontSize: 11, color: theme.colors.textSecondary, lineHeight: 15 },
+  windowSummary: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.colors.surfaceSecondary, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
+  windowSummaryText: { flex: 1, fontSize: 11, color: theme.colors.textSecondary, fontWeight: '600' },
   numInput: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: theme.colors.text, backgroundColor: theme.colors.surface, textAlign: 'center', fontWeight: '700' },
   switchRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   switchLabel: { flex: 1, fontSize: 14, fontWeight: '600', color: theme.colors.text },

@@ -489,6 +489,39 @@ async function runExamPrepTests() {
     const studentUpload = await uploadFile('/api/exam-prep/questions/upload', studentToken, 'bank.csv', 'text/csv', Buffer.from(csvImport, 'utf8'));
     check('student cannot import a file (403)', studentUpload.status === 403, studentUpload);
 
+    // ════════════════════════════════════════════════════════════
+    // 13. Practice session resume (GET /practice/:sid)
+    // ════════════════════════════════════════════════════════════
+    console.log('\n--- 13. Practice Session Resume ---');
+    const resumeStart = await req('POST', '/api/exam-prep/practice/start', { subject: 'Data Structures', count: 3 }, studentToken);
+    check('Resume test session starts (201)', resumeStart.status === 201 && resumeStart.body.session_id, resumeStart.body);
+    const resumeId = resumeStart.body.session_id;
+    const resumeCount = resumeStart.body.total_questions;
+    await req('POST', `/api/exam-prep/practice/${resumeId}/answer`, { index: 0, optionIndex: 1 }, studentToken);
+
+    const inProgress = await req('GET', `/api/exam-prep/practice/${resumeId}`, null, studentToken);
+    check('In-progress session is readable (200)', inProgress.status === 200, inProgress.body);
+    check('In-progress payload returns all questions', inProgress.body.questions?.length === resumeCount && resumeCount > 0, { got: inProgress.body.questions?.length, want: resumeCount });
+    check('In-progress payload restores saved answers', inProgress.body.answers?.[0] === 1, inProgress.body.answers);
+    check('In-progress payload hides correct_index', Array.isArray(inProgress.body.questions) && inProgress.body.questions.every(q => q.correct_index === undefined), inProgress.body.questions?.[0]);
+    check('In-progress payload hides explanations', Array.isArray(inProgress.body.questions) && inProgress.body.questions.every(q => q.explanation === undefined), inProgress.body.questions?.[0]);
+
+    const resumeFaculty = await req('GET', `/api/exam-prep/practice/${resumeId}`, null, facultyToken);
+    check('Faculty cannot read a student session (403)', resumeFaculty.status === 403, resumeFaculty);
+
+    const resumeOther = await req('POST', '/api/auth/register', { name: 'Other', email: `other_${ts}@campus.edu`, password: 'password123', role: 'student' });
+    const otherSession = await req('GET', `/api/exam-prep/practice/${resumeId}`, null, resumeOther.body.token);
+    check('Another student cannot read the session (404)', otherSession.status === 404, otherSession);
+
+    const resumeSubmit = await req('POST', `/api/exam-prep/practice/${resumeId}/submit`, {}, studentToken);
+    check('Session submits cleanly (200)', resumeSubmit.status === 200, resumeSubmit.body);
+
+    const completed = await req('GET', `/api/exam-prep/practice/${resumeId}`, null, studentToken);
+    check('Completed session is readable (200)', completed.status === 200, completed.body);
+    check('Completed session reports status', completed.body.status === 'completed', completed.body.status);
+    check('Completed session exposes the breakdown', Array.isArray(completed.body.breakdown) && completed.body.breakdown.every(b => b.correct_index !== undefined), completed.body.breakdown?.[0]);
+    check('Completed session keeps the score', typeof completed.body.score_percent === 'number', completed.body);
+
   } catch (err) {
     console.error('Test execution error:', err);
     failed++;

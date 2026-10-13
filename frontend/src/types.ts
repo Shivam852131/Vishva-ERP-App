@@ -698,7 +698,9 @@ export interface LocalShareRTCPeer {
 export type EducationLevel = 'school' | 'college' | 'competitive';
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 export type QuestionSource = 'manual' | 'ai' | 'import';
-export type QuizStatus = 'draft' | 'published' | 'archived';
+// Matches the backend's QUIZ_STATUSES in routes/exam-prep.js. 'archived'
+// was never a valid status — selecting it failed validation on save.
+export type QuizStatus = 'draft' | 'published' | 'closed';
 
 export interface QuestionBankItem {
   id: string;
@@ -747,6 +749,8 @@ export interface ExamPrepQuiz {
   created_by_name: string;
   created_at: string;
   attempt_count: number;
+  /** Present on every quiz payload — needed to prefill the edit form. */
+  question_ids: string[];
 }
 
 export interface ExamPrepAttemptQuestion {

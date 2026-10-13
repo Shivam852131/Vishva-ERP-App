@@ -3,7 +3,7 @@
  * Student — Untimed Practice Session
  * One question at a time, immediate answer + explanation shown after selection.
  */
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Alert,
   ActivityIndicator, TextInput, Modal,
@@ -17,7 +17,7 @@ import {
   Filter, Brain,
 } from 'lucide-react-native';
 import { api } from '@/src/api';
-import type { PracticeSession, PracticeAnswerResult, QuestionDifficulty } from '@/src/types';
+import type { PracticeSession, PracticeAnswerResult, QuestionDifficulty, EducationLevel } from '@/src/types';
 import { theme } from '@/src/theme';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 
@@ -33,8 +33,17 @@ const DIFFICULTIES: { key: QuestionDifficulty | 'mixed'; label: string }[] = [
 
 const COUNTS = [5, 10, 15, 20, 25];
 
+// Matches the backend's EDUCATION_LEVELS. Practice previously hard-coded
+// 'college', so school and competitive students could only ever be served
+// college-level questions.
+const LEVELS: { key: EducationLevel; label: string }[] = [
+  { key: 'school', label: 'School' },
+  { key: 'college', label: 'College' },
+  { key: 'competitive', label: 'Competitive' },
+];
+
 export default function ExamPrepPracticeScreen() {
-  const params = useLocalSearchParams<{ subject?: string; topic?: string }>();
+  const params = useLocalSearchParams<{ subject?: string; topic?: string; sessionId?: string }>();
   const [sessionState, setSessionState] = useState<SessionState>('config');
   const [session, setSession] = useState<PracticeSession | null>(null);
   const [sessionId, setSessionId] = useState('');
@@ -48,12 +57,70 @@ export default function ExamPrepPracticeScreen() {
   const [topic, setTopic] = useState(params.topic || '');
   const [difficulty, setDifficulty] = useState<'mixed' | QuestionDifficulty>('mixed');
   const [count, setCount] = useState(10);
+  const [level, setLevel] = useState<EducationLevel>('college');
   const [starting, setStarting] = useState(false);
+
+  // Resume an existing session when the caller passes ?sessionId=…
+  const [resuming, setResuming] = useState(Boolean(params.sessionId));
+  const resumedRef = useRef(false);
+
+  useEffect(() => {
+    const sid = params.sessionId;
+    if (!sid || resumedRef.current) return;
+    resumedRef.current = true;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const data = await api<any>(`/exam-prep/practice/${sid}`);
+        if (cancelled) return;
+
+        if (data.status === 'completed') {
+          setFinalResult(data);
+          setSessionState('complete');
+          return;
+        }
+
+        // Rebuild local state from the server's stored ordering. Saved
+        // selections are restored WITHOUT feedback: practice reveals the
+        // answer at the moment it is chosen, so re-revealing here would both
+        // spoil the question and, worse, mark an unreviewed pick as wrong.
+        const restored: AnswerState[] = (data.questions || []).map((_: any, i: number) => ({
+          selected: data.answers?.[i] ?? data.answers?.[String(i)] ?? null,
+          result: null,
+        }));
+        setSession({
+          session_id: data.session_id,
+          total_questions: data.total_questions,
+          questions: data.questions,
+        } as PracticeSession);
+        setSessionId(data.session_id);
+        setAnswers(restored);
+        if (data.subject) setSubject(data.subject);
+        if (data.topic) setTopic(data.topic);
+
+        // Jump to the first question that has no saved selection.
+        const firstUnanswered = restored.findIndex(a => a.selected === null);
+        setCurrentIndex(firstUnanswered === -1 ? 0 : firstUnanswered);
+        setSessionState('active');
+      } catch (e: any) {
+        if (!cancelled) {
+          Alert.alert('Could not resume', e.message || 'That practice session is no longer available.');
+        }
+      } finally {
+        if (!cancelled) setResuming(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [params.sessionId]);
 
   const startSession = async () => {
     setStarting(true);
     try {
-      const body: any = { count, education_level: 'college' };
+      // Omitting education_level lets the server fall back to the student's
+      // own level rather than forcing 'college' on everyone.
+      const body: any = { count, education_level: level };
       if (subject.trim()) body.subject = subject.trim();
       if (topic.trim()) body.topic = topic.trim();
       if (difficulty !== 'mixed') body.difficulty = difficulty;
@@ -91,6 +158,38 @@ export default function ExamPrepPracticeScreen() {
     }
   };
 
+  // A selection restored from the server carries no feedback — the session
+  // document stores only the chosen option. Re-post that same option to get
+  // the explanation; the endpoint is idempotent for an unchanged answer, so
+  // this cannot alter the score.
+  useEffect(() => {
+    if (sessionState !== 'active' || !sessionId) return;
+    const a = answers[currentIndex];
+    if (!a || a.selected === null || a.result) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await api<PracticeAnswerResult>(`/exam-prep/practice/${sessionId}/answer`, {
+          method: 'POST',
+          body: JSON.stringify({ index: currentIndex, optionIndex: a.selected }),
+        });
+        if (cancelled) return;
+        setAnswers(prev => {
+          const next = [...prev];
+          if (next[currentIndex] && !next[currentIndex].result) {
+            next[currentIndex] = { selected: next[currentIndex].selected, result };
+          }
+          return next;
+        });
+      } catch {
+        // Feedback is optional — the pick itself is already stored server-side.
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [sessionState, sessionId, currentIndex, answers]);
+
   const handleSubmit = async () => {
     if (!sessionId) return;
     setSubmitting(true);
@@ -116,9 +215,34 @@ export default function ExamPrepPracticeScreen() {
 
   const q = session?.questions[currentIndex];
   const currentAnswer = answers[currentIndex];
+  // `answered` = a selection exists (possibly restored from the server without
+  // feedback). `revealed` = the server has told us whether it was right.
+  // Collapsing the two would paint a restored-but-unreviewed pick as wrong.
   const answered = currentAnswer?.selected !== null;
   const result = currentAnswer?.result;
+  const revealed = Boolean(result);
   const allAnswered = answers.every(a => a.selected !== null);
+
+  // ── Resuming an existing session ──────────────────────────────
+  if (resuming) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <LinearGradient colors={['#059669', '#065F46']} style={styles.header}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <ArrowLeft size={20} color="#fff" />
+          </Pressable>
+          <View style={{ flex: 1, marginHorizontal: 12 }}>
+            <Text style={styles.headerTitle}>Practice Session</Text>
+            <Text style={styles.headerSub}>Restoring your progress…</Text>
+          </View>
+        </LinearGradient>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={theme.colors.brand} />
+          <Text style={styles.loadingText}>Loading your saved answers…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // ── Config screen ──────────────────────────────────────────────
   if (sessionState === 'config') {
@@ -174,6 +298,21 @@ export default function ExamPrepPracticeScreen() {
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(250)} style={styles.configCard}>
+            <Text style={styles.configLabel}>Education Level</Text>
+            <View style={styles.chipRow}>
+              {LEVELS.map(l => (
+                <Pressable
+                  key={l.key}
+                  style={[styles.chip, level === l.key && styles.chipActive]}
+                  onPress={() => setLevel(l.key)}
+                >
+                  <Text style={[styles.chipText, level === l.key && styles.chipTextActive]}>{l.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(300)} style={styles.configCard}>
             <Text style={styles.configLabel}>Number of Questions</Text>
             <View style={styles.chipRow}>
               {COUNTS.map(c => (
@@ -188,7 +327,7 @@ export default function ExamPrepPracticeScreen() {
             </View>
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.delay(300)}>
+          <Animated.View entering={FadeInDown.delay(350)}>
             <Pressable
               style={[styles.startBtn, starting && { opacity: 0.6 }]}
               onPress={startSession}
@@ -280,7 +419,7 @@ export default function ExamPrepPracticeScreen() {
       {/* Header */}
       <View style={styles.activeHeader}>
         <Pressable style={styles.backBtn2} onPress={() => {
-          Alert.alert('Quit Practice?', 'Your progress will be lost.', [
+          Alert.alert('Quit Practice?', 'Your answers are saved — you can resume this session later from Practice → Resume.', [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Quit', style: 'destructive', onPress: resetAll },
           ]);
@@ -335,7 +474,7 @@ export default function ExamPrepPracticeScreen() {
           let textStyle = styles.optionText;
           let icon = null;
 
-          if (answered) {
+          if (revealed) {
             if (i === result?.correct_index) {
               optStyle = { ...styles.option, ...styles.optionCorrect };
               textStyle = { ...styles.optionText, color: '#065F46' };
@@ -350,7 +489,7 @@ export default function ExamPrepPracticeScreen() {
           return (
             <Pressable
               key={i}
-              style={[optStyle, currentAnswer?.selected === i && !answered && styles.optionSelected]}
+              style={[optStyle, currentAnswer?.selected === i && !revealed && styles.optionSelected]}
               onPress={() => handleSelectAnswer(i)}
               disabled={answered}
             >
@@ -465,6 +604,10 @@ const styles = StyleSheet.create({
 
   option: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.surface, borderRadius: 10, padding: 14, borderWidth: 1.5, borderColor: theme.colors.border, gap: 10 },
   optionSelected: { borderColor: theme.colors.brand, backgroundColor: '#EFF6FF' },
+
+  // Resume loading
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32 },
+  loadingText: { fontSize: 14, color: theme.colors.textSecondary, textAlign: 'center' },
   optionCorrect: { borderColor: '#10B981', backgroundColor: '#F0FDF4' },
   optionWrong: { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
   optionLetter: { width: 26, height: 26, borderRadius: 13, backgroundColor: theme.colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center' },

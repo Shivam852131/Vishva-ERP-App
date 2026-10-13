@@ -1514,6 +1514,71 @@ ${ocr_text}`;
     });
   });
 
+  // GET /exam-prep/practice/:sid — resume a session (or replay a finished one)
+  //
+  // Practice sessions previously had no read endpoint, so a student who left
+  // the screen mid-session could never get their answers back. An in-progress
+  // payload deliberately omits correct_index/explanation — only the completed
+  // payload (which the student has already earned by finishing) reveals them.
+  router.get('/practice/:sid', async (req, res) => {
+    if (!requireStudent(req, res)) return;
+    const db = getDB();
+    const session = await db.collection('exam_prep_practice_sessions').findOne({
+      _id: oid(req.params.sid),
+      studentId: oid(req.user._id),
+    });
+    if (!session) return sendError(res, 'Session not found.', 404);
+
+    // Re-align to the session's own ordering — a $in fetch is unordered.
+    const fetched = await db.collection('exam_prep_questions')
+      .find({ _id: { $in: session.questionIds } }).toArray();
+    const byId = new Map(fetched.map(q => [String(q._id), q]));
+    const questions = session.questionIds.map(id => byId.get(String(id))).filter(Boolean);
+    const answers = session.answers || {};
+
+    if (session.status === 'completed') {
+      return res.json({
+        session_id: String(session._id),
+        status: 'completed',
+        score_percent: session.scorePercent ?? 0,
+        correct: session.correctCount ?? 0,
+        total: questions.length,
+        answers,
+        completed_at: session.completedAt,
+        breakdown: questions.map((q, i) => {
+          const selected = answers[i] ?? answers[String(i)] ?? null;
+          return {
+            index: i,
+            question: q.question,
+            options: q.options,
+            correct_index: q.answer,
+            selected_index: selected,
+            correct: selected === q.answer,
+            explanation: q.explanation || '',
+          };
+        }),
+      });
+    }
+
+    res.json({
+      session_id: String(session._id),
+      status: session.status,
+      subject: session.subject || null,
+      topic: session.topic || null,
+      started_at: session.startedAt,
+      answers,
+      total_questions: questions.length,
+      questions: questions.map((q, i) => ({
+        index: i,
+        question_id: String(q._id),
+        question: q.question,
+        options: q.options,
+        difficulty: q.difficulty,
+        image_url: q.imageUrl || null,
+      })),
+    });
+  });
+
   // POST /exam-prep/practice/:sid/answer — returns explanation immediately
   router.post('/practice/:sid/answer', async (req, res) => {
     if (!requireStudent(req, res)) return;
