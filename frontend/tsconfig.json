@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "strict": true,
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    "index.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "android",
+    "ios"
+  ]
+}

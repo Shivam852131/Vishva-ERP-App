@@ -1,0 +1,41 @@
+{
+  "name": "VishvaERP",
+  "displayName": "Vishva ERP",
+  "expo": {
+    "name": "Vishva ERP",
+    "slug": "vishva-erp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#020617"
+    },
+    "ios": {
+      "bundleIdentifier": "com.vishvaerp.app",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Vishva ERP needs camera access for Face ID attendance and scanning QR codes.",
+        "NSPhotoLibraryUsageDescription": "Vishva ERP needs photo access to update your profile picture.",
+        "NSLocationWhenInUseUsageDescription": "Vishva ERP needs location for geofenced attendance check-in."
+      }
+    },
+    "android": {
+      "package": "com.vishvaerp"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Vishva ERP needs camera access for Face ID attendance and scanning QR codes."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Vishva ERP needs photo access to update your profile picture."
+        }
+      ]
+    ]
+  }
+}

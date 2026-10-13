@@ -1,0 +1,257 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Animated, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from '@/src/components/LinearGradient';
+import { theme } from '@/src/theme';
+import { Card, SectionTitle, GradientButton } from '@/src/ui';
+import { router } from '@/src/navigation/router';
+import { ErrorBoundary } from '@/src/ErrorBoundary';
+import {
+  Package, Search, Wrench, CheckCircle, AlertTriangle, Clock,
+  Monitor, Projector, Printer, Server, Cpu, Wifi, ChevronRight, ArrowLeft,
+} from 'lucide-react-native';
+import { useFetch } from '@/src/hooks/useFetch';
+
+const CATEGORIES = ['All', 'Electronics', 'Computers', 'Servers', 'Networking', 'AV Equipment', 'Printers'];
+const STATUS_COLORS: Record<string, string> = { active: '#10B981', maintenance: '#F59E0B', retired: '#64748B' };
+
+export default function AssetManagement() {
+  const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [activeTab, setActiveTab] = useState<'assets' | 'maintenance' | 'report'>('assets');
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const { data: assets, loading } = useFetch<any[]>('/assets');
+  const { data: maintenanceLog } = useFetch<any[]>('/maintenance');
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+  }, []);
+
+  const filteredAssets = (assets || []).filter((a: any) => {
+    if (selectedCategory !== 'All' && a.category !== selectedCategory) return false;
+    if (search && !a.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const stats = {
+    total: (assets || []).length,
+    active: (assets || []).filter((a: any) => a.status === 'active').length,
+    maintenance: (assets || []).filter((a: any) => a.status === 'maintenance').length,
+    retired: (assets || []).filter((a: any) => a.status === 'retired').length,
+  };
+
+  const assetDetail = (assets || []).find((a: any) => a.id === selectedAsset);
+
+  return (
+    <ErrorBoundary>
+      <Animated.View style={{ flex: 1, backgroundColor: theme.colors.surface, opacity: fadeAnim }}>
+        <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+          <View style={styles.hero}>
+            <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.heroGrad}>
+              <View style={styles.heroHeaderRow}>
+                <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+                  <ArrowLeft size={20} color="#fff" />
+                </Pressable>
+                <View style={styles.heroIcon}><Package size={22} color="#fff" /></View>
+                <View style={styles.heroTitles}>
+                  <Text style={styles.heroTitle} numberOfLines={1}>Asset Management</Text>
+                  <Text style={styles.heroSub} numberOfLines={1}>Track campus equipment & inventory</Text>
+                </View>
+              </View>
+              <View style={styles.heroStats}>
+                <View style={styles.heroStat}><Text style={styles.heroStatVal}>{stats.total}</Text><Text style={styles.heroStatLabel}>Total</Text></View>
+                <View style={styles.heroStatDivider} />
+                <View style={styles.heroStat}><Text style={[styles.heroStatVal, { color: '#10B981' }]}>{stats.active}</Text><Text style={styles.heroStatLabel}>Active</Text></View>
+                <View style={styles.heroStatDivider} />
+                <View style={styles.heroStat}><Text style={[styles.heroStatVal, { color: '#F59E0B' }]}>{stats.maintenance}</Text><Text style={styles.heroStatLabel}>Maint.</Text></View>
+                <View style={styles.heroStatDivider} />
+                <View style={styles.heroStat}><Text style={[styles.heroStatVal, { color: '#64748B' }]}>{stats.retired}</Text><Text style={styles.heroStatLabel}>Retired</Text></View>
+              </View>
+            </LinearGradient>
+          </View>
+
+          <View style={styles.tabs}>
+            {(['assets', 'maintenance', 'report'] as const).map(t => (
+              <Pressable key={t} onPress={() => setActiveTab(t)} style={[styles.tabBtn, activeTab === t && styles.tabActive]}>
+                <Text style={[styles.tabTxt, activeTab === t && { color: '#fff' }]} numberOfLines={1}>
+                  {t === 'assets' ? 'Assets' : t === 'maintenance' ? 'Maintenance' : 'Report'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+            {activeTab === 'assets' && (
+              <>
+                <View style={styles.searchBox}>
+                  <Search size={16} color={theme.colors.muted} />
+                  <TextInput style={styles.searchInput} value={search} onChangeText={setSearch}
+                    placeholder="Search assets..." placeholderTextColor={theme.colors.muted} />
+                </View>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryScrollContent}
+                  style={styles.categoryScrollView}
+                >
+                  {CATEGORIES.map(c => (
+                    <Pressable key={c} onPress={() => setSelectedCategory(c)}
+                      style={[styles.filterChip, selectedCategory === c && styles.filterActive]}>
+                      <Text style={[styles.filterText, selectedCategory === c && { color: '#fff' }]}>{c}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                {filteredAssets.length === 0 ? (
+                  <Card style={{ padding: 40, alignItems: 'center' }}>
+                    <Package size={32} color={theme.colors.muted} />
+                    <Text style={{ fontSize: 14, color: theme.colors.muted, marginTop: 12 }}>No assets registered yet</Text>
+                  </Card>
+                ) : (
+                  filteredAssets.map((asset: any) => (
+                    <Pressable key={asset.id} onPress={() => setSelectedAsset(selectedAsset === asset.id ? null : asset.id)}>
+                      <Card style={{ padding: 14, gap: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={styles.assetIcon}><Monitor size={20} color={theme.colors.brand} /></View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontWeight: '700', color: theme.colors.text }}>{asset.name}</Text>
+                            <Text style={{ fontSize: 11, color: theme.colors.muted }}>{asset.category} · {asset.location}</Text>
+                          </View>
+                          <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[asset.status] || '#64748B') + '20' }]}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: STATUS_COLORS[asset.status] || '#64748B' }}>{asset.status}</Text>
+                          </View>
+                        </View>
+
+                        {selectedAsset === asset.id && (
+                          <View style={{ gap: 8, marginTop: 4 }}>
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailLabel}>Assigned To</Text>
+                              <Text style={styles.detailValue}>{asset.assignee}</Text>
+                            </View>
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailLabel}>Condition</Text>
+                              <Text style={styles.detailValue}>{asset.condition}</Text>
+                            </View>
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailLabel}>Last Maintenance</Text>
+                              <Text style={styles.detailValue}>{asset.lastMaint}</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                              <Pressable style={styles.actionBtn}><Wrench size={14} color={theme.colors.brand} /><Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.brand }}>Report Issue</Text></Pressable>
+                              <Pressable style={styles.actionBtn}><CheckCircle size={14} color="#10B981" /><Text style={{ fontSize: 12, fontWeight: '600', color: '#10B981' }}>Transfer</Text></Pressable>
+                            </View>
+                          </View>
+                        )}
+                      </Card>
+                    </Pressable>
+                  ))
+                )}
+              </>
+            )}
+
+            {activeTab === 'maintenance' && (
+              <>
+                <SectionTitle>Maintenance Requests</SectionTitle>
+                {(maintenanceLog || []).length === 0 ? (
+                  <Card style={{ padding: 40, alignItems: 'center' }}>
+                    <Wrench size={32} color={theme.colors.muted} />
+                    <Text style={{ fontSize: 14, color: theme.colors.muted, marginTop: 12 }}>No maintenance records</Text>
+                  </Card>
+                ) : (
+                  (maintenanceLog || []).map((m: any) => (
+                    <Card key={m.id} style={{ padding: 14, gap: 8 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontWeight: '700', color: theme.colors.text }}>{m.asset}</Text>
+                        <View style={[styles.statusBadge, m.status === 'completed' ? styles.statusResolved : m.status === 'in_progress' ? styles.statusProgress : styles.statusPending]}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: m.status === 'completed' ? '#10B981' : m.status === 'in_progress' ? '#3B82F6' : '#F59E0B' }}>{m.status.replace('_', ' ')}</Text>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 12, color: theme.colors.muted }}>Issue: {m.issue}</Text>
+                      <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <Text style={{ fontSize: 11, color: theme.colors.muted }}>📅 {m.date}</Text>
+                        <Text style={{ fontSize: 11, color: theme.colors.muted }}>👤 {m.technician}</Text>
+                      </View>
+                    </Card>
+                  ))
+                )}
+              </>
+            )}
+
+            {activeTab === 'report' && (
+              <>
+                <Card style={{ padding: 16, gap: 12 }}>
+                  <Text style={{ fontWeight: '800', fontSize: 16, color: theme.colors.text }}>Asset Summary</Text>
+                  <View style={{ gap: 8 }}>
+                    {Object.entries(stats).map(([key, val]) => (
+                      <View key={key} style={styles.summaryRow}>
+                        <Text style={{ fontSize: 13, color: theme.colors.muted, textTransform: 'capitalize' }}>{key}</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: theme.colors.text }}>{val}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </Card>
+
+                <Card style={{ padding: 16, gap: 12 }}>
+                  <Text style={{ fontWeight: '700', color: theme.colors.text }}>By Category</Text>
+                  {CATEGORIES.filter(c => c !== 'All').map(c => {
+                    const count = (assets || []).filter((a: any) => a.category === c).length;
+                    return (
+                      <View key={c} style={styles.summaryRow}>
+                        <Text style={{ fontSize: 13, color: theme.colors.muted, flexShrink: 1 }} numberOfLines={1}>{c}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <View style={[styles.miniBar, { width: Math.min(count * 30, 120) }]} />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.text }}>{count}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </Card>
+              </>
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Animated.View>
+    </ErrorBoundary>
+  );
+}
+
+const styles = StyleSheet.create({
+  hero: { marginBottom: 0 },
+  heroGrad: { paddingHorizontal: 16, paddingVertical: 18, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden', gap: 14 },
+  heroHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  heroTitles: { flex: 1, minWidth: 0 },
+  heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
+  heroStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 },
+  heroStat: { alignItems: 'center' },
+  heroStatVal: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  heroStatLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, marginTop: 2 },
+  heroStatDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.2)' },
+  tabs: { flexDirection: 'row', backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill, padding: 3, marginHorizontal: 16, marginVertical: 12 },
+  tabBtn: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
+  tabActive: { backgroundColor: theme.colors.brand },
+  tabTxt: { color: theme.colors.muted, fontWeight: '700', fontSize: 11, textAlign: 'center' },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: theme.colors.border },
+  searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
+  categoryScrollView: { marginHorizontal: -16 },
+  categoryScrollContent: { paddingHorizontal: 16, gap: 8, paddingVertical: 4 },
+  filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  filterActive: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },
+  filterText: { fontSize: 12, fontWeight: '600', color: theme.colors.muted },
+  assetIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: theme.colors.brandTertiary, alignItems: 'center', justifyContent: 'center' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  detailLabel: { fontSize: 12, color: theme.colors.muted },
+  detailValue: { fontSize: 12, fontWeight: '700', color: theme.colors.text },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.colors.surfaceTertiary, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  statusResolved: { backgroundColor: '#10B98115' },
+  statusProgress: { backgroundColor: '#3B82F615' },
+  statusPending: { backgroundColor: '#F59E0B15' },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: theme.colors.divider },
+  miniBar: { height: 8, borderRadius: 4, backgroundColor: theme.colors.brand + '30' },
+});

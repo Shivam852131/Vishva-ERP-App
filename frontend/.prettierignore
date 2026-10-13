@@ -1,0 +1,6 @@
+node_modules
+android
+ios
+dist
+build.log
+package-lock.json
