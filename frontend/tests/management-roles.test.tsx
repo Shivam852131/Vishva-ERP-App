@@ -482,12 +482,15 @@ describe('Enterprise Management Roles Verification Suite', () => {
       });
 
       it('displays overdue watchlist with borrower contact and reminder dispatch', () => {
-        const { getByText, getByTestId } = render(<LibraryScreen />);
+        const { getByText, getAllByText, getByTestId } = render(<LibraryScreen />);
         const overdueTab = getByTestId('tab-overdue');
         fireEvent.press(overdueTab);
         expect(getByText(/Rohan Verma/)).toBeTruthy();
         expect(getByText('Clean Architecture')).toBeTruthy();
-        expect(getByText('Send Due Alert')).toBeTruthy();
+        // getAllByText, not getByText: the fixture's issues are overdue once
+        // their fixed due dates fall in the past, so the watchlist renders one
+        // button per defaulting borrower and the count grows over time.
+        expect(getAllByText('Send Due Alert')[0]).toBeTruthy();
       });
     });
 
