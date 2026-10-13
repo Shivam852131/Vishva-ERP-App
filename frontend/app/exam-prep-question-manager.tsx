@@ -19,6 +19,27 @@ import type { QuestionBankItem, QuestionDifficulty, EducationLevel, AIGeneratedQ
 import { theme } from '@/src/theme';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import * as ImagePicker from '@/src/native/image-picker';
+import * as DocumentPicker from 'react-native-document-picker';
+
+type ImportResult = {
+  inserted: number;
+  skipped?: number;
+  errors?: { row: number; reason: string; question?: string }[];
+  sheets?: string[];
+  unused_sheets?: string[];
+  truncated?: boolean;
+};
+
+/** Derive a multipart MIME type — the picker can return null for these. */
+function mimeFor(fileName: string): string {
+  const ext = fileName.toLowerCase().split('.').pop() || '';
+  if (ext === 'pdf') return 'application/pdf';
+  if (ext === 'csv') return 'text/csv';
+  if (ext === 'xlsx' || ext === 'xlsm') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (ext === 'xls') return 'application/vnd.ms-excel';
+  if (ext === 'txt') return 'text/plain';
+  return 'application/octet-stream';
+}
 
 const DIFFICULTIES: QuestionDifficulty[] = ['easy', 'medium', 'hard'];
 const EDUCATION_LEVELS: { key: EducationLevel; label: string }[] = [
@@ -362,6 +383,10 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
   const [parseError, setParseError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // File import state
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<ImportResult | null>(null);
+
   const TEMPLATE = `[
   {
     "question": "What is the capital of India?",
@@ -405,12 +430,92 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
     }
   };
 
+  const pickAndUpload = async () => {
+    try {
+      setUploading(true);
+      setResult(null);
+
+      const res = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.xlsx, DocumentPicker.types.csv, DocumentPicker.types.pdf, DocumentPicker.types.plainText],
+        copyTo: 'cachesDirectory',
+      });
+      if (!res) return;
+
+      // copyTo gives a real file:// path that fetch can stream; the raw
+      // content:// URI from Android's picker is not readable by fetch.
+      const uri = res.fileCopyUri || res.uri;
+      const name = res.name || 'questions.xlsx';
+
+      const form = new FormData();
+      form.append('file', { uri, name, type: mimeFor(name) } as any);
+      form.append('subject', subject);
+      form.append('education_level', level);
+
+      // PDF imports call the LLM synchronously — well past the default 30s.
+      const body = await api('/exam-prep/questions/upload', {
+        method: 'POST',
+        body: form,
+        timeoutMs: 180000,
+      });
+
+      setResult(body);
+      if (body.inserted > 0) onSaved();
+      Alert.alert(
+        'Imported',
+        `${body.inserted} question(s) added.` +
+          (body.errors?.length ? `\n${body.errors.length} row(s) rejected.` : '') +
+          (body.unused_sheets?.length ? `\nIgnored sheet(s): ${body.unused_sheets.join(', ')}` : ''),
+      );
+    } catch (e: any) {
+      // DocumentPicker throws a cancellation error — not a real failure.
+      if (DocumentPicker.isCancel?.(e)) return;
+      Alert.alert('Import failed', e.message || 'Could not read that file.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.tabContent}>
+      {/* ── File import ── */}
+      <View style={styles.formSection}>
+        <Text style={styles.sectionLabel}>Import from file</Text>
+        <View style={styles.infoBox}>
+          <FileText size={14} color='#2563EB' />
+          <Text style={styles.infoText}>
+            Upload an .xlsx, .csv or .pdf. Columns are matched by header — question, option_a…option_d, answer, subject, topic, difficulty, explanation.
+            The answer may be a 0-based index, a letter (A–D), or the option text itself.
+          </Text>
+        </View>
+        <Pressable style={[styles.saveBtn, uploading && { opacity: 0.6 }]} onPress={pickAndUpload} disabled={uploading}>
+          {uploading
+            ? <ActivityIndicator color="#fff" />
+            : <><Upload size={16} color="#fff" /><Text style={styles.saveBtnText}>Choose file to import</Text></>}
+        </Pressable>
+
+        {result && (
+          <View style={[styles.infoBox, result.errors?.length ? styles.warnBox : styles.okBox]}>
+            <Check size={14} color={result.errors?.length ? '#D97706' : '#059669'} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.infoText}>
+                {result.inserted} imported
+                {result.errors?.length ? `, ${result.errors.length} rejected` : ''}
+                {result.sheets && result.sheets.length > 1 ? `, ${result.sheets.length} sheets found` : ''}
+                {result.truncated ? ' — file was truncated at 500 rows' : ''}
+              </Text>
+              {result.errors?.slice(0, 5).map((err, i) => (
+                <Text key={i} style={styles.rowError}>Row {err.row}: {err.reason}</Text>
+              ))}
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* ── JSON paste ── */}
       <View style={styles.infoBox}>
         <AlertCircle size={14} color='#2563EB' />
         <Text style={styles.infoText}>
-          Paste a JSON array of questions below. Each question must have: question, options (array), answer (0-based index), difficulty.
+          Or paste a JSON array of questions below. Each question must have: question, options (array), answer (0-based index), difficulty.
         </Text>
       </View>
 
@@ -567,6 +672,9 @@ const styles = StyleSheet.create({
   // Import tab
   infoBox: { flexDirection: 'row', gap: 8, backgroundColor: '#EFF6FF', padding: 12, borderRadius: 10, alignItems: 'flex-start' },
   infoText: { flex: 1, fontSize: 12, color: '#1E40AF', lineHeight: 18 },
+  okBox: { backgroundColor: '#F0FDF4' },
+  warnBox: { backgroundColor: '#FFFBEB' },
+  rowError: { fontSize: 11, color: '#B45309', lineHeight: 16, marginTop: 3 },
   templateHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   templateLink: { fontSize: 12, color: theme.colors.brand, fontWeight: '600' },
   parseError: { fontSize: 12, color: '#DC2626', fontWeight: '500' },

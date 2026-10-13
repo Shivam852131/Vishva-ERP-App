@@ -272,7 +272,192 @@ async function generateWithOpenAI(type, message, conversationHistory = []) {
   return data.choices[0]?.message?.content || 'I could not generate a response.';
 }
 
-// ─── Provider 4: Mock fallback (always works) ──────────────────
+// ─── Vision: image → text ──────────────────────────────────────
+// Only providers with genuine multimodal support are attempted. The text
+// cascade above ends in a mock that would cheerfully invent questions for an
+// image it never saw, so this path deliberately has NO mock fallback — if no
+// vision provider is configured the caller is told to paste text instead.
+const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'llama3.2-vision';
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
+const GEMINI_VISION_MODEL = process.env.GEMINI_VISION_MODEL || GEMINI_MODEL;
+const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini';
+
+const IMAGE_MIME = /^data:(image\/(?:png|jpeg|webp|gif));base64,([\s\S]+)$/;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Normalise whatever the client sent into { mime, base64 }.
+ * Accepts a bare base64 string, a data URL, or an http(s) URL (which the
+ * multimodal APIs can fetch themselves).
+ * @returns {{ mime, base64 } | { url } | null}
+ */
+function normalizeImage(image) {
+  const raw = String(image || '').trim();
+  if (!raw) return null;
+
+  if (/^https?:\/\//i.test(raw)) return { url: raw };
+
+  const dataUrl = raw.match(IMAGE_MIME);
+  if (dataUrl) {
+    const b64 = dataUrl[2].replace(/\s+/g, '');
+    if (b64.length * 0.75 > MAX_IMAGE_BYTES) return null;
+    return { mime: dataUrl[1], base64: b64 };
+  }
+
+  // Bare base64 — assume PNG, the format camera capture produces.
+  const b64 = raw.replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/=]+$/.test(b64) || b64.length * 0.75 > MAX_IMAGE_BYTES) return null;
+  return { mime: 'image/png', base64: b64 };
+}
+
+function visionUrl(img) {
+  return img.url || `data:${img.mime};base64,${img.base64}`;
+}
+
+function visionAvailable() {
+  return Boolean(OLLAMA_BASE_URL || GROQ_API_KEY || GEMINI_API_KEY || OPENAI_API_KEY);
+}
+
+async function visionWithOllama(type, message, img) {
+  if (!OLLAMA_BASE_URL) throw new Error('OLLAMA_BASE_URL not configured');
+  if (img.url) throw new Error('Ollama requires raw image bytes, not a URL');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT);
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: OLLAMA_VISION_MODEL,
+        messages: [{ role: 'user', content: message, images: [img.base64] }],
+        stream: false,
+        options: { temperature: 0.4, num_predict: 2048 },
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Ollama vision error ${response.status}`);
+    const data = await response.json();
+    return data.message?.content || '';
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function visionWithOpenAICompatible(baseUrl, apiKey, model, type, message, img) {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: message },
+          { type: 'image_url', image_url: { url: visionUrl(img) } },
+        ],
+      }],
+      max_tokens: 2048,
+      temperature: 0.4,
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `${model} vision error ${response.status}`);
+  }
+  const data = await response.json();
+  return data.choices[0]?.message?.content || '';
+}
+
+async function visionWithGemini(type, message, img) {
+  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_VISION_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: message },
+            img.url
+              ? { fileData: { fileUri: img.url, mimeType: img.mime || 'image/png' } }
+              : { inlineData: { mimeType: img.mime, data: img.base64 } },
+          ],
+        }],
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.question_extractor }] },
+        generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+      }),
+    }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Gemini vision error ${response.status}`);
+  }
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+/**
+ * Multimodal generation. Same provider priority as generateAIResponse(), but
+ * only for providers that can actually see the image, and with no mock
+ * fallback: returning invented content for an image would be worse than an
+ * honest error telling the user to paste the text.
+ *
+ * @returns {Promise<{success:boolean, response?:string, source?:string, model?:string, error?:string}>}
+ */
+async function generateVisionResponse(type, message, image, userId) {
+  const img = normalizeImage(image);
+  if (!img) {
+    return { success: false, error: 'Image is missing, unreadable, or larger than 8 MB.' };
+  }
+  if (!checkRateLimit(userId)) {
+    return { success: false, error: 'Rate limit exceeded. Please wait a moment before trying again.', retryAfter: 60 };
+  }
+  if (!visionAvailable()) {
+    return {
+      success: false,
+      error: 'No vision-capable AI provider is configured. Set OLLAMA_BASE_URL, GROQ_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY — or paste the text from the image instead.',
+    };
+  }
+
+  const systemPrompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.question_extractor;
+  const prompt = `${systemPrompt}\n\n${message}`;
+
+  const attempts = [
+    ['ollama', () => visionWithOllama(type, prompt, img), OLLAMA_VISION_MODEL],
+    ['groq', () => visionWithOpenAICompatible(GROQ_BASE_URL, GROQ_API_KEY, GROQ_VISION_MODEL, type, prompt, img), GROQ_VISION_MODEL],
+    ['gemini', () => visionWithGemini(type, prompt, img), GEMINI_VISION_MODEL],
+    ['openai', () => visionWithOpenAICompatible(OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_VISION_MODEL, type, prompt, img), OPENAI_VISION_MODEL],
+  ];
+
+  for (const [name, run, model] of attempts) {
+    if (name === 'ollama' && !OLLAMA_BASE_URL) continue;
+    if (name === 'groq' && !GROQ_API_KEY) continue;
+    if (name === 'gemini' && !GEMINI_API_KEY) continue;
+    if (name === 'openai' && !OPENAI_API_KEY) continue;
+
+    try {
+      const response = await run();
+      if (response) {
+        console.log(`[LLMService] ${name} vision responded (${model})`);
+        return { success: true, response, source: 'ai', model: `${name}/${model}` };
+      }
+      console.warn(`[LLMService] ${name} vision returned an empty response`);
+    } catch (error) {
+      console.warn(`[LLMService] ${name} vision failed: ${error.message}`);
+    }
+  }
+
+  return {
+    success: false,
+    error: 'No vision-capable provider could read this image. Paste the text from the image instead.',
+  };
+}
+
+// ─── Provider 5: Mock fallback (always works) ──────────────────
 function generateMockResponse(type, message) {
   const topic = message.substring(0, 80).replace(/[?!.]+$/, '').trim();
   
@@ -561,6 +746,7 @@ async function checkProviderHealth() {
 
 module.exports = {
   generateAIResponse,
+  generateVisionResponse,
   generateStudyPlanWithAI,
   generateMockResponse,
   checkRateLimit,

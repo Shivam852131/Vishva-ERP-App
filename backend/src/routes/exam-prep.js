@@ -17,7 +17,11 @@
  *
  * AI Question Generation:
  *   POST   /exam-prep/generate-ai        — AI → MCQ questions (faculty+, count clamped to 1-20)
- *   POST   /exam-prep/extract-image      — ocr_text → questions (faculty+)
+ *   POST   /exam-prep/extract-image      — image_base64 → vision LLM, or ocr_text →
+ *                                          text LLM, both → questions (faculty+).
+ *                                          Vision has no mock fallback: if no
+ *                                          provider can read the image, a 422
+ *                                          tells the caller to paste the text.
  *
  * Quiz Builder & Scheduling:
  *   POST   /exam-prep/quizzes            — create quiz from question bank (faculty+)
@@ -67,7 +71,7 @@ const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser } = require('../utils');
 const { collegeFilter } = require('../auth');
 const multer = require('multer');
-const { generateAIResponse } = require('../ml/llmService');
+const { generateAIResponse, generateVisionResponse } = require('../ml/llmService');
 const {
   MAX_ROWS,
   parseCsvQuestions,
@@ -753,7 +757,23 @@ For EACH question, output a JSON object on a single line with these exact fields
       return sendError(res, 'image_base64 or ocr_text is required.', 400);
     }
 
-    const prompt = `Extract all MCQ questions from the following text (or image description). For each question found, output a JSON object on a single line:
+    // An image goes through the vision cascade; plain pasted text stays on
+    // the existing text cascade. Vision has no mock fallback, so a failed
+    // read is reported honestly instead of inventing questions.
+    let aiResult;
+    if (image_base64) {
+      const visionPrompt = `Extract every MCQ question visible in this image. For each, output a JSON object on a single line:
+{"question":"...","options":["A","B","C","D"],"answer":0,"explanation":"...","difficulty":"medium"}
+
+Rules:
+- "answer" is the 0-based index of the correct option if it is marked (✓, *, bold, colour). If unmarked, use 0.
+- If options are labelled A,B,C,D or 1,2,3,4, put them in the options array in order.
+- Ignore headers, page numbers and instructions — questions only.
+- Only output JSON lines. No markdown, no other text.`;
+      aiResult = await generateVisionResponse('question_extractor', visionPrompt, image_base64, req.user._id);
+      if (!aiResult.success) return sendError(res, aiResult.error, 422);
+    } else {
+      const prompt = `Extract all MCQ questions from the following text (or image description). For each question found, output a JSON object on a single line:
 {"question":"...","options":["A","B","C","D"],"answer":0,"explanation":"...","difficulty":"medium"}
 
 Rules:
@@ -762,11 +782,20 @@ Rules:
 - Only output JSON lines. No other text.
 
 Text content:
-${ocr_text || '[Image content — extract any visible MCQ questions]'}`;
+${ocr_text}`;
 
-    const aiResult = await generateAIResponse('question_extractor', prompt, req.user._id);
+      aiResult = await generateAIResponse('question_extractor', prompt, req.user._id);
+      if (aiResult.success === false && aiResult.retryAfter) {
+        return sendError(res, aiResult.error, 429);
+      }
+    }
+
     const parsed = parseAiQuestions(aiResult.response || '', { educationLevelFallback: educationLevel })
       .map(q => toAiQuestion(q, { subject: subject || '', educationLevel }));
+
+    if (!parsed.length) {
+      return sendError(res, 'AI could not find any questions in that content. Try a clearer image or paste the text instead.', 422);
+    }
 
     res.json({ questions: parsed, extracted_count: parsed.length, source: aiResult.source });
   });

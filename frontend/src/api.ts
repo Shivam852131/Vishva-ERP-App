@@ -51,19 +51,26 @@ async function parseResponse(res: Response) {
   }
 }
 
-export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
+export async function api<T = any>(path: string, opts: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
   const normalized = normalizePath(path);
+  const { timeoutMs, ...init } = opts;
 
   const token = await getToken();
-  const headers: any = { ...(opts.headers as any) };
-  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const headers: any = { ...(init.headers as any) };
+  // FormData must keep the Content-Type fetch generates — it carries the
+  // multipart boundary, so overwriting it with application/json corrupts
+  // the body and the server never sees the file.
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData;
+  if (init.body && !headers['Content-Type'] && !isFormData) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  // Imports that route through the LLM (PDF) legitimately take longer than
+  // a normal request; callers can pass timeoutMs to lift the ceiling.
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs ?? 30000);
 
   try {
-    const res = await fetch(`${BASE_URL}/api${normalized}`, { ...opts, headers, signal: controller.signal });
+    const res = await fetch(`${BASE_URL}/api${normalized}`, { ...init, headers, signal: controller.signal });
     clearTimeout(timeoutId);
     const payload = await parseResponse(res);
     if (!res.ok) {
