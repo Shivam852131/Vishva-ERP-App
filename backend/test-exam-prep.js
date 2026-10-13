@@ -1,4 +1,11 @@
-require('dotenv').config();
+// Prefer the developer's local .env when present (unchanged local behaviour);
+// otherwise fall back to the shared test env (gitignored .env.test, else the
+// committed .env.test.example) so this harness runs on a fresh checkout —
+// CI has no .env and a test script must never need a secret file.
+const fs = require('fs');
+const path = require('path');
+if (fs.existsSync(path.resolve(__dirname, '.env'))) require('dotenv').config();
+else require('./tests/loadTestEnv');
 const http = require('http');
 const { ObjectId } = require('mongodb');
 const { connectDB, closeDB } = require('./src/db');

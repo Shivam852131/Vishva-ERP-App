@@ -17,6 +17,20 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
+    # The suite runs against MongoDB, not Postgres. It connects on 127.0.0.1,
+    # which is where the service port maps to.
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,5 +43,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run test suite (spins up its own Postgres via docker compose)
-        run: npm test
+      # tests/loadTestEnv.js reads the gitignored .env.test when present and
+      # otherwise falls back to the committed .env.test.example, so no secret
+      # files are needed to run the suite on a fresh checkout.
+      - name: Unit and integration tests (jest)
+        run: npm run test:unit
+
+      - name: Exam-prep integration tests
+        run: node test-exam-prep.js

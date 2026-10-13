@@ -1,4 +1,12 @@
-require('dotenv').config();
+// Prefer the developer's local .env — this harness expects the seeded
+// admin@vishvaerp.com account, which lives in the dev database. Fall back to
+// the shared test env (gitignored .env.test, else the committed
+// .env.test.example) so it still runs on a fresh clone or in CI, where no
+// .env exists.
+const fs = require('fs');
+const path = require('path');
+if (fs.existsSync(path.resolve(__dirname, '.env'))) require('dotenv').config();
+else require('./tests/loadTestEnv');
 const http = require('http');
 const { connectDB } = require('./src/db');
 const { createApp } = require('./src/app');
