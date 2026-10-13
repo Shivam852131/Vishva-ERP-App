@@ -35,6 +35,35 @@ async function runExamPrepTests() {
     });
   }
 
+  // Multipart file upload helper — exercises the multer-backed import route.
+  function uploadFile(path, token, fileName, mime, buf) {
+    return new Promise((resolve, reject) => {
+      const boundary = '----examPrepTest' + Date.now();
+      const head = Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: ${mime}\r\n\r\n`
+      );
+      const payload = Buffer.concat([head, buf, Buffer.from(`\r\n--${boundary}--\r\n`)]);
+      const r = http.request({
+        hostname: '127.0.0.1', port: TEST_PORT, path, method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': payload.length,
+          Authorization: 'Bearer ' + token,
+        },
+      }, res => {
+        let data = '';
+        res.on('data', d => data += d);
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+          catch { resolve({ status: res.statusCode, body: data }); }
+        });
+      });
+      r.on('error', reject);
+      r.write(payload);
+      r.end();
+    });
+  }
+
   let passed = 0, failed = 0;
   function check(label, condition, details) {
     if (condition) {
@@ -401,6 +430,64 @@ async function runExamPrepTests() {
     check('Faculty cannot submit a student attempt (403)', facultySubmit.status === 403);
     const facultyPractice = await req('POST', '/api/exam-prep/practice/start', { subject: 'Data Structures', count: 1 }, facultyToken);
     check('Faculty cannot start a practice session (403)', facultyPractice.status === 403);
+
+    // ════════════════════════════════════════════════════════════
+    // 12. File import: .xlsx / .csv via multipart
+    // ════════════════════════════════════════════════════════════
+    console.log('\n--- 12. Spreadsheet / CSV Import ---');
+
+    // Build a real workbook in-memory so the exceljs parser is exercised.
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Questions');
+    ws.addRow(['question', 'option_a', 'option_b', 'option_c', 'option_d', 'answer', 'subject', 'topic', 'difficulty', 'explanation']);
+    ws.addRow(['Imported: what is 2+2?', '3', '4', '5', '6', 'B', 'Imported Subject', 'Addition', 'easy', 'From spreadsheet']);
+    ws.addRow(['Imported: largest planet?', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Jupiter', 'Imported Subject', 'Space', 'medium', '']);
+    ws.addRow(['', '', '', '', '', '', '', '', '', '']);
+    const notes = wb.addWorksheet('Notes');
+    notes.addRow(['this sheet should be reported as unused']);
+    const xlsxBuf = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const xlsxUp = await uploadFile('/api/exam-prep/questions/upload', facultyToken,
+      'bank.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      xlsxBuf);
+    check('xlsx upload accepted (201)', xlsxUp.status === 201, xlsxUp.body);
+    check('xlsx imported 2 questions', xlsxUp.body.inserted === 2, xlsxUp.body);
+    check('xlsx rows had no validation errors', Array.isArray(xlsxUp.body.errors) && xlsxUp.body.errors.length === 0, xlsxUp.body.errors);
+    check('xlsx reports both sheets', (xlsxUp.body.sheets || []).length === 2, xlsxUp.body.sheets);
+    check('xlsx reports the unused sheet', (xlsxUp.body.unused_sheets || []).includes('Notes'), xlsxUp.body);
+
+    const csvImport = [
+      'question,option_a,option_b,option_c,option_d,answer,subject,topic,difficulty,explanation',
+      '"Imported CSV: capital of France?","Paris","London","Berlin","Rome",A,Imported Subject,Capitals,easy,"France capital"',
+      '"Imported CSV: he said ""hi""","Yes","No","","",B,Imported Subject,Quotes,medium,',
+      ',,,,,,,,',
+    ].join('\n');
+    const csvUp = await uploadFile('/api/exam-prep/questions/upload', facultyToken, 'bank.csv', 'text/csv', Buffer.from(csvImport, 'utf8'));
+    check('csv upload accepted (201)', csvUp.status === 201, csvUp.body);
+    check('csv imported 2 questions (blank row skipped)', csvUp.body.inserted === 2, csvUp.body);
+    const csvQuestionCheck = await req('GET', '/api/exam-prep/questions?search=' + encodeURIComponent('Imported CSV: he said'), null, facultyToken);
+    const csvQ = Array.isArray(csvQuestionCheck.body) && csvQuestionCheck.body[0];
+    check('csv escaped quotes round-trip', Boolean(csvQ && csvQ.question.includes('"hi"')), csvQ);
+
+    // Rows with an out-of-range answer must be rejected with a reason, not stored.
+    const badImport = 'question,option_a,option_b,answer\nQ1,A,B,9\nQ2,A,B,1\n';
+    const badUp = await uploadFile('/api/exam-prep/questions/upload', facultyToken, 'bad.csv', 'text/csv', Buffer.from(badImport, 'utf8'));
+    check('invalid answer row is reported, valid rows still import', badUp.status === 201 && badUp.body.inserted === 1, badUp.body);
+    check('rejection carries a human-readable reason', badUp.body.errors?.length === 1 && /answer must be/.test(badUp.body.errors[0].reason || ''), badUp.body.errors);
+
+    const allBad = await uploadFile('/api/exam-prep/questions/upload', facultyToken, 'allbad.csv', 'text/csv', Buffer.from('question,option_a,option_b,answer\nQ1,A,B,9\n', 'utf8'));
+    check('entirely invalid file rejected (400)', allBad.status === 400, allBad);
+
+    const unsupported = await uploadFile('/api/exam-prep/questions/upload', facultyToken, 'payload.exe', 'application/octet-stream', Buffer.from('MZ'));
+    check('unsupported file type rejected (400)', unsupported.status === 400, unsupported);
+
+    const noFile = await uploadFile('/api/exam-prep/questions/upload', facultyToken, '', 'application/octet-stream', Buffer.alloc(0));
+    check('missing file rejected (400)', noFile.status === 400, noFile);
+
+    const studentUpload = await uploadFile('/api/exam-prep/questions/upload', studentToken, 'bank.csv', 'text/csv', Buffer.from(csvImport, 'utf8'));
+    check('student cannot import a file (403)', studentUpload.status === 403, studentUpload);
 
   } catch (err) {
     console.error('Test execution error:', err);

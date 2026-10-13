@@ -9,6 +9,11 @@
  *   DELETE /exam-prep/questions/:id      — delete question (faculty+)
  *   POST   /exam-prep/questions/bulk     — JSON-array bulk import (faculty+, max 500)
  *                                           returns { inserted, skipped, errors:[{row,reason}] }
+ *   POST   /exam-prep/questions/upload   — multipart file import (faculty+, 10 MB max)
+ *                                           .xlsx → exceljs, .csv → RFC4180 parser,
+ *                                           .pdf  → text extraction → LLM extraction
+ *                                           returns { inserted, skipped, errors, sheets,
+ *                                                     unused_sheets, truncated }
  *
  * AI Question Generation:
  *   POST   /exam-prep/generate-ai        — AI → MCQ questions (faculty+, count clamped to 1-20)
@@ -61,7 +66,22 @@ const express = require('express');
 const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser } = require('../utils');
 const { collegeFilter } = require('../auth');
+const multer = require('multer');
 const { generateAIResponse } = require('../ml/llmService');
+const {
+  MAX_ROWS,
+  parseCsvQuestions,
+  parseXlsxQuestions,
+  extractPdfText,
+  clampQuestionCells,
+} = require('../importQuestions');
+
+// File uploads arrive as memory buffers — no disk staging, and a hard
+// ceiling so an uploaded file cannot exhaust the process.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+});
 
 // Grace window for late submits
 const SUBMIT_GRACE_SECONDS = 30;
@@ -473,6 +493,120 @@ function createExamPrepRouter(io) {
 
     const { insertedCount } = await db.collection('exam_prep_questions').insertMany(docs);
     res.status(201).json({ inserted: insertedCount, skipped: questions.length - insertedCount, errors });
+  });
+
+  // POST /exam-prep/questions/upload — multipart file import (.xlsx/.csv/.pdf)
+  // The parsed rows go through exactly the same buildQuestionDoc() validation
+  // as manual creation, so a file cannot smuggle in an unscorable answer.
+  router.post('/questions/upload', (req, res, next) => {
+    if (!isFacultyOrAbove(req)) return sendError(res, 'Permission denied.', 403);
+    upload.single('file')(req, res, err => {
+      if (!err) return next();
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return sendError(res, 'File is too large (max 10 MB).', 413);
+      }
+      if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+        return sendError(res, 'Unexpected file field.', 400);
+      }
+      return sendError(res, `Upload failed: ${err.message}`, 400);
+    });
+  }, async (req, res) => {
+    const db = getDB();
+    const file = req.file;
+    if (!file) return sendError(res, 'No file received. Send it as multipart field "file".', 400);
+
+    const originalName = String(file.originalname || '').toLowerCase();
+    const mime = String(file.mimetype || '').toLowerCase();
+    const isXlsx = originalName.endsWith('.xlsx') || originalName.endsWith('.xlsm') || mime.includes('sheet');
+    const isCsv = originalName.endsWith('.csv') || mime === 'text/csv' || originalName.endsWith('.txt');
+    const isPdf = originalName.endsWith('.pdf') || mime === 'application/pdf';
+
+    if (!isXlsx && !isCsv && !isPdf) {
+      return sendError(res, 'Unsupported file type. Use .xlsx, .csv or .pdf.', 400);
+    }
+
+    const { subject, education_level } = req.body || {};
+    let parsed;
+    let sheets = [];
+    let unusedSheets = [];
+
+    try {
+      if (isXlsx) {
+        const out = await parseXlsxQuestions(file.buffer);
+        parsed = out.questions;
+        sheets = out.sheets || [];
+        unusedSheets = out.unused_sheets || [];
+        if (out.errors?.length && !parsed.length) {
+          return sendError(res, out.errors[0].reason || 'Spreadsheet could not be read.', 400);
+        }
+      } else if (isCsv) {
+        const out = parseCsvQuestions(file.buffer.toString('utf8'));
+        parsed = out.questions;
+        if (!parsed.length) {
+          return sendError(res, out.errors[0]?.reason || 'No questions found in the CSV.', 400);
+        }
+      } else {
+        // PDFs have no reliable tabular structure — hand the extracted text
+        // to the same LLM pipeline used by /extract-image.
+        const text = await extractPdfText(file.buffer);
+        if (!text.ok) return sendError(res, text.error, 400);
+
+        const prompt = `Extract all MCQ questions from the following text. For each question, output a JSON object on a single line:
+{"question":"...","options":["A","B","C","D"],"answer":0,"explanation":"...","difficulty":"medium"}
+
+Rules:
+- "answer" is the 0-based index of the correct option if you can identify it, otherwise 0.
+- If the text has numbered options (A,B,C,D or 1,2,3,4), extract them into the options array.
+- Only output JSON lines. No other text.
+
+Text content:
+${text.text}`;
+
+        const aiResult = await generateAIResponse('question_extractor', prompt, req.user._id);
+        parsed = parseAiQuestions(aiResult.response || '', { subjectFallback: subject, educationLevelFallback: education_level });
+        if (!parsed.length) {
+          const detail = aiResult.success === false
+            ? (aiResult.error || 'AI provider is busy. Please retry shortly.')
+            : 'AI could not find questions in this PDF. Try extracting the text first.';
+          return sendError(res, detail, aiResult.success === false ? 429 : 422);
+        }
+      }
+    } catch (err) {
+      return sendError(res, `Could not parse file: ${err.message}`, 422);
+    }
+
+    parsed = clampQuestionCells(parsed);
+
+    const docs = [];
+    const errors = [];
+    parsed.forEach((q, i) => {
+      const built = buildQuestionDoc(q, {
+        collegeId: oid(req.userCollegeId),
+        createdById: oid(req.user._id),
+        createdByName: req.user.name,
+        source: isPdf ? 'ai' : 'import',
+        subjectFallback: subject,
+        educationLevelFallback: education_level,
+        row: i + 1,
+      });
+      if (built.ok) docs.push(built.doc);
+      else errors.push({ row: built.row, reason: built.error, question: String(q?.question || '').slice(0, 80) });
+    });
+
+    if (!docs.length) {
+      return sendError(res, `No valid questions found in the file (${errors.length} row(s) rejected).`, 400);
+    }
+
+    const { insertedCount } = await db.collection('exam_prep_questions').insertMany(docs);
+    res.status(201).json({
+      inserted: insertedCount,
+      skipped: parsed.length - insertedCount,
+      errors,
+      source: isPdf ? 'ai' : 'import',
+      sheets,
+      unused_sheets: unusedSheets,
+      truncated: parsed.length >= MAX_ROWS,
+    });
   });
 
   // PATCH /exam-prep/questions/:id
