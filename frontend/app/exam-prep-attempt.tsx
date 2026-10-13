@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Alert,
-  ActivityIndicator, BackHandler,
+  ActivityIndicator, BackHandler, AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from '@/src/navigation/router';
@@ -44,6 +44,17 @@ export default function ExamPrepAttemptScreen() {
   const [savingAnswer, setSavingAnswer] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const attemptIdRef = useRef<string>('');
+  // Wall-clock deadline (epoch ms) derived once from the server's
+  // seconds_remaining — the countdown recomputes from this instead of
+  // decrementing a counter.
+  const deadlineRef = useRef<number | null>(null);
+  // Makes auto-submit idempotent: the expiry path can otherwise fire twice.
+  const submittedRef = useRef(false);
+  // Always points at the latest handleSubmit, so the interval — which
+  // outlives many renders — never invokes a stale closure.
+  const submitRef = useRef<(autoSubmit?: boolean) => Promise<void>>(async () => {});
+  // Re-syncs when the app returns to the foreground.
+  const [foregroundTick, setForegroundTick] = useState(0);
 
   // Load attempt
   useEffect(() => {
@@ -68,6 +79,7 @@ export default function ExamPrepAttemptScreen() {
         attemptIdRef.current = data.attempt_id;
 
         if (data.seconds_remaining !== null && data.seconds_remaining !== undefined && !data.is_practice) {
+          deadlineRef.current = Date.now() + data.seconds_remaining * 1000;
           setTimeLeft(data.seconds_remaining);
         }
       } catch (e: any) {
@@ -79,24 +91,6 @@ export default function ExamPrepAttemptScreen() {
     };
     load();
   }, []);
-
-  // Timer countdown
-  useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0) return;
-    timerRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t === null) return null;
-        if (t <= 1) {
-          clearInterval(timerRef.current!);
-          // Auto-submit when time runs out
-          handleSubmit(true);
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [timeLeft !== null && timeLeft > 0]);
 
   // Block back navigation during active attempt
   useEffect(() => {
@@ -128,13 +122,12 @@ export default function ExamPrepAttemptScreen() {
   };
 
   const handleSelectOption = (optionIndex: number) => {
-    const newAnswers = { ...answers, [currentIndex]: optionIndex };
-    setAnswers(newAnswers);
+    setAnswers(prev => ({ ...prev, [currentIndex]: optionIndex }));
     saveAnswer(currentIndex, optionIndex);
   };
 
   const handleSubmit = useCallback(async (autoSubmit = false) => {
-    if (!attemptIdRef.current) return;
+    if (!attemptIdRef.current || submittedRef.current) return;
     if (!autoSubmit) {
       const unanswered = (attempt?.questions.length || 0) - Object.keys(answers).length;
       if (unanswered > 0) {
@@ -153,6 +146,7 @@ export default function ExamPrepAttemptScreen() {
     }
 
     if (timerRef.current) clearInterval(timerRef.current);
+    submittedRef.current = true;
     setSubmitting(true);
     try {
       const res = await api<ExamPrepResult>(`/exam-prep/attempts/${attemptIdRef.current}/submit`, {
@@ -161,11 +155,71 @@ export default function ExamPrepAttemptScreen() {
       });
       setResult(res);
     } catch (e: any) {
+      // Re-arm so the student can retry — a network blip must not strand a
+      // finished attempt in a permanently "submitting" state.
+      submittedRef.current = false;
       Alert.alert('Submit Error', e.message || 'Failed to submit. Please try again.');
     } finally {
       setSubmitting(false);
     }
   }, [answers, attempt]);
+
+  // Declared ahead of the timer effect so React runs it first each commit —
+  // the interval must never reach a first tick through the initial no-op ref.
+  useEffect(() => { submitRef.current = handleSubmit; }, [handleSubmit]);
+
+  // Timer countdown — driven by a wall-clock deadline, not a decremented
+  // counter. React Native suspends JS timers while backgrounded, so a counter
+  // resumes at the value it had before suspension and shows the student time
+  // they do not have. Recomputing from the deadline is correct the instant the
+  // app becomes usable again, with no network round-trip.
+  useEffect(() => {
+    if (deadlineRef.current === null || result) return;
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((deadlineRef.current! - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = null;
+        // Fire outside the state updater above — an updater must stay pure and
+        // may legitimately be invoked more than once.
+        if (!submittedRef.current) void submitRef.current(true);
+      }
+    };
+
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [attempt, result, foregroundTick]);
+
+  // Foregrounding has to do more than resume the countdown: the server may
+  // already have graded the attempt (window closed, or it was submitted from
+  // another device) while the app was away.
+  useEffect(() => {
+    if (!attempt || result) return;
+    // Guarded: RN's AppState mock in tests doesn't always implement addEventListener.
+    const sub = AppState.addEventListener?.('change', state => {
+      if (state !== 'active') return;
+      setForegroundTick(t => t + 1);
+      if (!attemptIdRef.current || submittedRef.current) return;
+
+      api<any>(`/exam-prep/attempts/${attemptIdRef.current}`)
+        .then(data => {
+          if (!data || submittedRef.current) return;
+          if (data.score_percent !== undefined) {
+            submittedRef.current = true;
+            if (timerRef.current) clearInterval(timerRef.current);
+            timerRef.current = null;
+            setResult(data as ExamPrepResult);
+          } else if (typeof data.seconds_remaining === 'number' && !data.is_practice) {
+            deadlineRef.current = Date.now() + data.seconds_remaining * 1000;
+          }
+        })
+        .catch(() => { /* Offline — the local deadline still counts down. */ });
+    });
+    return () => sub?.remove?.();
+  }, [attempt, result]);
 
   // ── Loading ──
   if (loading) {
