@@ -14,7 +14,7 @@ import { router, useLocalSearchParams } from '@/src/navigation/router';
 import {
   ArrowLeft, BookOpen, CheckCircle2, XCircle, Lightbulb,
   ChevronRight, ChevronLeft, RotateCcw, Trophy, Bookmark,
-  Filter, Brain,
+  Filter, Brain, AlertTriangle,
 } from 'lucide-react-native';
 import { api } from '@/src/api';
 import type { PracticeSession, PracticeAnswerResult, QuestionDifficulty, EducationLevel } from '@/src/types';
@@ -411,7 +411,21 @@ export default function ExamPrepPracticeScreen() {
   }
 
   // ── Active session ────────────────────────────────────────────
-  if (!q) return null;
+  // No question at this index — the session was emptied or the stored
+  // ordering shrank underneath us. Offer a way out instead of a blank screen.
+  if (!q) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.loadingWrap}>
+          <AlertTriangle size={36} color={theme.colors.textSecondary} />
+          <Text style={styles.loadingText}>This question is no longer available.</Text>
+          <Pressable style={styles.dashBtn} onPress={() => router.back()}>
+            <Text style={styles.dashBtnText}>Back to Dashboard</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
   const progress = (currentIndex + 1) / (session?.total_questions || 1);
 
   return (

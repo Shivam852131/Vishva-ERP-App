@@ -568,6 +568,63 @@ async function runExamPrepTests() {
       analytics2.body.attempts.length === Math.min(100, analytics2.body.stats.total_attempts),
       { listed: analytics2.body.attempts.length, stats: analytics2.body.stats.total_attempts });
 
+    // ════════════════════════════════════════════════════════════
+    // 15. Tenant isolation under search
+    // ════════════════════════════════════════════════════════════
+    console.log('\n--- 15. Search Must Keep College Scoping ---');
+
+    // Regression: GET /questions assigned `filter.$or` for the `search` term.
+    // collegeFilter() had already populated that same key, so the search
+    // silently replaced the tenant scoping and matched every college's rows.
+    const cidA = new ObjectId();
+    const cidB = new ObjectId();
+    const canary = `tcanary_${ts}`;
+    const baseQ = {
+      subject: 'TenantScope',
+      topic: canary,
+      question: `Question body ${canary}`,
+      options: ['A', 'B', 'C', 'D'],
+      answer: 0,
+      difficulty: 'medium',
+      educationLevel: 'college',
+      explanation: 'explanation',
+      tags: [canary],
+      source: 'manual',
+      createdAt: new Date().toISOString(),
+    };
+    const idA = (await db.collection('exam_prep_questions').insertOne({ ...baseQ, collegeId: cidA })).insertedId;
+    const idB = (await db.collection('exam_prep_questions').insertOne({
+      ...baseQ, collegeId: cidB, question: `Other college body ${canary}`,
+    })).insertedId;
+
+    // Scope the registered student to college A, then re-login so the fresh
+    // token/lookup carries the collegeId. The student is the right probe:
+    // students must also come back without the answer key.
+    const studEmail = `student_prep_${ts}@campus.edu`;
+    await db.collection('users').updateOne({ email: studEmail }, { $set: { collegeId: cidA } });
+    const scopedLogin = await req('POST', '/api/auth/login', { email: studEmail, password: 'password123' });
+    check('College-scoped student logs in (200)', scopedLogin.status === 200 && Boolean(scopedLogin.body.token), scopedLogin.body);
+    const scopedTok = scopedLogin.body.token;
+
+    const scopedSearch = await req('GET', `/api/exam-prep/questions?search=${encodeURIComponent(canary)}`, null, scopedTok);
+    check('Scoped search returns 200 with an array',
+      scopedSearch.status === 200 && Array.isArray(scopedSearch.body), scopedSearch.body);
+    const scopedIds = Array.isArray(scopedSearch.body) ? scopedSearch.body.map(q => q.id) : [];
+    check('Search finds this college\'s question', scopedIds.includes(String(idA)), scopedIds);
+    check('Search does NOT leak the other college\'s question', !scopedIds.includes(String(idB)), scopedIds);
+    check('Search results are answer-key-free', scopedSearch.body.every(q => q.answer === undefined), scopedSearch.body);
+
+    // Sanity: the same account without a search term is scoped too, so a pass
+    // above cannot be explained by an unscoped filter in the first place.
+    const scopedBrowse = await req('GET', '/api/exam-prep/questions?subject=TenantScope', null, scopedTok);
+    const browseIds = Array.isArray(scopedBrowse.body) ? scopedBrowse.body.map(q => q.id) : [];
+    check('Browse without search is still college-limited',
+      browseIds.includes(String(idA)) && !browseIds.includes(String(idB)), browseIds);
+
+    // Leave the shared fixture exactly as we found it.
+    await db.collection('users').updateOne({ email: studEmail }, { $unset: { collegeId: '' } });
+    await db.collection('exam_prep_questions').deleteMany({ subject: 'TenantScope', topic: canary });
+
   } catch (err) {
     console.error('Test execution error:', err);
     failed++;

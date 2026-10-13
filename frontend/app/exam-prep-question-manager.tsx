@@ -207,25 +207,51 @@ function AIGenerateTab({ onSaved }: { onSaved: () => void }) {
   // Image extraction mode
   const [ocrText, setOcrText] = useState('');
   const [mode, setMode] = useState<'topic' | 'image'>('topic');
+  // Held so /extract-image can hand the actual pixels to the vision LLM
+  // instead of only the pasted transcription.
+  const [pickedImage, setPickedImage] = useState<{ base64: string; mime: string } | null>(null);
 
   const generate = async () => {
     if (!subject.trim()) return Alert.alert('Error', 'Subject is required.');
+
+    if (mode === 'image') {
+      const hasImage = Boolean(pickedImage?.base64);
+      const hasText = Boolean(ocrText.trim());
+      if (!hasImage && !hasText) {
+        return Alert.alert('Nothing to read', 'Pick an image, or paste the text from it.');
+      }
+
+      setGenerating(true);
+      try {
+        const body: any = { subject, education_level: level };
+        // Prefer the image itself — the server has a vision path that can read
+        // marks and formatting a transcription loses. Fall back to pasted text.
+        if (hasImage) body.image_base64 = `data:${pickedImage!.mime};base64,${pickedImage!.base64}`;
+        else body.ocr_text = ocrText.trim();
+
+        const result = await api('/exam-prep/extract-image', {
+          method: 'POST',
+          body: JSON.stringify(body),
+          // Vision extraction is a real LLM round-trip, past the default 30s.
+          timeoutMs: 180000,
+        });
+        setGeneratedQs(result.questions || []);
+        setSelected(new Set((result.questions || []).map((_: any, i: number) => i)));
+      } catch (e: any) {
+        Alert.alert('Extraction failed', e.message || 'Could not read that image. Paste the text instead.');
+      } finally {
+        setGenerating(false);
+      }
+      return;
+    }
+
     setGenerating(true);
     try {
-      let result: any;
-      if (mode === 'image' && ocrText.trim()) {
-        result = await api('/exam-prep/extract-image', {
-          method: 'POST',
-          body: JSON.stringify({ ocr_text: ocrText, subject, education_level: level }),
-        });
-        setGeneratedQs(result.questions || []);
-      } else {
-        result = await api('/exam-prep/generate-ai', {
-          method: 'POST',
-          body: JSON.stringify({ subject, topic, difficulty, count: parseInt(count, 10), education_level: level }),
-        });
-        setGeneratedQs(result.questions || []);
-      }
+      const result = await api('/exam-prep/generate-ai', {
+        method: 'POST',
+        body: JSON.stringify({ subject, topic, difficulty, count: parseInt(count, 10), education_level: level }),
+      });
+      setGeneratedQs(result.questions || []);
       setSelected(new Set((result.questions || []).map((_: any, i: number) => i)));
     } catch (e: any) {
       Alert.alert('AI Error', e.message || 'Generation failed. Check your AI provider config.');
@@ -236,13 +262,17 @@ function AIGenerateTab({ onSaved }: { onSaved: () => void }) {
 
   const pickImage = async () => {
     try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
       const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
       const asset = res.assets?.[0];
-      if (!res.canceled && asset) {
-        Alert.alert('Image selected', 'Please also paste the text content from the image into the OCR Text field for best results.');
+      if (res.canceled || !asset) return;
+      if (!asset.base64) {
+        Alert.alert('Could not read image', 'That image returned no data. Try another, or paste the text instead.');
+        return;
       }
-    } catch {}
+      setPickedImage({ base64: asset.base64, mime: asset.type || 'image/jpeg' });
+    } catch (e: any) {
+      Alert.alert('Image error', e.message || 'Could not open the image picker.');
+    }
   };
 
   const saveSelected = async () => {
@@ -279,7 +309,7 @@ function AIGenerateTab({ onSaved }: { onSaved: () => void }) {
         </Pressable>
         <Pressable style={[styles.modeBtn, mode === 'image' && styles.modeBtnActive]} onPress={() => setMode('image')}>
           <FileText size={14} color={mode === 'image' ? '#fff' : theme.colors.textSecondary} />
-          <Text style={[styles.modeBtnText, mode === 'image' && { color: '#fff' }]}>From PDF/Image Text</Text>
+          <Text style={[styles.modeBtnText, mode === 'image' && { color: '#fff' }]}>From Image/PDF</Text>
         </Pressable>
       </View>
 
@@ -308,13 +338,26 @@ function AIGenerateTab({ onSaved }: { onSaved: () => void }) {
         )}
         {mode === 'image' && (
           <>
-            <Pressable style={styles.imagePickBtn} onPress={pickImage}>
+            <Pressable style={[styles.imagePickBtn, pickedImage && styles.imagePickBtnActive]} onPress={pickImage}>
               <Upload size={16} color={theme.colors.brand} />
-              <Text style={styles.imagePickText}>Select Image (optional)</Text>
+              <Text style={styles.imagePickText}>
+                {pickedImage ? 'Change image' : 'Select image'}
+              </Text>
             </Pressable>
+
+            {pickedImage && (
+              <View style={styles.imageChosen}>
+                <Check size={14} color="#059669" />
+                <Text style={styles.imageChosenText} numberOfLines={1}>Image ready — it will be read directly.</Text>
+                <Pressable onPress={() => setPickedImage(null)} hitSlop={8}>
+                  <Text style={styles.imageClear}>Remove</Text>
+                </Pressable>
+              </View>
+            )}
+
             <TextInput
               style={[styles.input, styles.textArea, { minHeight: 120 }]}
-              placeholder="Paste text from PDF or image here…"
+              placeholder={pickedImage ? 'Optional — add context (topic, chapter) to help extraction…' : 'Or paste text from the PDF / image here…'}
               value={ocrText}
               onChangeText={setOcrText}
               multiline
@@ -655,6 +698,10 @@ const styles = StyleSheet.create({
   generateBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   imagePickBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1.5, borderStyle: 'dashed', borderColor: theme.colors.brand, borderRadius: 10, paddingVertical: 12, justifyContent: 'center' },
   imagePickText: { color: theme.colors.brand, fontSize: 13, fontWeight: '600' },
+  imagePickBtnActive: { borderStyle: 'solid', borderColor: '#059669', backgroundColor: '#F0FDF4' },
+  imageChosen: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: '#F0FDF4' },
+  imageChosenText: { flex: 1, fontSize: 12, color: '#047857' },
+  imageClear: { fontSize: 12, fontWeight: '700', color: '#DC2626' },
   generatedHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
   generatedTitle: { fontSize: 14, fontWeight: '700', color: theme.colors.text },
   selectAll: { fontSize: 13, color: theme.colors.brand, fontWeight: '600' },

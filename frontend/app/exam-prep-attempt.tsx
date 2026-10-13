@@ -256,6 +256,17 @@ export default function ExamPrepAttemptScreen() {
             </View>
           </Animated.View>
 
+          {/* The server graded this on autosaves after the window closed — the
+              student needs to know the score is not from a hand-finished run. */}
+          {result.expired && (
+            <View style={styles.expiredBanner}>
+              <Clock size={14} color="#92400E" />
+              <Text style={styles.expiredText}>
+                Time ran out before you submitted. This was graded on the answers you had saved.
+              </Text>
+            </View>
+          )}
+
           {/* By difficulty */}
           {result.by_difficulty.length > 0 && (
             <>
@@ -308,7 +319,20 @@ export default function ExamPrepAttemptScreen() {
     );
   }
 
-  if (!attempt) return null;
+  // Reached when the attempt could not be loaded — bad id, quiz deleted, or
+  // the fetch failed. A bare `return null` leaves a blank screen with no
+  // escape on platforms where the error Alert is unavailable.
+  if (!attempt) {
+    return (
+      <SafeAreaView style={styles.loading} edges={['top']}>
+        <AlertTriangle size={40} color={theme.colors.textSecondary} />
+        <Text style={styles.loadingText}>This quiz could not be loaded.</Text>
+        <Pressable style={styles.retryBtn} onPress={() => router.back()}>
+          <Text style={styles.retryBtnText}>Go back</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
 
   const q = attempt.questions[currentIndex];
   const answeredCount = Object.keys(answers).length;
@@ -435,6 +459,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.bg },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: theme.colors.bg },
   loadingText: { color: theme.colors.textSecondary },
+  retryBtn: { marginTop: 6, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 8, backgroundColor: theme.colors.brand },
+  retryBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   backBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center' },
@@ -481,6 +507,11 @@ const styles = StyleSheet.create({
   scoreTime: { fontSize: 12, color: theme.colors.textSecondary },
   passBadge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginTop: 4 },
   passBadgeText: { fontSize: 13, fontWeight: '700' },
+  expiredBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14,
+    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, backgroundColor: '#FEF3C7',
+  },
+  expiredText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 17 },
   diffGrid: { flexDirection: 'row', gap: 10 },
   diffCard: { flex: 1, backgroundColor: theme.colors.surface, borderRadius: 10, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border },
   diffScore: { fontSize: 20, fontWeight: '800' },

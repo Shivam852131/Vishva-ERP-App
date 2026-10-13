@@ -35,6 +35,9 @@
  * Student Practice:
  *   GET    /exam-prep/dashboard          — personalised dashboard (student)
  *   POST   /exam-prep/practice/start     — start untimed practice session (student)
+ *   GET    /exam-prep/practice/:sid      — resume a session, or replay a finished one
+ *                                           (student, owner-only; in-progress payload
+ *                                           omits correct_index/explanation)
  *   POST   /exam-prep/practice/:sid/answer — record answer + get explanation (student)
  *   POST   /exam-prep/practice/:sid/submit — finish session, get report (student)
  *
@@ -423,22 +426,27 @@ function createExamPrepRouter(io) {
     if (topic) filter.topic = topic;
     if (difficulty) filter.difficulty = difficulty;
     if (education_level) filter.educationLevel = normalizeEducationLevel(education_level);
+
+    // andFilters(), not `filter.$or = ...`: collegeFilter() has already put an
+    // $or into this filter, and reassigning the key would drop it — a search
+    // would then match every college's questions rather than just this one's.
+    let where = filter;
     if (search) {
       const rx = { $regex: escapeRegex(search), $options: 'i' };
-      filter.$or = [{ question: rx }, { topic: rx }, { tags: rx }];
+      where = andFilters(filter, { $or: [{ question: rx }, { topic: rx }, { tags: rx }] });
     }
 
     const hideAnswer = req.user.role === 'student';
     const take = Math.min(parseInt(limit, 10) || 50, 200);
     const offset = Math.max(parseInt(skip, 10) || 0, 0);
     const questions = await db.collection('exam_prep_questions')
-      .find(filter)
+      .find(where)
       .sort({ createdAt: -1 })
       .skip(offset)
       .limit(take)
       .toArray();
 
-    const total = await db.collection('exam_prep_questions').countDocuments(filter);
+    const total = await db.collection('exam_prep_questions').countDocuments(where);
     res.set('X-Total-Count', String(total));
     res.json(questions.map(q => serializeQuestion(q, { hideAnswer })));
   });

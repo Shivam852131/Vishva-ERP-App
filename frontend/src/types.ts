@@ -795,6 +795,8 @@ export interface ExamPrepResult {
   submitted_at: string;
   breakdown: ExamPrepBreakdownItem[];
   by_difficulty: { difficulty: string; total: number; correct: number; percent: number }[];
+  /** True when the deadline passed and the server graded the autosaves. */
+  expired?: boolean;
 }
 
 // Shape returned by GET /exam-prep/my-attempts. score/correct are null when

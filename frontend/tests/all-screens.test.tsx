@@ -84,6 +84,24 @@ jest.mock('@/src/native/image-picker', () => ({
   launchImageLibraryAsync: jest.fn(() => Promise.resolve({ didCancel: true, assets: [] })),
 }));
 
+// Native TurboModule — not registered in the jest environment, so importing
+// the real package throws 'RNDocumentPicker could not be found'.
+jest.mock('react-native-document-picker', () => ({
+  pick: jest.fn(() => Promise.resolve([])),
+  pickSingle: jest.fn(() => Promise.resolve({
+    uri: '', name: 'file.xlsx', fileCopyUri: null,
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 0,
+  })),
+  isCancel: jest.fn(() => false),
+  types: {
+    allFiles: '*/*',
+    csv: 'text/csv',
+    pdf: 'application/pdf',
+    plainText: 'text/plain',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  },
+}));
+
 jest.mock('@/src/localshare/hooks/useLocalShare', () => ({
   useLocalShare: () => ({
     session: null, sessions: [], loading: false, error: null,
@@ -146,6 +164,13 @@ const SCREENS: [string, () => any][] = [
   ['attendance-live', () => require('@/app/attendance-live').default],
   ['chat', () => require('@/app/chat').default],
   ['events', () => require('@/app/events').default],
+  ['exam-prep/dashboard', () => require('@/app/exam-prep-dashboard').default],
+  ['exam-prep/practice', () => require('@/app/exam-prep-practice').default],
+  ['exam-prep/question-bank', () => require('@/app/exam-prep-question-bank').default],
+  ['exam-prep/question-manager', () => require('@/app/exam-prep-question-manager').default],
+  ['exam-prep/quiz-builder', () => require('@/app/exam-prep-quiz-builder').default],
+  ['exam-prep/attempt', () => require('@/app/exam-prep-attempt').default],
+  ['exam-prep/bookmarks', () => require('@/app/exam-prep-bookmarks').default],
   ['exams', () => require('@/app/exams').default],
   ['fees', () => require('@/app/fees').default],
   ['grievances', () => require('@/app/grievances').default],
