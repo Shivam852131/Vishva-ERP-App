@@ -46,3 +46,26 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      # ── AI provider: free Gemini tier ────────────────────────────
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      # ── Google Sign-In (OAuth 2.0 authorization-code flow) ───────
+      # This exact URI must also be listed in Google Cloud Console under
+      # the OAuth client's authorized redirect URIs.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://vishva-erp-app.onrender.com/api/auth/google/callback
+      - key: GOOGLE_APP_REDIRECT_URI
+        value: vishvaerp://auth
+      # ── Google Meet + Sheets (service account) ───────────────────
+      - key: GOOGLE_SERVICE_ACCOUNT_EMAIL
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_KEY
+        sync: false
+      - key: GOOGLE_CALENDAR_ID
+        value: primary
