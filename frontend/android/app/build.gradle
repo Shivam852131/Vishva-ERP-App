@@ -87,7 +87,16 @@ android {
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
             } else if (System.getenv("CI") != null) {
-                throw new GradleException("Release signing requires keystore.properties in CI/production builds")
+                // No release keystore in CI — correctly, since release.keystore and
+                // keystore.properties are gitignored and this repo is public.
+                // Fall back to the bundled debug keystore so the workflow still
+                // yields an APK that installs and runs on real devices (sideload).
+                // For Play Store uploads, supply keystore.properties via a CI secret.
+                logger.lifecycle("CI build: no release keystore found — signing with bundled debug.keystore (sideload installs only)")
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
             } else {
                 storeFile file('debug.keystore')
                 storePassword 'android'
