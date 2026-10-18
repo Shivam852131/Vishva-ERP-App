@@ -85,14 +85,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VishvaERP-${{ steps.version.outputs.version }}-APK
-          path: frontend/android/app/build/outputs/apk/productionRelease/*.apk
+          # AGP writes flavored APKs to apk/<flavor>/<buildType>/ (production/release).
+          # The previous apk/productionRelease/ glob matched nothing, so this
+          # workflow silently produced no APK for every run.
+          path: frontend/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
           retention-days: 30
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: VishvaERP-${{ steps.version.outputs.version }}-AAB
-          path: frontend/android/app/build/outputs/bundle/productionRelease/*.aab
+          path: frontend/android/app/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
           retention-days: 30
 
       - name: Create GitHub Release
@@ -115,8 +120,8 @@ jobs:
             - Download the APK and install on Android 7.0+
             - For Play Store: upload the AAB file
           files: |
-            frontend/android/app/build/outputs/apk/productionRelease/*.apk
-            frontend/android/app/build/outputs/bundle/productionRelease/*.aab
+            frontend/android/app/build/outputs/apk/**/*.apk
+            frontend/android/app/build/outputs/bundle/**/*.aab
           draft: false
           prerelease: false
         env:
