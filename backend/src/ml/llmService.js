@@ -26,7 +26,9 @@ const GROQ_BASE_URL = process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+// Google has retired the 1.5/2.0 families — default to a current free-tier model.
+// Alternatives: 'gemini-3.5-flash-lite' (highest free quota), 'gemini-3.6-flash'.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
@@ -196,7 +198,21 @@ async function generateWithGroq(type, message, conversationHistory = []) {
   return data.choices[0]?.message?.content || 'I could not generate a response.';
 }
 
-// ─── Provider 3: Google Gemini (free tier, 1500 req/day) ───────
+/**
+ * Pull the visible answer text out of a Gemini response payload.
+ * Newer models can emit reasoning segments (`part.thought === true`) and may
+ * split the answer across several parts, so concatenate only the real text.
+ */
+function extractGeminiText(data) {
+  const parts = data?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts
+    .filter((p) => typeof p?.text === 'string' && !p.thought)
+    .map((p) => p.text)
+    .join('');
+}
+
+// ─── Provider 3: Google Gemini (free tier) ─────────────────────
 async function generateWithGemini(type, message, conversationHistory = []) {
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY not configured');
@@ -237,7 +253,7 @@ async function generateWithGemini(type, message, conversationHistory = []) {
   }
   
   const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || 'I could not generate a response.';
+  return extractGeminiText(data) || 'I could not generate a response.';
 }
 
 // ─── Provider 4: OpenAI (paid) ─────────────────────────────────
@@ -397,7 +413,7 @@ async function visionWithGemini(type, message, img) {
     throw new Error(err.error?.message || `Gemini vision error ${response.status}`);
   }
   const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return extractGeminiText(data) || '';
 }
 
 /**
@@ -876,7 +892,7 @@ async function* streamWithGemini(type, message, conversationHistory = []) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error?.message || `Gemini API error ${response.status}`);
   }
-  yield* iterateSse(response, data => data.candidates?.[0]?.content?.parts?.[0]?.text || '');
+  yield* iterateSse(response, (data) => extractGeminiText(data));
 }
 
 /**
