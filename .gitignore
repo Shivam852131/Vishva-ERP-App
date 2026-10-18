@@ -10,6 +10,13 @@ build/
 **/android/app/.cxx/
 **/android/.gradle/
 **/android/local.properties
+# React Native's bundle task writes the JS bundle, copied images and a
+# generated keep.xml into src/main/ (see createKeepFileAsync.js). All of it
+# is rebuilt on every build and CI compiles fine without it.
+**/android/app/src/main/assets/
+**/android/app/src/main/res/raw/keep.xml
+**/android/app/src/main/res/drawable-*/node_modules_*
+**/android/app/src/main/res/drawable-*/assets_*
 **/ios/build/
 **/ios/Pods/
 *.keystore
