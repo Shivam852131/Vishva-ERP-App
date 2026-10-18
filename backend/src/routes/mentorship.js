@@ -4,6 +4,7 @@ const { sendError, nowIso, roomForUser } = require('../utils');
 const { ensureCareerSeed, SKILL_BY_KEY, CAREER_BY_KEY } = require('../careerData');
 const { getSkillMap } = require('../skillProfile');
 const { collegeFilter, requireCollegeAccess } = require('../auth');
+const { createMeetEvent, meetConfigured } = require('../services/googleMeet');
 
 function serializeMentor(doc, extra = {}) {
   return {
@@ -329,6 +330,23 @@ function createMentorshipRouter(io) {
       createdAt: nowIso(),
     };
 
+    // Best-effort: mint a real Google Meet room for the session. A failure
+    // here must never block the booking itself.
+    if (meetConfigured()) {
+      try {
+        const meet = await createMeetEvent({
+          summary: `Mentorship: ${topic}`,
+          description: agenda || `Mentorship session with ${connection.mentorName}`,
+          startIso: scheduledAt,
+          durationMinutes: Number(durationMinutes) || 45,
+        });
+        doc.meetingUrl = meet.meetUrl;
+        doc.meetCalendarEventId = meet.calendarEventId;
+      } catch (err) {
+        console.warn(`[Mentorship] Google Meet creation failed: ${err.message}`);
+      }
+    }
+
     const { insertedId } = await db.collection('mentorship_sessions').insertOne(doc);
     const payload = serializeSession({ ...doc, _id: insertedId });
     io.to(roomForUser(req.user._id)).emit('mentorship:session-booked', payload);
@@ -373,6 +391,7 @@ function createMentorshipRouter(io) {
     }
 
     const updated = await db.collection('mentorship_sessions').findOne({ _id: session._id, ...collegeFilter(req) });
+    io.to(roomForUser(session.studentId)).emit('mentorship:session-updated', serializeSession(updated));
     res.json(serializeSession(updated));
   });
 

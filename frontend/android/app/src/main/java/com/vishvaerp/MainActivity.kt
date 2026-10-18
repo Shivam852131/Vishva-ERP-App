@@ -12,7 +12,7 @@ class MainActivity : ReactActivity() {
     override fun getMainComponentName(): String = "VishvaERP"
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splashScreen = installSplashScreen()
+        installSplashScreen()
         super.onCreate(savedInstanceState)
     }
 

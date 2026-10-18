@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { api, getToken, setAuth as storeAuth, getUser, clearAuth as clearStoredAuth, setUnauthorizedHandler } from '../api';
+import { api, apiWithToken, getToken, setAuth as storeAuth, getUser, clearAuth as clearStoredAuth, setUnauthorizedHandler } from '../api';
 import type { AuthUser, AuthResp, LoginReq, UserRole } from '../types';
 import { disconnectRealtime, reconnectRealtime } from '@/src/realtime/socket';
 
@@ -9,6 +9,8 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string, role: UserRole, phone?: string) => Promise<void>;
+  /** Finish a Google Sign-In flow using the ERP session token the backend issued. */
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -65,6 +67,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await reconnectRealtime();
   }, []);
 
+  const loginWithToken = useCallback(async (sessionToken: string) => {
+    if (!sessionToken) throw new Error('Google sign-in returned no session.');
+    // Resolve the full user profile with the freshly issued ERP token, then
+    // persist everything exactly like a normal login.
+    const u = await apiWithToken<AuthUser>('/auth/me', sessionToken);
+    await storeAuth(sessionToken, u);
+    setToken(sessionToken);
+    setUser(u);
+    await reconnectRealtime();
+  }, []);
+
   const logout = useCallback(async () => {
     await clearStoredAuth();
     disconnectRealtime();
@@ -78,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, refresh }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, loginWithToken, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );

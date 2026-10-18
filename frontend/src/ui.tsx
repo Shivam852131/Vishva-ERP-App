@@ -435,9 +435,9 @@ export function ChipBtn({ label, active, onPress, testID, icon, badge }: any) {
 
 const chipStyles = StyleSheet.create({
   chip: {
-    paddingHorizontal: 14,
-    minHeight: 38,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    height: 36,
+    maxHeight: 36,
     justifyContent: 'center',
     borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceSecondary,

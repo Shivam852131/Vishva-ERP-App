@@ -99,3 +99,26 @@ export function apiUrl(path: string): string {
   const normalized = normalizePath(path);
   return BASE_URL ? `${BASE_URL}/api${normalized}` : `/api${normalized}`;
 }
+
+/** Same as `api()` but authenticates with an explicit token (Google sign-in flow). */
+export async function apiWithToken<T = any>(path: string, token: string, opts: RequestInit = {}): Promise<T> {
+  const normalized = normalizePath(path);
+  const headers: any = { ...(opts.headers as any) };
+  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}/api${normalized}`, { ...opts, headers });
+  const payload = await parseResponse(res);
+  if (!res.ok) {
+    const detail = payload && typeof payload === 'object' && 'detail' in payload
+      ? (payload as { detail?: unknown }).detail
+      : undefined;
+    const msg = detail
+      ? (typeof detail === 'string' ? detail : JSON.stringify(detail))
+      : (typeof payload === 'string' ? payload : `HTTP ${res.status}`);
+    const httpError: ApiError = new Error(msg);
+    httpError.status = res.status;
+    throw httpError;
+  }
+  return payload as T;
+}

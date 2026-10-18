@@ -744,8 +744,199 @@ async function checkProviderHealth() {
   return providers;
 }
 
+// ─── Streaming (real-time token delivery) ─────────────────────
+// Same provider priority as generateAIResponse(). Each helper is an async
+// generator that yields text chunks as the provider produces them, so the
+// client sees the answer appear word by word instead of waiting for the
+// whole response.
+
+/** Parse an SSE (text/event-stream) body and map each event to a text chunk. */
+async function* iterateSse(response, mapEvent) {
+  const reader = typeof response.body?.getReader === 'function' ? response.body.getReader() : null;
+  if (!reader) {
+    // No streaming body available — fall back to a single JSON payload.
+    const data = await response.json().catch(() => ({}));
+    const text = mapEvent(data);
+    if (text) yield text;
+    return;
+  }
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith(':') || line.startsWith('event:')) continue;
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      let text = '';
+      try {
+        text = mapEvent(JSON.parse(payload)) || '';
+      } catch {
+        text = '';
+      }
+      if (text) yield text;
+    }
+  }
+}
+
+async function* streamWithOllama(type, message, conversationHistory = []) {
+  const systemPrompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.general;
+  const prompt = [
+    `System: ${systemPrompt}`,
+    ...conversationHistory.slice(-10).map(m => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`),
+    `User: ${message}`,
+    'Assistant:',
+  ].join('\n');
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: true }),
+    signal: AbortSignal.timeout(OLLAMA_TIMEOUT),
+  });
+  if (!response.ok) throw new Error(`Ollama API error ${response.status}`);
+
+  // Ollama streams NDJSON (one JSON object per line), not SSE.
+  const reader = typeof response.body?.getReader === 'function' ? response.body.getReader() : null;
+  if (!reader) {
+    const data = await response.json().catch(() => ({}));
+    if (data.response) yield data.response;
+    return;
+  }
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const chunk = JSON.parse(line);
+        if (chunk.response) yield chunk.response;
+      } catch { /* incomplete line — buffered for the next read */ }
+    }
+  }
+}
+
+async function* streamWithOpenAICompatible(baseUrl, apiKey, model, type, message, conversationHistory = []) {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: buildMessages(type, message, conversationHistory),
+      stream: true,
+      temperature: 0.7,
+      max_tokens: 512,
+    }),
+    signal: AbortSignal.timeout(90000),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error?.message || `API error ${response.status}`);
+  }
+  yield* iterateSse(response, data => data.choices?.[0]?.delta?.content || '');
+}
+
+/** Google Gemini streaming via :streamGenerateContent?alt=sse */
+async function* streamWithGemini(type, message, conversationHistory = []) {
+  const systemPrompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.general;
+  const contents = [];
+  for (const msg of conversationHistory.slice(-10)) {
+    contents.push({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }],
+    });
+  }
+  contents.push({ role: 'user', parts: [{ text: message }] });
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { temperature: 0.7, topP: 0.9, maxOutputTokens: 1024 },
+      }),
+      signal: AbortSignal.timeout(90000),
+    },
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error?.message || `Gemini API error ${response.status}`);
+  }
+  yield* iterateSse(response, data => data.candidates?.[0]?.content?.parts?.[0]?.text || '');
+}
+
+/**
+ * Stream an AI response in real time.
+ *
+ * Yields `{ token: string }` chunks while generating, and finishes with a
+ * `{ final: { success, source, model } }` event so the caller knows which
+ * provider produced the answer.
+ */
+async function* streamAIResponse(type, message, userId, conversationHistory = []) {
+  if (!checkRateLimit(userId)) {
+    yield { token: 'Rate limit exceeded. Please wait a moment before trying again.' };
+    yield { final: { success: false, source: 'rate_limit', model: null } };
+    return;
+  }
+
+  const providers = [
+    ['ollama', Boolean(OLLAMA_BASE_URL), `ollama/${OLLAMA_MODEL}`,
+      () => streamWithOllama(type, message, conversationHistory)],
+    ['groq', Boolean(GROQ_API_KEY), `groq/${GROQ_MODEL}`,
+      () => streamWithOpenAICompatible(GROQ_BASE_URL, GROQ_API_KEY, GROQ_MODEL, type, message, conversationHistory)],
+    ['gemini', Boolean(GEMINI_API_KEY), `gemini/${GEMINI_MODEL}`,
+      () => streamWithGemini(type, message, conversationHistory)],
+    ['openai', Boolean(OPENAI_API_KEY), `openai/${OPENAI_MODEL}`,
+      () => streamWithOpenAICompatible(OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL, type, message, conversationHistory)],
+  ];
+
+  for (const [name, enabled, model, run] of providers) {
+    if (!enabled) continue;
+    let emitted = '';
+    try {
+      for await (const chunk of run()) {
+        emitted += chunk;
+        yield { token: chunk };
+      }
+      if (emitted) {
+        console.log(`[LLMService] ${name} streamed a response (${model})`);
+        yield { final: { success: true, source: 'ai', model } };
+        return;
+      }
+      console.warn(`[LLMService] ${name} returned an empty streamed response`);
+    } catch (error) {
+      console.warn(`[LLMService] ${name} streaming failed: ${error.message}`);
+      if (emitted) {
+        // Partial answer already delivered — keep it instead of restarting
+        // with another provider's fresh answer.
+        yield { final: { success: true, source: 'ai', model } };
+        return;
+      }
+    }
+  }
+
+  console.log('[LLMService] All providers unavailable for streaming, using mock response');
+  yield { token: generateMockResponse(type, message) };
+  yield { final: { success: true, source: 'mock', model: 'mock' } };
+}
+
 module.exports = {
   generateAIResponse,
+  streamAIResponse,
   generateVisionResponse,
   generateStudyPlanWithAI,
   generateMockResponse,

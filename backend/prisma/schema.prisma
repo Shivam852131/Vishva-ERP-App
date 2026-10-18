@@ -59,6 +59,9 @@ model User {
   chatReceived       ChatMessage[]         @relation("ChatTo")
   aiSessions         AiSession[]
   studyPlans         StudyPlan[]
+  gatePasses         GatePass[]
+  canteenOrders      CanteenOrder[]
+  walletTransactions WalletTransaction[]
 }
 
 model College {
@@ -527,3 +530,64 @@ model StudyPlan {
 
   @@index([userId])
 }
+
+model GatePass {
+  id          String   @id @default(cuid())
+  studentId   String
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reason      String
+  outTime     DateTime
+  inTime      DateTime
+  status      String   @default("pending")
+  approvedBy  String?
+  qrCode      String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([studentId])
+}
+
+model CanteenItem {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  price       Int
+  available   Boolean  @default(true)
+  imageUrl    String   @default("")
+  createdAt   DateTime @default(now())
+}
+
+model CanteenOrder {
+  id          String   @id @default(cuid())
+  studentId   String
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  items       Json     @default("[]")
+  totalAmount Int
+  status      String   @default("placed")
+  createdAt   DateTime @default(now())
+
+  @@index([studentId])
+}
+
+model WalletTransaction {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Int
+  type        String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AdmissionApplication {
+  id            String   @id @default(cuid())
+  applicantName String
+  email         String
+  phone         String
+  course        String
+  documents     Json     @default("[]")
+  status        String   @default("submitted")
+  createdAt     DateTime @default(now())
+}
+

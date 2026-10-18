@@ -1,5 +1,7 @@
 require('dotenv').config();
 const http = require('http');
+const cluster = require('cluster');
+const os = require('os');
 const pino = require('pino');
 
 const { connectDB, closeDB } = require('./db');
@@ -10,6 +12,7 @@ const { stopCleanupCron } = require('./routes/localshare');
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const PORT = Number(process.env.PORT || 8000);
+const CLUSTER_ENABLED = process.env.CLUSTER_MODE === 'true';
 
 let server = null;
 let mlModelsLoaded = false;
@@ -20,20 +23,35 @@ function getMlStatus() {
 }
 
 async function main() {
+  if (CLUSTER_ENABLED && cluster.isPrimary) {
+    const numCPUs = Math.min(os.cpus().length, Number(process.env.MAX_WORKERS || 8));
+    logger.info(`Primary cluster manager running. Forking ${numCPUs} worker processes...`);
+
+    for (let i = 0; i < numCPUs; i++) {
+      cluster.fork();
+    }
+
+    cluster.on('exit', (worker, code, signal) => {
+      logger.warn({ pid: worker.process.pid, code, signal }, 'Worker process died. Forking replacement worker...');
+      cluster.fork();
+    });
+    return;
+  }
+
   await connectDB();
-  logger.info('MongoDB connected.');
+  logger.info(`[Worker ${process.pid}] MongoDB connected.`);
 
   // Load ML models in background — don't block server startup
   mlModelsLoading = true;
   loadModels().then(ok => {
     mlModelsLoaded = ok;
     mlModelsLoading = false;
-    if (ok) logger.info('Face verification ML models loaded successfully.');
-    else logger.warn('Face verification models failed to load — face check-in will be degraded.');
+    if (ok) logger.info(`[Worker ${process.pid}] Face verification ML models loaded successfully.`);
+    else logger.warn(`[Worker ${process.pid}] Face verification models failed to load — face check-in will be degraded.`);
   }).catch(err => {
     mlModelsLoaded = false;
     mlModelsLoading = false;
-    logger.warn({ err: err.message }, 'Face verification model load failed.');
+    logger.warn({ err: err.message }, `[Worker ${process.pid}] Face verification model load failed.`);
   });
 
   const io = createSocketServer();
@@ -45,12 +63,12 @@ async function main() {
   app.set('mlStatus', () => ({ loaded: mlModelsLoaded, loading: mlModelsLoading }));
 
   server.listen(PORT, '0.0.0.0', () => {
-    logger.info(`Vishva ERP backend listening on http://0.0.0.0:${PORT}`);
-    if (process.env.NODE_ENV === 'production') {
+    logger.info(`[Worker ${process.pid}] Vishva ERP backend listening on http://0.0.0.0:${PORT}`);
+    if (process.env.NODE_ENV === 'production' && (!CLUSTER_ENABLED || cluster.isPrimary)) {
       logger.info('Running in PRODUCTION mode');
       startKeepAlive();
     } else {
-      logger.info('Running in DEVELOPMENT mode');
+      logger.info(`Running in ${process.env.NODE_ENV || 'development'} mode`);
     }
   });
 

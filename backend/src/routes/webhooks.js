@@ -3,6 +3,7 @@ const express = require('express');
 const { getDB, oid } = require('../db');
 const { decrypt } = require('../encryption');
 const { nowIso, roomForUser } = require('../utils');
+const { queueSheetSync } = require('../services/googleSheets');
 
 const router = express.Router();
 
@@ -124,6 +125,26 @@ async function handlePaymentCaptured(db, payment, io, collegeId) {
         createdAt: nowIso(),
       };
       await db.collection('fee_payments').insertOne(paymentRecord);
+
+      // Real-time Google Sheets sync (fire-and-forget).
+      (async () => {
+        const student = await db.collection('users')
+          .findOne({ _id: oid(fee.userId) }, { projection: { name: 1, studentCode: 1 } });
+        return queueSheetSync({
+          collegeId: collegeId || fee.collegeId || null,
+          type: 'fee_payment',
+          row: {
+            timestamp: paymentRecord.paidAt,
+            studentName: student?.name || null,
+            studentCode: student?.studentCode || null,
+            receiptNo: paymentRecord.receipt,
+            amount: Number(payment.amount || 0) / 100,
+            mode: 'razorpay',
+            status: paymentRecord.status,
+            term: fee.semester || null,
+          },
+        });
+      })().catch(() => {});
 
       const receipt = {
         feeId: fee._id,

@@ -169,6 +169,14 @@ function SessionCard({ session, onDelete, onHost }: {
         </View>
       )}
 
+      {/* Google Meet badge */}
+      {session.meeting_url ? (
+        <View style={styles.meetBadge}>
+          <Video size={10} color="#15803D" />
+          <Text style={styles.meetBadgeText}>Google Meet available</Text>
+        </View>
+      ) : null}
+
       {/* Enter button for live */}
       {isLive && (
         <View style={styles.cardEnter}>
@@ -190,6 +198,7 @@ function CreateClassModal({ visible, onClose, onCreated }: {
   const [description, setDescription] = useState('');
   const [duration, setDuration] = useState('60');
   const [hoursFromNow, setHoursFromNow] = useState('1');
+  const [createMeet, setCreateMeet] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -202,19 +211,23 @@ function CreateClassModal({ visible, onClose, onCreated }: {
     setLoading(true);
     try {
       const scheduledAt = new Date(Date.now() + (Number(hoursFromNow) || 0) * 3600000).toISOString();
-      await api('/live-classes', {
+      const res = await api<any>('/live-classes', {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(),
           description: description.trim(),
           scheduledAt,
           durationMinutes: Number(duration) || 60,
+          createMeetLink: createMeet,
         }),
       });
       setTitle('');
       setDescription('');
       setDuration('60');
       setHoursFromNow('1');
+      if (res?.meet_error) {
+        Alert.alert('Class scheduled', `The class was created, but the Meet link failed: ${res.meet_error}`);
+      }
       onCreated();
       onClose();
     } catch (e: any) {
@@ -288,6 +301,23 @@ function CreateClassModal({ visible, onClose, onCreated }: {
                 />
               </View>
             </View>
+
+            {/* Google Meet toggle */}
+            <Pressable
+              onPress={() => setCreateMeet(v => !v)}
+              style={[styles.meetToggle, createMeet && styles.meetToggleActive]}
+              accessibilityLabel="Create a Google Meet link for this class"
+            >
+              <View style={[styles.meetCheckbox, createMeet && styles.meetCheckboxActive]}>
+                {createMeet ? <CheckCircle2 size={14} color="#fff" /> : <View style={styles.meetCheckboxEmpty} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.meetToggleTitle}>Create a Google Meet link</Text>
+                <Text style={styles.meetToggleSub}>
+                  Students can join the video call directly from the class room.
+                </Text>
+              </View>
+            </Pressable>
 
             {error ? (
               <View style={styles.errorBanner}>
@@ -530,8 +560,8 @@ const styles = StyleSheet.create({
   searchClear: { width: 22, height: 22, borderRadius: 11, backgroundColor: theme.colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
 
   // Filters
-  filterScroll: { paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.md },
-  filterRow: { gap: theme.spacing.sm },
+  filterScroll: { height: 44, maxHeight: 44, paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.md },
+  filterRow: { gap: theme.spacing.sm, alignItems: 'center', height: 44 },
 
   // Results
   resultsText: { fontSize: 11, color: theme.colors.muted, fontWeight: '600', paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.sm, marginBottom: theme.spacing.xs },
@@ -593,6 +623,15 @@ const styles = StyleSheet.create({
   textInput: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md, fontSize: 13, color: theme.colors.onSurface, backgroundColor: theme.colors.surface },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
   row: { flexDirection: 'row', gap: theme.spacing.md },
+  meetToggle: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  meetToggleActive: { borderColor: '#34A853', backgroundColor: '#F0FDF4' },
+  meetCheckbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface },
+  meetCheckboxActive: { backgroundColor: '#34A853', borderColor: '#34A853' },
+  meetCheckboxEmpty: { width: 8, height: 8, borderRadius: 2, backgroundColor: theme.colors.border },
+  meetToggleTitle: { fontSize: 13, fontWeight: '700', color: theme.colors.onSurface },
+  meetToggleSub: { fontSize: 11, color: theme.colors.muted, marginTop: 2, lineHeight: 15 },
+  meetBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: theme.radius.sm, backgroundColor: '#DCFCE7' },
+  meetBadgeText: { fontSize: 10, fontWeight: '700', color: '#15803D' },
   errorBanner: { backgroundColor: '#FEF2F2', borderRadius: theme.radius.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm, borderWidth: 1, borderColor: '#FECACA' },
   errorText: { color: theme.colors.error, fontSize: 12, fontWeight: '600' },
   modalActions: { flexDirection: 'row', gap: theme.spacing.md, paddingTop: theme.spacing.sm },

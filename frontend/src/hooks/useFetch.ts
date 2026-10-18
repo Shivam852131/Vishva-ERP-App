@@ -9,12 +9,18 @@ interface UseFetchResult<T> {
   setData: (data: T | undefined) => void;
 }
 
+const CACHE_TTL_MS = 60000; // 1 minute in-memory cache
+const memoryCache = new Map<string, { data: any; timestamp: number }>();
+
 export function useFetch<T = any>(
   path: string | null,
   opts: RequestInit = {},
 ): UseFetchResult<T> {
-  const [data, setData] = useState<T | undefined>(undefined);
-  const [loading, setLoading] = useState(true);
+  const cachedEntry = path ? memoryCache.get(path) : undefined;
+  const isFresh = cachedEntry ? (Date.now() - cachedEntry.timestamp < CACHE_TTL_MS) : false;
+
+  const [data, setData] = useState<T | undefined>(cachedEntry?.data);
+  const [loading, setLoading] = useState(!isFresh && !cachedEntry?.data);
   const [error, setError] = useState<string | null>(null);
   const [trigger, setTrigger] = useState(0);
   const mounted = useRef(true);
@@ -29,18 +35,32 @@ export function useFetch<T = any>(
     return () => { mounted.current = false; };
   }, []);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceRefresh = false) => {
     if (!path) {
       setLoading(false);
       setError(null);
       setData(undefined);
       return;
     }
-    setLoading(true);
+
+    const currentCached = memoryCache.get(path);
+    if (!forceRefresh && currentCached && (Date.now() - currentCached.timestamp < CACHE_TTL_MS)) {
+      setData(currentCached.data);
+      setLoading(false);
+      return;
+    }
+
+    if (!currentCached?.data) {
+      setLoading(true);
+    }
     setError(null);
+
     try {
       const res = await api<T>(path, optsRef.current);
-      if (mounted.current) setData(res);
+      if (mounted.current) {
+        memoryCache.set(path, { data: res, timestamp: Date.now() });
+        setData(res);
+      }
     } catch (e: any) {
       if (mounted.current) setError(e?.message || 'Something went wrong');
     } finally {
@@ -53,10 +73,22 @@ export function useFetch<T = any>(
   }, [fetchData]);
 
   const refresh = useCallback(() => {
+    if (path) memoryCache.delete(path);
     setTrigger(t => t + 1);
-  }, []);
+  }, [path]);
 
-  return { data, loading, error, refresh, setData };
+  const updateData = useCallback((newData: T | undefined) => {
+    if (path && newData !== undefined) {
+      memoryCache.set(path, { data: newData, timestamp: Date.now() });
+    }
+    setData(newData);
+  }, [path]);
+
+  return { data, loading, error, refresh, setData: updateData };
+}
+
+export function clearFetchCache() {
+  memoryCache.clear();
 }
 
 export function useMutate<T = any>(defaultPath?: string) {

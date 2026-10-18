@@ -53,7 +53,7 @@ export default function ParentAI() {
   const sendMessage = async (msg: string) => {
     try {
       const res = await api('/ai/chat', { method: 'POST', body: JSON.stringify({ message: msg }) });
-      return res.response || 'I could not process that request.';
+      return res?.response || res?.message?.content || 'I could not process that request.';
     } catch { return 'AI service unavailable. Please try again.'; }
   };
 

@@ -16,6 +16,19 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const { width } = Dimensions.get('window');
 const COLORS = [theme.colors.brand, theme.colors.brandPrimary, '#10B981', '#065F46', '#0F766E'];
 
+const normalizeDay = (d?: string) => {
+  if (!d) return '';
+  const s = String(d).trim().toLowerCase();
+  if (s.startsWith('mon')) return 'Mon';
+  if (s.startsWith('tue')) return 'Tue';
+  if (s.startsWith('wed')) return 'Wed';
+  if (s.startsWith('thu')) return 'Thu';
+  if (s.startsWith('fri')) return 'Fri';
+  if (s.startsWith('sat')) return 'Sat';
+  if (s.startsWith('sun')) return 'Sun';
+  return String(d).slice(0, 3);
+};
+
 export default function Timetable() {
   const { data: slots, loading, error, refresh } = useFetch<TimetableSlot[]>('/timetable');
   const [refreshing, setRefreshing] = useState(false);
@@ -35,8 +48,8 @@ export default function Timetable() {
   }, [refresh]);
 
   const filtered = (slots || [])
-    .filter(s => s.day === day)
-    .sort((a, b) => a.start.localeCompare(b.start));
+    .filter(s => normalizeDay(s.day) === day)
+    .sort((a, b) => (a.start || '').localeCompare(b.start || ''));
 
   return (
     <ErrorBoundary>
@@ -52,7 +65,7 @@ export default function Timetable() {
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.dayScroll}
-          contentContainerStyle={{ gap: 8, paddingHorizontal: theme.spacing.lg }}
+          contentContainerStyle={styles.dayScrollContent}
         >
           {DAYS.map(d => (
             <ChipBtn
@@ -118,9 +131,17 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontSize: 24, fontWeight: '800' },
   sub: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 4 },
   dayScroll: {
-    minHeight: 56,
-    paddingVertical: 10,
+    height: 52,
+    maxHeight: 52,
     backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  dayScrollContent: {
+    gap: 8,
+    paddingHorizontal: theme.spacing.lg,
+    alignItems: 'center',
+    height: 52,
   },
   classCard: {
     flexDirection: 'row',

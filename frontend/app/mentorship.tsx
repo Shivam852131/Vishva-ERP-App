@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl,
-  Modal, TextInput, Alert,
+  Modal, TextInput, Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
@@ -884,6 +884,38 @@ export default function Mentorship() {
                   </View>
 
                   {session.agenda ? <Text style={styles.bodyText}>{session.agenda}</Text> : null}
+
+                  {/* Google Meet join */}
+                  {session.meeting_url && session.status === 'scheduled' && (
+                    <Button
+                      label="Join Google Meet"
+                      onPress={() =>
+                        Linking.openURL(session.meeting_url!).catch(() =>
+                          Alert.alert('Could not open meeting', 'No app can handle this link.'),
+                        )
+                      }
+                    />
+                  )}
+                  {!session.meeting_url && session.status === 'scheduled' && (
+                    <Button
+                      label="Create Google Meet link"
+                      variant="secondary"
+                      onPress={async () => {
+                        try {
+                          const res = await api<{ meeting_url: string }>('/google/meet/link', {
+                            method: 'POST',
+                            body: JSON.stringify({ targetType: 'mentorship_session', targetId: session.id }),
+                          });
+                          if (res?.meeting_url) {
+                            refreshSessions();
+                            Alert.alert('Google Meet ready', 'A Meet link was created for this session.');
+                          }
+                        } catch (e: any) {
+                          Alert.alert('Could not create link', e?.message || 'Please try again.');
+                        }
+                      }}
+                    />
+                  )}
 
                   {session.action_items?.length > 0 && (
                     <View style={{ gap: 4 }}>

@@ -3,6 +3,7 @@ const { getDB, oid } = require('../db');
 const { authUser, requireRole, collegeFilter, requireCollegeAccess } = require('../auth');
 const { serializeUser, sendError, makeCode, nowIso, isoDate, emitToCollege } = require('../utils');
 const { verifyFace, encodeFace } = require('../faceVerify');
+const { queueSheetSync } = require('../services/googleSheets');
 
 function createAttendanceRouter(io) {
   const router = express.Router();
@@ -488,6 +489,23 @@ function createAttendanceRouter(io) {
 
     emitAttendance(session, req.userCollegeId);
     const course = await db.collection('courses').findOne({ _id: oid(session.courseId), ...collegeFilter(req) });
+
+    // Real-time Google Sheets sync (fire-and-forget, never blocks check-in).
+    queueSheetSync({
+      collegeId: req.userCollegeId,
+      type: 'attendance',
+      row: {
+        timestamp: now.toISOString(),
+        studentName: req.user.name,
+        studentCode: req.user.studentCode || null,
+        courseName: course?.name || null,
+        sessionTitle: session.title || null,
+        status,
+        method,
+        date: session.date || isoDate(),
+      },
+    }).catch(() => {});
+
     await pushNotification(req, { audience: 'students', title: 'Attendance confirmed', body: `${course?.name || 'Course'} check-in recorded.` });
     res.json({
       ok: true,

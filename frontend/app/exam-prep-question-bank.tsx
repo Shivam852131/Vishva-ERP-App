@@ -355,8 +355,8 @@ const styles = StyleSheet.create({
   filterBtnActive: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },
 
   filtersPanel: { paddingHorizontal: 12, paddingBottom: 10, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  chipScroll: { paddingTop: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: theme.colors.border, marginRight: 6, backgroundColor: theme.colors.bg },
+  chipScroll: { height: 38, maxHeight: 38, paddingTop: 4 },
+  chip: { paddingHorizontal: 12, height: 32, maxHeight: 32, justifyContent: 'center', alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: theme.colors.border, marginRight: 6, backgroundColor: theme.colors.bg },
   chipActive: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },
   chipText: { fontSize: 12, fontWeight: '600', color: theme.colors.textSecondary },
   chipTextActive: { color: '#fff' },

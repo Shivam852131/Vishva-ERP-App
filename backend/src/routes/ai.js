@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDB, oid } = require('../db');
 const { serializeUser, sendError, makeCode, nowIso, roomForUser } = require('../utils');
-const { generateAIResponse, generateStudyPlanWithAI, checkProviderHealth } = require('../ml/llmService');
+const { generateAIResponse, streamAIResponse, generateVisionResponse, generateStudyPlanWithAI, checkProviderHealth } = require('../ml/llmService');
 const { getPerformanceInsights } = require('../ml/performancePredictor');
 const { collegeFilter, requireCollegeAccess } = require('../auth');
 
@@ -112,6 +112,7 @@ function createAiRouter(io) {
       res.status(201).json({ 
         sessionId: sid, 
         message: assistantMessage,
+        response: assistantMessage.content,
         source: aiResult.source,
       });
     } catch (err) {
@@ -119,16 +120,147 @@ function createAiRouter(io) {
     }
   });
 
+  // ── Real-time streaming chat (Server-Sent Events) ──────────────
+  // Tokens are pushed as they are generated (Gemini/Groq/Ollama all stream),
+  // and the final event carries the persisted message so history stays
+  // consistent with the non-streaming /chat endpoint.
+  router.post('/chat/stream', async (req, res) => {
+    const db = getDB();
+    const { sessionId, message, type } = req.body || {};
+    const aiType = type || 'general';
+    const currentUserId = req.user._id;
+
+    if (!message || !String(message).trim()) return sendError(res, 'message is required.', 400);
+
+    let sid = sessionId;
+    try {
+      if (!sid) {
+        const session = {
+          collegeId: oid(req.userCollegeId),
+          userId: oid(currentUserId),
+          type: aiType,
+          title: String(message).substring(0, 60),
+          createdAt: nowIso(),
+        };
+        const { insertedId } = await db.collection('ai_sessions').insertOne(session);
+        sid = insertedId;
+      } else {
+        const session = await db.collection('ai_sessions').findOne({
+          _id: oid(sid),
+          userId: oid(currentUserId),
+          ...collegeFilter(req),
+        });
+        if (!session) return sendError(res, 'Session not found', 404);
+      }
+
+      const userMessage = {
+        collegeId: oid(req.userCollegeId),
+        sessionId: oid(sid),
+        role: 'user',
+        content: message,
+        createdAt: nowIso(),
+      };
+      await db.collection('ai_messages').insertOne(userMessage);
+
+      const history = await db.collection('ai_messages')
+        .find({ sessionId: oid(sid), ...collegeFilter(req) })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .toArray()
+        .then(msgs => msgs.reverse().map(m => ({ role: m.role, content: m.content })));
+
+      // ── Switch to SSE ──
+      res.status(200);
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no'); // keep proxies from buffering
+      if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+      const send = (event, data) => {
+        if (res.writableEnded) return;
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      // Keep-alive comment so proxies don't idle-timeout the stream.
+      const heartbeat = setInterval(() => {
+        if (!res.writableEnded) res.write(': ping\n\n');
+      }, 15000);
+
+      send('start', { sessionId: String(sid) });
+
+      let full = '';
+      let final = null;
+      try {
+        for await (const chunk of streamAIResponse(aiType, message, currentUserId, history)) {
+          if (chunk.token) {
+            full += chunk.token;
+            send('token', { text: chunk.token });
+          } else if (chunk.final) {
+            final = chunk.final;
+          }
+        }
+      } catch (err) {
+        send('error', { message: err.message || 'AI generation failed.' });
+      } finally {
+        clearInterval(heartbeat);
+      }
+
+      if (!full) {
+        send('error', { message: 'The AI service returned no response. Please try again.' });
+        return res.end();
+      }
+
+      const assistantMessage = {
+        collegeId: oid(req.userCollegeId),
+        sessionId: oid(sid),
+        role: 'assistant',
+        content: full,
+        metadata: { source: final?.source, model: final?.model },
+        createdAt: nowIso(),
+      };
+      await db.collection('ai_messages').insertOne(assistantMessage);
+
+      io.to(roomForUser(currentUserId)).emit('ai:message', {
+        sessionId: sid,
+        userMessage,
+        assistantMessage,
+      });
+
+      send('done', {
+        sessionId: String(sid),
+        response: full,
+        source: final?.source || 'ai',
+        model: final?.model || null,
+      });
+      res.end();
+    } catch (err) {
+      if (!res.headersSent) return sendError(res, err);
+      try { res.end(); } catch { /* already closed */ }
+    }
+  });
+
   router.post('/doubt-solver', async (req, res) => {
     try {
-      const { question } = req.body;
-      if (!question) return sendError(res, 'Question is required', 400);
+      const { question, image } = req.body || {};
+      if (!question && !image) return sendError(res, 'Question or image is required', 400);
 
-      const result = await generateAIResponse('doubt_solver', question, req.user._id);
+      let result;
+      if (image) {
+        result = await generateVisionResponse('doubt_solver', question || 'Please solve this problem from the image step by step.', image, req.user._id);
+        if (!result.success && !result.response) {
+          result.response = result.error || 'Could not process the image. Please type the question text.';
+        }
+      } else {
+        result = await generateAIResponse('doubt_solver', question, req.user._id);
+      }
+
+      const answer = result.response || 'I could not generate an answer.';
       res.json({ 
         question, 
-        answer: result.response,
-        source: result.source,
+        answer,
+        response: answer,
+        source: result.source || 'ai',
       });
     } catch (err) {
       sendError(res, err);
@@ -141,10 +273,12 @@ function createAiRouter(io) {
       if (!question) return sendError(res, 'Question is required', 400);
 
       const result = await generateAIResponse('academic_advisor', question, req.user._id);
-      res.json({ 
+      const advice = result.response || 'I could not generate advice.';
+      res.json({
         question, 
-        advice: result.response,
-        source: result.source,
+        advice,
+        response: advice,
+        source: result.source || 'ai',
       });
     } catch (err) {
       sendError(res, err);

@@ -2,6 +2,7 @@ const express = require('express');
 const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser, emitToCollege } = require('../utils');
 const { requireRole, collegeFilter } = require('../auth');
+const { createMeetEvent } = require('../services/googleMeet');
 
 function roomForLive(sessionId) {
   return `live:${String(sessionId)}`;
@@ -103,7 +104,7 @@ function createLiveClassesRouter(io) {
 
   router.post('/', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
     const db = getDB();
-    const { title, description, courseId, scheduledAt, durationMinutes, meetingUrl, department, year, tags, allowChat, allowQuestions, materials } = req.body || {};
+    const { title, description, courseId, scheduledAt, durationMinutes, meetingUrl, department, year, tags, allowChat, allowQuestions, materials, createMeetLink } = req.body || {};
     if (!title) return sendError(res, 'title is required.', 400);
     if (!scheduledAt) return sendError(res, 'scheduledAt is required.', 400);
 
@@ -135,10 +136,31 @@ function createLiveClassesRouter(io) {
       createdAt: nowIso(),
     };
 
+    // Optionally mint a real Google Meet room for this class. A failure here
+    // (service account not configured, quota, calendar access) must never
+    // block class creation — we report it instead.
+    let meetError = null;
+    if (createMeetLink) {
+      try {
+        const meet = await createMeetEvent({
+          summary: title,
+          description: description || 'Live class on Vishva ERP',
+          startIso: scheduledAt,
+          durationMinutes: Number(durationMinutes) || 60,
+        });
+        doc.meetingUrl = meet.meetUrl;
+        doc.meetCalendarEventId = meet.calendarEventId;
+      } catch (err) {
+        meetError = err.code === 'GOOGLE_NOT_CONFIGURED'
+          ? 'Google Meet is not configured on this server yet.'
+          : (err.message || 'Could not create the Google Meet link.');
+      }
+    }
+
     const { insertedId } = await db.collection('live_sessions').insertOne(doc);
     const payload = serializeSession({ ...doc, _id: insertedId }, { participant_count: 0, active_count: 0, joined: false });
     emitToCollege(io, req.userCollegeId, 'live:scheduled', payload);
-    res.status(201).json(payload);
+    res.status(201).json(meetError ? { ...payload, meet_error: meetError } : payload);
   });
 
   router.get('/:id', async (req, res) => {

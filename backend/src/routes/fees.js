@@ -4,6 +4,7 @@ const { requireRole, collegeFilter, collegeIdOrThrow, requireCollegeAccess } = r
 const { encrypt, decrypt } = require('../encryption');
 const { serializeUser, sendError, makeCode, nowIso, isoDate, paginationParams, sendPaginated, roomForUser } = require('../utils');
 const { getCollegePaymentConfig, getCollegeId } = require('./payment-config');
+const { queueSheetSync } = require('../services/googleSheets');
 
 const PLATFORM_KEY_ID = process.env.PLATFORM_RAZORPAY_KEY_ID;
 const PLATFORM_KEY_SECRET = process.env.PLATFORM_RAZORPAY_KEY_SECRET;
@@ -235,6 +236,26 @@ function createFeesRouter(io) {
         createdAt: nowIso(),
       };
       await db.collection('fee_payments').insertOne(paymentRecord);
+
+      // Real-time Google Sheets sync (fire-and-forget).
+      (async () => {
+        const student = await db.collection('users')
+          .findOne({ _id: oid(fee.userId) }, { projection: { name: 1, studentCode: 1 } });
+        return queueSheetSync({
+          collegeId: studentCollegeId,
+          type: 'fee_payment',
+          row: {
+            timestamp: paymentRecord.paidAt,
+            studentName: student?.name || null,
+            studentCode: student?.studentCode || null,
+            receiptNo: paymentRecord.receipt,
+            amount: paymentRecord.amount,
+            mode: 'razorpay',
+            status: paymentRecord.status,
+            term: paymentRecord.academicYear || null,
+          },
+        });
+      })().catch(() => {});
 
       await db.collection('fees').updateOne(
         { _id: oid(feeId) },

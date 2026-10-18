@@ -16,7 +16,7 @@ import { theme } from '@/src/theme';
 import { useAuth } from '@/src/providers/AuthContext';
 import { api } from '@/src/api';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
-import { ViLogo } from '@/src/components/ViLogo';
+import { AnimatedViLogo } from '@/src/components/AnimatedViLogo';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -223,7 +223,7 @@ export default function PhoneOTPLogin() {
                 opacity: fadeAnim,
                 transform: [{ scale: Animated.multiply(logoScale, pulseAnim) }],
               }]}>
-                <ViLogo size={72} animate={false} />
+                <AnimatedViLogo size={72} />
               </Animated.View>
               <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
                 <Text style={styles.brandName} numberOfLines={1} adjustsFontSizeToFit maxFontSizeMultiplier={1.2}>Vishva ERP</Text>

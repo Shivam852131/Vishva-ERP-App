@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
@@ -8,9 +8,10 @@ import { router } from '@/src/navigation/router';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { useFetch } from '@/src/hooks/useFetch';
 import { api } from '@/src/api';
+import { printAsync } from '@/src/native/print';
 import {
   Sparkles, BarChart3, TrendingUp, TrendingDown, Award,
-  BookOpen, Target, ChevronRight, AlertTriangle, ArrowLeft,
+  BookOpen, Target, ChevronRight, AlertTriangle, ArrowLeft, Download, Printer, FileText,
 } from 'lucide-react-native';
 
 export default function ReportCardAnalysis() {
@@ -91,6 +92,84 @@ export default function ReportCardAnalysis() {
   const bestSubject = current.subjects.reduce((a: any, b: any) => (a.marks || 0) > (b.marks || 0) ? a : b);
   const worstSubject = current.subjects.reduce((a: any, b: any) => (a.marks || 0) < (b.marks || 0) ? a : b);
 
+  const downloadOfficialTranscript = async () => {
+    try {
+      const data = await api('/reports/transcript');
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; color: #1E293B; background: #FFF; }
+            .header { text-align: center; border-bottom: 3px solid #4F46E5; padding-bottom: 14px; margin-bottom: 20px; }
+            .title { font-size: 24px; font-weight: 800; color: #4F46E5; text-transform: uppercase; letter-spacing: 0.5px; }
+            .subtitle { font-size: 13px; color: #64748B; margin-top: 4px; font-weight: 600; text-transform: uppercase; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #F8FAFC; padding: 16px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; border: 1px solid #E2E8F0; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
+            th, td { border: 1px solid #CBD5E1; padding: 10px 12px; text-align: left; }
+            th { background: #4F46E5; color: white; font-weight: 700; text-transform: uppercase; font-size: 11px; }
+            .summary { background: #EEF2FF; padding: 16px; border-radius: 8px; font-size: 14px; border: 1px solid #C7D2FE; margin-bottom: 20px; }
+            .summary-item { margin-bottom: 6px; }
+            .footer { margin-top: 40px; text-align: right; font-size: 12px; color: #64748B; border-top: 1px solid #E2E8F0; padding-top: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="title">${data.institution || 'Vishva ERP Institution'}</div>
+            <div class="subtitle">Official Academic Transcript & Marksheet</div>
+          </div>
+          <div class="info-grid">
+            <div><strong>Student Name:</strong> ${data.student.name}</div>
+            <div><strong>Roll Number:</strong> ${data.student.rollNumber}</div>
+            <div><strong>Department:</strong> ${data.student.department}</div>
+            <div><strong>Semester:</strong> ${data.student.semester}</div>
+            <div><strong>Academic Year:</strong> ${data.student.academicYear}</div>
+            <div><strong>Issue Date:</strong> ${data.summary.issueDate}</div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Subject Code</th>
+                <th>Subject Name</th>
+                <th>Credits</th>
+                <th>Max Marks</th>
+                <th>Obtained</th>
+                <th>Grade</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.results.map((r: any) => `
+                <tr>
+                  <td>${r.sno}</td>
+                  <td>${r.subjectCode}</td>
+                  <td>${r.subjectName}</td>
+                  <td>${r.credits}</td>
+                  <td>${r.maxMarks}</td>
+                  <td>${r.marksObtained}</td>
+                  <td><strong>${r.grade}</strong></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="summary">
+            <div class="summary-item"><strong>Overall Percentage:</strong> ${data.summary.percentage}</div>
+            <div class="summary-item"><strong>Cumulative GPA (CGPA):</strong> ${data.summary.cgpa}</div>
+            <div class="summary-item"><strong>Academic Standing:</strong> ${data.summary.status}</div>
+          </div>
+          <div class="footer">
+            <p>Verified by Vishva ERP Automated Registrar Service • Document Reference ID: VERP-${Date.now()}</p>
+          </div>
+        </body>
+        </html>
+      `;
+      await printAsync({ html });
+    } catch (err: any) {
+      Alert.alert('Export Error', err?.message || 'Failed to generate official transcript PDF.');
+    }
+  };
+
   return (
     <ErrorBoundary>
       <Animated.View style={{ flex: 1, backgroundColor: theme.colors.surface, opacity: fadeAnim }}>
@@ -106,6 +185,10 @@ export default function ReportCardAnalysis() {
                   <Text style={styles.heroTitle} numberOfLines={1}>AI Report Card Analysis</Text>
                   <Text style={styles.heroSub} numberOfLines={1}>Deep insights into academic performance</Text>
                 </View>
+                <Pressable onPress={downloadOfficialTranscript} style={styles.exportBtn}>
+                  <Download size={14} color="#fff" />
+                  <Text style={styles.exportTxt}>PDF</Text>
+                </Pressable>
               </View>
             </LinearGradient>
           </View>
@@ -227,6 +310,8 @@ const styles = StyleSheet.create({
   heroTitles: { flex: 1, minWidth: 0 },
   heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
   heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
+  exportBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  exportTxt: { color: '#fff', fontSize: 11, fontWeight: '800' },
   semTabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
   semTab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 12, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
   semTabActive: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },

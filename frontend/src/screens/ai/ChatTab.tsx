@@ -37,6 +37,7 @@ import {
 import * as ImagePicker from '@/src/native/image-picker';
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
+import { streamChat } from '@/src/ai-stream';
 import { theme } from '@/src/theme';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { subscribeRealtime } from '@/src/realtime/socket';
@@ -217,12 +218,15 @@ export default function ChatTab() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [retryMsg, setRetryMsg] = useState<LocalMsg | null>(null);
+  const [streaming, setStreaming] = useState(false);
+  const streamAbortRef = useRef<{ aborted: boolean } | null>(null);
 
   const sessionRef = useRef<string | null>(sessionId);
   const scrollRef = useRef<FlatList<LocalMsg>>(null);
   const inputRef = useRef<TextInput>(null);
 
   const { mutate: sendMsg, loading } = useMutate<any>();
+  const busy = loading || streaming;
   const { data: historyData, loading: historyLoading, refresh: refreshHistory } = useFetch<any[]>(
     showHistory && sessionRef.current ? `/ai/sessions/${sessionRef.current}/messages` : null,
   );
@@ -279,7 +283,7 @@ export default function ChatTab() {
 
   const send = async (overrideText?: string) => {
     const q = (overrideText || input).trim();
-    if ((!q && !image) || loading) return;
+    if ((!q && !image) || busy) return;
 
     const img = image;
     const userMsg: LocalMsg = {
@@ -297,39 +301,68 @@ export default function ChatTab() {
     setRetryMsg(null);
 
     try {
-      let reply: string;
       if (persona === 'doubt' || img) {
+        // Vision / doubt solving — not a streaming endpoint.
         const r = await sendMsg('/ai/doubt-solver', {
           method: 'POST',
           body: JSON.stringify({
             question: q,
+            image: img,
           }),
         });
-        reply = r?.answer || r?.reply || 'No response from AI.';
-      } else {
-        const r = await sendMsg('/ai/chat', {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: sessionRef.current,
-            message: q,
-            type: persona,
-          }),
-        });
-        reply = r?.message?.content || r?.reply || 'No response from AI.';
-        if (r?.sessionId) sessionRef.current = r.sessionId;
+        const reply = r?.answer || r?.response || r?.reply || 'No response from AI.';
+        setMessages((m) => [
+          ...m,
+          { id: generateId(), role: 'ai', text: reply, timestamp: new Date().toISOString() },
+        ]);
+        scrollToBottom();
+        return;
       }
+
+      // Real-time streaming: show the reply as the AI writes it.
+      const aiMsgId = generateId();
       setMessages((m) => [
         ...m,
-        { id: generateId(), role: 'ai', text: reply, timestamp: new Date().toISOString() },
+        { id: aiMsgId, role: 'ai', text: '', timestamp: new Date().toISOString() },
       ]);
+      setStreaming(true);
+      const abortState = { aborted: false };
+      streamAbortRef.current = abortState;
+
+      const result = await streamChat({
+        sessionId: sessionRef.current,
+        message: q,
+        type: persona,
+        signal: abortState,
+        onToken: (token) => {
+          setMessages((m) =>
+            m.map((msg) => (msg.id === aiMsgId ? { ...msg, text: msg.text + token } : msg)),
+          );
+          scrollToBottom();
+        },
+      });
+
+      if (result.sessionId) sessionRef.current = result.sessionId;
+      // Replace with the server-confirmed full text (handles any drift).
+      setMessages((m) =>
+        m.map((msg) => (msg.id === aiMsgId ? { ...msg, text: result.response || msg.text } : msg)),
+      );
+      refreshSessions();
     } catch (e: any) {
       const errMsg = e?.message || 'Something went wrong. Please try again.';
       setError(errMsg);
       setRetryMsg(userMsg);
     } finally {
+      setStreaming(false);
+      streamAbortRef.current = null;
       scrollToBottom();
     }
   };
+
+  // Stop an in-flight stream when the screen unmounts.
+  useEffect(() => () => {
+    if (streamAbortRef.current) streamAbortRef.current.aborted = true;
+  }, []);
 
   const retryLastMessage = () => {
     if (retryMsg) {
@@ -543,7 +576,7 @@ export default function ChatTab() {
           )}
 
           {/* Messages or Empty State */}
-          {messages.length <= 1 && !loading ? (
+          {messages.length <= 1 && !busy ? (
             <EmptyChatView onSelectPrompt={(p) => { setInput(p); setTimeout(() => send(p), 50); }} />
           ) : (
             <FlatList
@@ -554,7 +587,7 @@ export default function ChatTab() {
               style={styles.msgList}
               contentContainerStyle={styles.msgContent}
               showsVerticalScrollIndicator={false}
-              ListFooterComponent={loading ? <TypingIndicator /> : null}
+              ListFooterComponent={busy ? <TypingIndicator /> : null}
             />
           )}
 
@@ -616,16 +649,16 @@ export default function ChatTab() {
             />
             <Pressable
               onPress={() => send()}
-              disabled={loading || (!input.trim() && !image)}
+              disabled={busy || (!input.trim() && !image)}
               style={[
                 styles.sendBtn,
                 { backgroundColor: currentPersona.color },
-                (loading || (!input.trim() && !image)) && styles.sendBtnDisabled,
+                (busy || (!input.trim() && !image)) && styles.sendBtnDisabled,
               ]}
               testID="chat-send"
               accessibilityLabel="Send message"
             >
-              {loading ? (
+              {busy ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <Send color="#fff" size={18} />

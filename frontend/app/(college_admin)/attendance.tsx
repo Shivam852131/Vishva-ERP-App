@@ -1975,11 +1975,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chipScroller: {
+    height: 44,
+    maxHeight: 44,
     marginBottom: 6,
   },
   chipBtn: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    height: 34,
+    maxHeight: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceSecondary,
     marginRight: 8,

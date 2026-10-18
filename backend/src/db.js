@@ -8,8 +8,8 @@ if (!MONGODB_URI) {
 }
 
 const POOL_OPTIONS = {
-  maxPoolSize: 25,
-  minPoolSize: 5,
+  maxPoolSize: 100,
+  minPoolSize: 10,
   maxIdleTimeMS: 30000,
   serverSelectionTimeoutMS: 10000,
   connectTimeoutMS: 10000,
@@ -174,12 +174,15 @@ const INDEX_DEFS = [
   ['visitors', { collegeId: 1 }],
   ['gate_passes', { collegeId: 1 }],
   ['ai_sessions', { collegeId: 1 }],
+  ['ai_sessions', { userId: 1, collegeId: 1, createdAt: -1 }],
   ['ai_messages', { collegeId: 1 }],
+  ['ai_messages', { sessionId: 1, collegeId: 1, createdAt: 1 }],
   ['ai_assignment_checks', { collegeId: 1 }],
   ['ai_assignment_checks', { userId: 1 }],
   ['interview_questions', { collegeId: 1 }],
   ['generated_question_papers', { collegeId: 1 }],
   ['study_plans', { collegeId: 1 }],
+  ['study_plans', { userId: 1, collegeId: 1, createdAt: -1 }],
   ['classrooms', { collegeId: 1 }],
   ['schedules', { collegeId: 1 }],
   ['face_profiles', { collegeId: 1 }],

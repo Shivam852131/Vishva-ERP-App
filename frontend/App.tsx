@@ -9,6 +9,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './src/ErrorBoundary';
 import { navigationRef } from './src/navigation/navigation-ref';
 import { AuthProvider } from './src/providers/AuthContext';
+import { ToastProvider } from './src/providers/ToastContext';
+import { NetworkBanner } from './src/components/NetworkBanner';
 import { theme } from './src/theme';
 
 function LoadingScreen() {
@@ -43,6 +45,7 @@ const CollegeAdminPaymentsScreen = LS(() => import('./app/(college_admin)/paymen
 const CollegeAdminSubscriptionScreen = LS(() => import('./app/(college_admin)/subscription'));
 const CollegeAdminHostelAdminScreen = LS(() => import('./app/(college_admin)/hostel-admin'));
 const CollegeAdminPaymentSettingsScreen = LS(() => import('./app/(college_admin)/payment-settings'));
+const CollegeAdminGoogleSettingsScreen = LS(() => import('./app/(college_admin)/google-settings'));
 const CollegeAdminCareerHubScreen = LS(() => import('./app/(college_admin)/career-hub'));
 const CollegeAdminPlacementsScreen = LS(() => import('./app/(college_admin)/placements'));
 const CollegeAdminAssessmentsAdminScreen = LS(() => import('./app/(college_admin)/assessments-admin'));
@@ -95,6 +98,9 @@ const SkillProfileScreen = LS(() => import('./app/skill-profile'));
 const CareerDashboardScreen = LS(() => import('./app/career-dashboard'));
 const FaceEnrollScreen = LS(() => import('./app/face-enroll'));
 const EditProfileScreen = LS(() => import('./app/edit-profile'));
+const GatePassScreen = LS(() => import('./app/gatepass'));
+const CanteenScreen = LS(() => import('./app/canteen'));
+const AdmissionScreen = LS(() => import('./app/admission'));
 const ScreenshotTestScreen = LS(() => import('./app/screenshot-test'));
 const LocalShareHomeScreen = LS(() => import('./app/localshare-home'));
 const LocalShareCreateScreen = LS(() => import('./app/localshare-create'));
@@ -125,8 +131,10 @@ export default function App() {
             translucent={false}
           />
           <AuthProvider>
-            <BottomSheetModalProvider>
-              <NavigationContainer ref={navigationRef}>
+            <ToastProvider>
+              <BottomSheetModalProvider>
+                <NetworkBanner />
+                <NavigationContainer ref={navigationRef}>
                 <Suspense fallback={<LoadingScreen />}>
                 <RootStack.Navigator screenOptions={{ headerShown: false }}>
                   <RootStack.Screen name="/" component={IndexScreen} />
@@ -141,6 +149,7 @@ export default function App() {
                   <RootStack.Screen name="/(faculty)/exam-generator" component={FacultyExamGeneratorScreen} />
                   <RootStack.Screen name="/(college_admin)/payments" component={CollegeAdminPaymentsScreen} />
                   <RootStack.Screen name="/(college_admin)/payment-settings" component={CollegeAdminPaymentSettingsScreen} />
+                  <RootStack.Screen name="/(college_admin)/google-settings" component={CollegeAdminGoogleSettingsScreen} />
                   <RootStack.Screen name="/(college_admin)/subscription" component={CollegeAdminSubscriptionScreen} />
                   <RootStack.Screen name="/(college_admin)/hostel-admin" component={CollegeAdminHostelAdminScreen} />
                   <RootStack.Screen name="/(college_admin)/career-hub" component={CollegeAdminCareerHubScreen} />
@@ -209,11 +218,15 @@ export default function App() {
                   <RootStack.Screen name="/exam-prep-quiz-builder" component={ExamPrepQuizBuilderScreen} />
                   <RootStack.Screen name="/exam-prep-attempt" component={ExamPrepAttemptScreen} />
                   <RootStack.Screen name="/exam-prep-bookmarks" component={ExamPrepBookmarksScreen} />
+                  <RootStack.Screen name="/gatepass" component={GatePassScreen} />
+                  <RootStack.Screen name="/canteen" component={CanteenScreen} />
+                  <RootStack.Screen name="/admission" component={AdmissionScreen} />
                   <RootStack.Screen name="/__screenshots" component={ScreenshotTestScreen} options={{ headerShown: false }} />
                 </RootStack.Navigator>
                 </Suspense>
               </NavigationContainer>
             </BottomSheetModalProvider>
+          </ToastProvider>
           </AuthProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

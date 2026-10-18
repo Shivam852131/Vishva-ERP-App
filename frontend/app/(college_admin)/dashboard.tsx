@@ -8,7 +8,7 @@ import {
   Users, Building, Library, Home, BarChart3, MessageSquare, Bus, Bell,
   CreditCard, ShieldCheck, TrendingUp, TrendingDown, Clock, Activity,
   Zap, Target, ArrowRight, Star, Calendar, AlertTriangle, CheckCircle,
-  Eye, ChevronRight, Send, MapPin, Briefcase, Brain,
+  Eye, ChevronRight, Send, MapPin, Briefcase, Brain, Globe,
 } from 'lucide-react-native';
 import { useAuth } from '@/src/providers/AuthContext';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
@@ -167,6 +167,7 @@ export default function AdminDashboard() {
     { icon: <Target size={18} color="#fff" />, label: 'Assessments', color: '#8B5CF6', route: '/(college_admin)/assessments-admin' },
     { icon: <Users size={18} color="#fff" />, label: 'Mentorship', color: '#EC4899', route: '/(college_admin)/mentorship-admin' },
     { icon: <Star size={18} color="#fff" />, label: 'Skills', color: '#10B981', route: '/(college_admin)/skill-admin' },
+    { icon: <Globe size={18} color="#fff" />, label: 'Google Workspace', color: '#EA4335', route: '/(college_admin)/google-settings' },
     { icon: <Bell size={18} color="#fff" />, label: 'Notifications', color: '#8B5CF6', route: '/notifications' },
     // Exam Prep was faculty-only on the dashboards — college admins have the
     // same backend permissions but had no entry point to the module.

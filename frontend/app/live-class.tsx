@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, FlatList,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, FlatList, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from '@/src/navigation/router';
@@ -705,6 +705,36 @@ export default function LiveClassRoom() {
     ]);
   };
 
+  // ── Google Meet ──
+  const [creatingMeet, setCreatingMeet] = useState(false);
+  const meetingUrl: string | null = data?.meeting_url || null;
+
+  const openMeet = useCallback(() => {
+    if (!meetingUrl) return;
+    Linking.openURL(meetingUrl).catch(() =>
+      Alert.alert('Could not open meeting', 'No app can handle this link. Try copying it into a browser.'),
+    );
+  }, [meetingUrl]);
+
+  const createMeetLink = useCallback(async () => {
+    if (creatingMeet) return;
+    setCreatingMeet(true);
+    try {
+      const res = await api<{ meeting_url: string }>('/google/meet/link', {
+        method: 'POST',
+        body: JSON.stringify({ targetType: 'live_class', targetId: sessionId }),
+      });
+      if (res?.meeting_url) {
+        refresh();
+        Alert.alert('Google Meet ready', 'A Meet link was created for this class and shared with everyone.');
+      }
+    } catch (e: any) {
+      Alert.alert('Could not create link', e?.message || 'Please try again.');
+    } finally {
+      setCreatingMeet(false);
+    }
+  }, [sessionId, creatingMeet, refresh]);
+
   return (
     <ErrorBoundary>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -774,6 +804,33 @@ export default function LiveClassRoom() {
                     <Button label="Leave class" variant="secondary" onPress={leave} style={{ flex: 1 }} />
                   ) : (
                     <Button label="Join class" loading={busy} onPress={join} style={{ flex: 1 }} />
+                  )}
+                </View>
+              )}
+
+              {/* Google Meet */}
+              {data.status !== 'ended' && (
+                <View style={styles.meetRow}>
+                  {meetingUrl ? (
+                    <Button
+                      label="Join Google Meet"
+                      icon={<Video size={14} color="#fff" />}
+                      onPress={openMeet}
+                      style={{ flex: 1 }}
+                    />
+                  ) : isHost ? (
+                    <Button
+                      label={creatingMeet ? 'Creating Meet link…' : 'Create Google Meet link'}
+                      variant="secondary"
+                      loading={creatingMeet}
+                      onPress={createMeetLink}
+                      style={{ flex: 1 }}
+                    />
+                  ) : (
+                    <View style={styles.meetPending}>
+                      <Video size={13} color={theme.colors.muted} />
+                      <Text style={styles.meetPendingTxt}>No meeting link shared yet</Text>
+                    </View>
                   )}
                 </View>
               )}
@@ -854,6 +911,11 @@ const styles = StyleSheet.create({
 
   // Action bar
   actionBar: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+
+  // Google Meet row
+  meetRow: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  meetPending: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceTertiary },
+  meetPendingTxt: { fontSize: 12, color: theme.colors.muted, fontWeight: '600' },
 
   // Tab bar
   tabBar: { flexDirection: 'row', backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },

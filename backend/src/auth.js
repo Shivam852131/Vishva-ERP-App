@@ -11,7 +11,15 @@ if (!JWT_SECRET) {
   throw new Error('JWT_SECRET environment variable is required.');
 }
 
-const PUBLIC_PATHS = new Set(['/auth/login', '/auth/register', '/auth/send-otp', '/auth/verify-otp']);
+const PUBLIC_PATHS = new Set([
+  '/auth/login',
+  '/auth/register',
+  '/auth/send-otp',
+  '/auth/verify-otp',
+  '/auth/google',
+  '/auth/google/start',
+  '/auth/google/callback',
+]);
 
 function hashPassword(password) {
   return bcrypt.hash(password, SALT_ROUNDS);

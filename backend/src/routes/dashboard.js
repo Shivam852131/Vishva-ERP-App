@@ -16,6 +16,19 @@ async function buildStudentAttendance(studentId) {
   return { rate, total, present };
 }
 
+function normalizeDay(d) {
+  if (!d) return 'Mon';
+  const str = String(d).trim().toLowerCase();
+  if (str.startsWith('mon')) return 'Mon';
+  if (str.startsWith('tue')) return 'Tue';
+  if (str.startsWith('wed')) return 'Wed';
+  if (str.startsWith('thu')) return 'Thu';
+  if (str.startsWith('fri')) return 'Fri';
+  if (str.startsWith('sat')) return 'Sat';
+  if (str.startsWith('sun')) return 'Sun';
+  return String(d).substring(0, 3);
+}
+
 async function buildStudentDashboard(studentId, req) {
   const db = getDB();
   const sid = oid(studentId);
@@ -73,7 +86,7 @@ async function buildStudentDashboard(studentId, req) {
     pending_fees: pendingFees.length,
     upcoming_classes: upcomingClasses.map(s => ({
       id: String(s._id),
-      day: s.dayOfWeek,
+      day: normalizeDay(s.dayOfWeek),
       start: s.startTime,
       end: s.endTime,
       course_id: String(s.courseId),

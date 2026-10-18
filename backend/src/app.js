@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const pino = require('pino');
 const pinoHttp = require('pino-http');
 
+const compression = require('compression');
 const { authMiddleware } = require('./auth');
 const { sendError } = require('./utils');
 
@@ -34,6 +35,12 @@ const { createSkillsRouter, createCareerRouter } = require('./routes/skills');
 const uploadRoutes = require('./routes/upload');
 const { createLocalShareRouter } = require('./routes/localshare');
 const { createExamPrepRouter } = require('./routes/exam-prep');
+const { createReportsRouter } = require('./routes/reports');
+const gatepassRoutes = require('./routes/gatepass');
+const canteenRoutes = require('./routes/canteen');
+const admissionRoutes = require('./routes/admission');
+const { createGoogleRouter } = require('./routes/google');
+const { startSheetSyncWorker } = require('./services/googleSheets');
 
 function createApp(io) {
   const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -49,6 +56,7 @@ function createApp(io) {
   }
 
   app.use(helmet());
+  app.use(compression());
   app.use(cors({ origin: corsOrigins.length ? corsOrigins : true, credentials: true }));
 
   app.use('/api/webhooks/razorpay', express.raw({ type: 'application/json' }));
@@ -72,12 +80,14 @@ function createApp(io) {
 
   const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
   const registerLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+  const googleAuthLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { detail: 'Too many Google sign-in attempts. Please try again later.' } });
   const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false });
   const whatsappLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { detail: 'Too many WhatsApp requests. Please try again later.' } });
   const aiLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { detail: 'Too many AI requests. Please slow down.' } });
 
   app.use('/api/auth/login', loginLimiter);
   app.use('/api/auth/register', registerLimiter);
+  app.use('/api/auth/google', googleAuthLimiter);
   app.post('/api/localshare/sessions', rateLimit({ windowMs: 60 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { detail: 'Too many sessions. Please try again later.' } }));
   app.use('/api', apiLimiter);
 
@@ -112,6 +122,12 @@ function createApp(io) {
   app.use('/api', uploadRoutes);
   app.use('/api', createLocalShareRouter(io));
   app.use('/api/exam-prep', createExamPrepRouter(io));
+  app.use('/api', createReportsRouter());
+  app.use('/api/gatepass', gatepassRoutes);
+  app.use('/api/canteen', canteenRoutes);
+  app.use('/api/admission', admissionRoutes);
+  app.use('/api', createGoogleRouter(io));
+  startSheetSyncWorker();
   app.use('/api', (_req, res) => {
     sendError(res, 'Route not found.', 404);
   });
