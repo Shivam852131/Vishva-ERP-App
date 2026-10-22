@@ -810,7 +810,7 @@ export default function LiveClassRoom() {
 
               {/* Google Meet */}
               {data.status !== 'ended' && (
-                <View style={styles.meetRow}>
+                <View testID="meet-row" style={styles.meetRow}>
                   {meetingUrl ? (
                     <Button
                       label="Join Google Meet"
@@ -912,8 +912,11 @@ const styles = StyleSheet.create({
   // Action bar
   actionBar: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
 
-  // Google Meet row
-  meetRow: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  // Google Meet row. flexDirection must stay 'row': the Button inside is given
+  // flex:1 to fill the width, and flex:1 means flexBasis:0 — inside a column
+  // that collapses the row to just its paddingBottom, hiding the button behind
+  // the tab bar.
+  meetRow: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   meetPending: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceTertiary },
   meetPendingTxt: { fontSize: 12, color: theme.colors.muted, fontWeight: '600' },
 
