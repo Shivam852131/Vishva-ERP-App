@@ -30,6 +30,33 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 // Alternatives: 'gemini-3.5-flash-lite' (highest free quota), 'gemini-3.6-flash'.
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
+// Gemini 3.x spends most of `maxOutputTokens` on internal "thinking"
+// (measured: 490 of 512 budget). With the old 512-token cap the visible
+// answer was truncated after ~18 tokens with finishReason MAX_TOKENS, which
+// is why replies looked unfinished and unrelated to the question.
+const GEMINI_MAX_OUTPUT_TOKENS = parseInt(process.env.GEMINI_MAX_OUTPUT_TOKENS || '8192', 10);
+
+// Free-tier Gemini answers 429/503 under load. Retry instead of falling
+// straight through to the canned mock reply.
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
+// When the primary model stays congested, walk a short list of siblings before
+// giving up. Measured during an outage: gemini-3.8-flash returned 503 while
+// gemini-3.5-flash-lite answered in 1.5s — a fallback turns "no answer" into a
+// real one. Override with GEMINI_FALLBACK_MODELS (comma separated).
+const GEMINI_MODELS = Array.from(new Set([
+  GEMINI_MODEL,
+  ...String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.5-flash-lite,gemini-3.6-flash')
+    .split(',')
+    .map((model) => model.trim())
+    .filter(Boolean),
+]));
+
+/** Build a Gemini endpoint URL, e.g. geminiUrl(m, 'streamGenerateContent', 'alt=sse'). */
+const geminiUrl = (model, method, extraQuery = '') =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:${method}`
+  + `${extraQuery ? `?${extraQuery}&` : '?'}key=${GEMINI_API_KEY}`;
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
@@ -100,6 +127,36 @@ Format: {"question":"...","options":["A","B","C","D"],"answer":0,"explanation":"
 Format: {"question":"...","options":["A","B","C","D"],"answer":0,"explanation":"","difficulty":"medium"}`,
 };
 
+// The app's chat personas send short keys ('doubt', 'study', 'general') that
+// never matched a SYSTEM_PROMPTS entry, so every chat silently fell back to
+// the generic prompt and the model answered without the persona's instructions.
+const PROMPT_ALIASES = {
+  doubt: 'doubt_solver',
+  'doubt-solver': 'doubt_solver',
+  study: 'study_coach',
+  coach: 'study_coach',
+  advisor: 'academic_advisor',
+  academic: 'academic_advisor',
+  code: 'code_helper',
+  assignment: 'assignment_checker',
+  interview: 'interview_practice',
+  question: 'question_generator',
+  extractor: 'question_extractor',
+};
+
+/** Resolve a caller-supplied type (possibly an alias) to a real prompt key. */
+function promptKey(type, fallback = 'general') {
+  if (typeof type === 'string' && Object.prototype.hasOwnProperty.call(SYSTEM_PROMPTS, type)) return type;
+  if (typeof type === 'string' && PROMPT_ALIASES[type] && SYSTEM_PROMPTS[PROMPT_ALIASES[type]]) {
+    return PROMPT_ALIASES[type];
+  }
+  return SYSTEM_PROMPTS[fallback] ? fallback : 'general';
+}
+
+function systemPromptFor(type, fallback = 'general') {
+  return SYSTEM_PROMPTS[promptKey(type, fallback)];
+}
+
 // ─── Rate limiting ─────────────────────────────────────────────
 const RATE_LIMIT_WINDOW = 60000;
 const MAX_REQUESTS_PER_WINDOW = 20;
@@ -118,7 +175,7 @@ function checkRateLimit(userId) {
 
 // ─── Message builder ───────────────────────────────────────────
 function buildMessages(type, message, conversationHistory = []) {
-  const systemPrompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.general;
+  const systemPrompt = systemPromptFor(type);
   return [
     { role: 'system', content: systemPrompt },
     ...conversationHistory.slice(-10),
@@ -148,7 +205,7 @@ async function generateWithOllama(type, message, conversationHistory = []) {
         options: {
           temperature: 0.7,
           top_p: 0.9,
-          num_predict: 512,
+          num_predict: 2048,
         },
       }),
       signal: controller.signal,
@@ -183,7 +240,7 @@ async function generateWithGroq(type, message, conversationHistory = []) {
     body: JSON.stringify({
       model: GROQ_MODEL,
       messages,
-      max_tokens: 512,
+      max_tokens: 2048,
       temperature: 0.7,
       top_p: 0.9,
     }),
@@ -213,13 +270,63 @@ function extractGeminiText(data) {
 }
 
 // ─── Provider 3: Google Gemini (free tier) ─────────────────────
+
+/**
+ * Call Gemini's generateContent, retrying transient free-tier failures
+ * (429/503) and then walking GEMINI_MODELS, before the caller gives up and
+ * falls back to the canned mock reply.
+ * @returns {Promise<{ text: string, finishReason: string, model: string }>}
+ */
+async function callGemini(contents, systemPrompt, maxOutputTokens) {
+  let lastError;
+  for (let i = 0; i < GEMINI_MODELS.length; i++) {
+    const model = GEMINI_MODELS[i];
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
+
+      const response = await fetch(geminiUrl(model, 'generateContent'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: {
+            temperature: 0.7,
+            topP: 0.9,
+            maxOutputTokens,
+          },
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          text: extractGeminiText(data),
+          finishReason: data?.candidates?.[0]?.finishReason || '',
+          model,
+        };
+      }
+
+      const error = await response.json().catch(() => ({}));
+      lastError = new Error(error.error?.message || `Gemini API error ${response.status}`);
+      if (!RETRYABLE_STATUSES.has(response.status)) break;
+      console.warn(`[LLMService] ${model} attempt ${attempt + 1} failed (${response.status}), retrying…`);
+    }
+
+    const next = GEMINI_MODELS[i + 1];
+    console.warn(`[LLMService] ${model} unavailable: ${lastError?.message} — ${next ? `trying ${next}` : 'giving up'}`);
+  }
+  throw lastError;
+}
+
 async function generateWithGemini(type, message, conversationHistory = []) {
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY not configured');
   }
-  
-  const systemPrompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.general;
-  
+
+  const systemPrompt = systemPromptFor(type);
+
   // Build conversation contents for Gemini format
   const contents = [];
   for (const msg of conversationHistory.slice(-10)) {
@@ -229,31 +336,25 @@ async function generateWithGemini(type, message, conversationHistory = []) {
     });
   }
   contents.push({ role: 'user', parts: [{ text: message }] });
-  
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 512,
-        },
-      }),
+
+  let { text, finishReason, model } = await callGemini(contents, systemPrompt, GEMINI_MAX_OUTPUT_TOKENS);
+
+  if (finishReason === 'MAX_TOKENS') {
+    // Thinking consumed the whole budget — the visible answer is a fragment.
+    // Retry with a much larger budget and keep whichever answer is complete.
+    console.warn(`[LLMService] Gemini hit MAX_TOKENS with ${GEMINI_MAX_OUTPUT_TOKENS}, retrying with ${GEMINI_MAX_OUTPUT_TOKENS * 2}`);
+    try {
+      const retry = await callGemini(contents, systemPrompt, GEMINI_MAX_OUTPUT_TOKENS * 2);
+      if ((retry.text || '').length > text.length) ({ text, finishReason, model } = retry);
+    } catch (error) {
+      console.warn(`[LLMService] Gemini MAX_TOKENS retry failed: ${error.message}`);
     }
-  );
-  
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message || `Gemini API error ${response.status}`);
+    if (finishReason === 'MAX_TOKENS') {
+      console.warn('[LLMService] Gemini answer still truncated after retry');
+    }
   }
-  
-  const data = await response.json();
-  return extractGeminiText(data) || 'I could not generate a response.';
+
+  return { response: text || 'I could not generate a response.', model };
 }
 
 // ─── Provider 4: OpenAI (paid) ─────────────────────────────────
@@ -273,7 +374,7 @@ async function generateWithOpenAI(type, message, conversationHistory = []) {
     body: JSON.stringify({
       model: OPENAI_MODEL,
       messages,
-      max_tokens: 500,
+      max_tokens: 2048,
       temperature: 0.7,
       top_p: 0.9,
     }),
@@ -403,8 +504,8 @@ async function visionWithGemini(type, message, img) {
               : { inlineData: { mimeType: img.mime, data: img.base64 } },
           ],
         }],
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.question_extractor }] },
-        generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+        systemInstruction: { parts: [{ text: systemPromptFor(type, 'question_extractor') }] },
+        generationConfig: { temperature: 0.4, maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS },
       }),
     }
   );
@@ -439,7 +540,7 @@ async function generateVisionResponse(type, message, image, userId) {
     };
   }
 
-  const systemPrompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.question_extractor;
+  const systemPrompt = systemPromptFor(type, 'question_extractor');
   const prompt = `${systemPrompt}\n\n${message}`;
 
   const attempts = [
@@ -609,7 +710,7 @@ Want me to do a mock interview on any specific topic?`,
 {"question":"Which protocol operates at the Transport Layer of the OSI model?","options":["HTTP","IP","TCP","Ethernet"],"answer":2,"explanation":"TCP provides reliable, ordered transport between processes.","difficulty":"medium"}`,
   };
   
-  return mockResponses[type] || `Thank you for your question about "${topic}".
+  const body = mockResponses[promptKey(type)] || `Thank you for your question about "${topic}".
 
 This is a great topic! Here's my recommendation:
 
@@ -626,6 +727,14 @@ Regular revision helps long-term retention. Take 10 minutes at the end of each s
 Don't hesitate to ask follow-up questions. Curiosity is the engine of learning.
 
 What specific aspect would you like to explore further?`;
+
+  // Never present a canned reply as a real answer: the user asked a specific
+  // question and this template cannot answer it. Say so, so they retry instead
+  // of assuming the AI misunderstood them. Machine-readable types
+  // (question_generator / question_extractor) are exempt — their consumers
+  // parse the body as raw JSON lines and a notice would corrupt it.
+  if (promptKey(type) === 'question_generator' || promptKey(type) === 'question_extractor') return body;
+  return `⚠️ I could not reach the AI service just now, so this is a placeholder — I don't have a real answer to your question yet. Please try again in a few seconds.\n\n---\n\n${body}`;
 }
 
 // ─── Main function: try providers in order ─────────────────────
@@ -663,9 +772,9 @@ async function generateAIResponse(type, message, userId, conversationHistory = [
   // Provider 3: Google Gemini (free tier, 1500 req/day)
   if (GEMINI_API_KEY) {
     try {
-      const response = await generateWithGemini(type, message, conversationHistory);
-      console.log(`[LLMService] Gemini responded (${GEMINI_MODEL})`);
-      return { success: true, response, source: 'ai', model: `gemini/${GEMINI_MODEL}` };
+      const { response, model } = await generateWithGemini(type, message, conversationHistory);
+      console.log(`[LLMService] Gemini responded (${model})`);
+      return { success: true, response, source: 'ai', model: `gemini/${model}` };
     } catch (error) {
       console.warn(`[LLMService] Gemini failed: ${error.message}`);
     }
@@ -802,7 +911,7 @@ async function* iterateSse(response, mapEvent) {
 }
 
 async function* streamWithOllama(type, message, conversationHistory = []) {
-  const systemPrompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.general;
+  const systemPrompt = systemPromptFor(type);
   const prompt = [
     `System: ${systemPrompt}`,
     ...conversationHistory.slice(-10).map(m => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`),
@@ -852,7 +961,7 @@ async function* streamWithOpenAICompatible(baseUrl, apiKey, model, type, message
       messages: buildMessages(type, message, conversationHistory),
       stream: true,
       temperature: 0.7,
-      max_tokens: 512,
+      max_tokens: 2048,
     }),
     signal: AbortSignal.timeout(90000),
   });
@@ -864,8 +973,8 @@ async function* streamWithOpenAICompatible(baseUrl, apiKey, model, type, message
 }
 
 /** Google Gemini streaming via :streamGenerateContent?alt=sse */
-async function* streamWithGemini(type, message, conversationHistory = []) {
-  const systemPrompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.general;
+async function* streamWithGemini(type, message, conversationHistory = [], onModel) {
+  const systemPrompt = systemPromptFor(type);
   const contents = [];
   for (const msg of conversationHistory.slice(-10)) {
     contents.push({
@@ -875,23 +984,47 @@ async function* streamWithGemini(type, message, conversationHistory = []) {
   }
   contents.push({ role: 'user', parts: [{ text: message }] });
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { temperature: 0.7, topP: 0.9, maxOutputTokens: 1024 },
-      }),
-      signal: AbortSignal.timeout(90000),
-    },
-  );
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message || `Gemini API error ${response.status}`);
+  const body = JSON.stringify({
+    contents,
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: { temperature: 0.7, topP: 0.9, maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS },
+  });
+
+  // Retry transient free-tier failures and walk GEMINI_MODELS — all of this
+  // happens before the first token is emitted. Once a token is out, the
+  // provider cascade would restart and answer with the canned mock instead.
+  let lastError;
+  let response = null;
+  let model = null;
+
+  for (let i = 0; i < GEMINI_MODELS.length && !response; i++) {
+    const candidate = GEMINI_MODELS[i];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
+      const res = await fetch(geminiUrl(candidate, 'streamGenerateContent', 'alt=sse'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: AbortSignal.timeout(90000),
+      });
+      if (res.ok) {
+        response = res;
+        model = candidate;
+        break;
+      }
+      const error = await res.json().catch(() => ({}));
+      lastError = new Error(error.error?.message || `Gemini API error ${res.status}`);
+      if (!RETRYABLE_STATUSES.has(res.status)) break;
+      console.warn(`[LLMService] ${candidate} stream attempt ${attempt + 1} failed (${res.status}), retrying…`);
+    }
+    if (!response) {
+      const next = GEMINI_MODELS[i + 1];
+      console.warn(`[LLMService] ${candidate} stream unavailable: ${lastError?.message} — ${next ? `trying ${next}` : 'giving up'}`);
+    }
   }
+
+  if (!response) throw lastError;
+  onModel?.(model);
   yield* iterateSse(response, (data) => extractGeminiText(data));
 }
 
@@ -909,13 +1042,18 @@ async function* streamAIResponse(type, message, userId, conversationHistory = []
     return;
   }
 
+  // Gemini can fall back to a sibling model, so remember which one answered
+  // and report that instead of the configured primary.
+  let geminiModel = null;
+  const reportModel = (name, model) => (name === 'gemini' && geminiModel ? `gemini/${geminiModel}` : model);
+
   const providers = [
     ['ollama', Boolean(OLLAMA_BASE_URL), `ollama/${OLLAMA_MODEL}`,
       () => streamWithOllama(type, message, conversationHistory)],
     ['groq', Boolean(GROQ_API_KEY), `groq/${GROQ_MODEL}`,
       () => streamWithOpenAICompatible(GROQ_BASE_URL, GROQ_API_KEY, GROQ_MODEL, type, message, conversationHistory)],
     ['gemini', Boolean(GEMINI_API_KEY), `gemini/${GEMINI_MODEL}`,
-      () => streamWithGemini(type, message, conversationHistory)],
+      () => streamWithGemini(type, message, conversationHistory, (m) => { geminiModel = m; })],
     ['openai', Boolean(OPENAI_API_KEY), `openai/${OPENAI_MODEL}`,
       () => streamWithOpenAICompatible(OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL, type, message, conversationHistory)],
   ];
@@ -929,8 +1067,9 @@ async function* streamAIResponse(type, message, userId, conversationHistory = []
         yield { token: chunk };
       }
       if (emitted) {
-        console.log(`[LLMService] ${name} streamed a response (${model})`);
-        yield { final: { success: true, source: 'ai', model } };
+        const used = reportModel(name, model);
+        console.log(`[LLMService] ${name} streamed a response (${used})`);
+        yield { final: { success: true, source: 'ai', model: used } };
         return;
       }
       console.warn(`[LLMService] ${name} returned an empty streamed response`);
@@ -939,7 +1078,7 @@ async function* streamAIResponse(type, message, userId, conversationHistory = []
       if (emitted) {
         // Partial answer already delivered — keep it instead of restarting
         // with another provider's fresh answer.
-        yield { final: { success: true, source: 'ai', model } };
+        yield { final: { success: true, source: 'ai', model: reportModel(name, model) } };
         return;
       }
     }

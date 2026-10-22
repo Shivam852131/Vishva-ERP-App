@@ -46,6 +46,7 @@ function createAiRouter(io) {
     try {
       const db = getDB();
       const { sessionId, message, type } = req.body;
+      if (!message || !String(message).trim()) return sendError(res, 'message is required.', 400);
       const aiType = type || 'general';
       const currentUserId = req.user._id;
 
@@ -70,6 +71,16 @@ function createAiRouter(io) {
         if (!session) return sendError(res, 'Session not found', 404);
       }
 
+      // Read history BEFORE storing the new question — otherwise the current
+      // question is passed twice (once from history, once as `message`), which
+      // makes the model answer the wrong turn.
+      const history = await db.collection('ai_messages')
+        .find({ sessionId: oid(sid), ...collegeFilter(req) })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .toArray()
+        .then(msgs => msgs.reverse().map(m => ({ role: m.role, content: m.content })));
+
       const userMessage = {
         collegeId: oid(req.userCollegeId),
         sessionId: oid(sid),
@@ -78,14 +89,6 @@ function createAiRouter(io) {
         createdAt: nowIso(),
       };
       await db.collection('ai_messages').insertOne(userMessage);
-
-      // Get conversation history for context
-      const history = await db.collection('ai_messages')
-        .find({ sessionId: oid(sid), ...collegeFilter(req) })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .toArray()
-        .then(msgs => msgs.reverse().map(m => ({ role: m.role, content: m.content })));
 
       // Generate AI response using LLM service
       const aiResult = await generateAIResponse(aiType, message, currentUserId, history);
@@ -153,6 +156,14 @@ function createAiRouter(io) {
         if (!session) return sendError(res, 'Session not found', 404);
       }
 
+      // Read history BEFORE storing the new question (see /chat above).
+      const history = await db.collection('ai_messages')
+        .find({ sessionId: oid(sid), ...collegeFilter(req) })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .toArray()
+        .then(msgs => msgs.reverse().map(m => ({ role: m.role, content: m.content })));
+
       const userMessage = {
         collegeId: oid(req.userCollegeId),
         sessionId: oid(sid),
@@ -161,13 +172,6 @@ function createAiRouter(io) {
         createdAt: nowIso(),
       };
       await db.collection('ai_messages').insertOne(userMessage);
-
-      const history = await db.collection('ai_messages')
-        .find({ sessionId: oid(sid), ...collegeFilter(req) })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .toArray()
-        .then(msgs => msgs.reverse().map(m => ({ role: m.role, content: m.content })));
 
       // ── Switch to SSE ──
       res.status(200);

@@ -115,6 +115,17 @@ function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Persona keys sent to the backend's `type` field. They must match the
+ * server's system-prompt keys, otherwise the model gets the generic prompt
+ * and answers without the persona's instructions.
+ */
+const PERSONA_TYPES: Record<string, string> = {
+  doubt: 'doubt_solver',
+  general: 'academic_advisor',
+  study: 'study_coach',
+};
+
 function formatTime(ts?: string): string {
   if (!ts) return '';
   const d = new Date(ts);
@@ -301,8 +312,8 @@ export default function ChatTab() {
     setRetryMsg(null);
 
     try {
-      if (persona === 'doubt' || img) {
-        // Vision / doubt solving — not a streaming endpoint.
+      if (img) {
+        // Image → the vision endpoint (not streaming).
         const r = await sendMsg('/ai/doubt-solver', {
           method: 'POST',
           body: JSON.stringify({
@@ -319,7 +330,10 @@ export default function ChatTab() {
         return;
       }
 
-      // Real-time streaming: show the reply as the AI writes it.
+      // Real-time streaming: show the reply as the AI writes it. Every persona
+      // (including Doubt Solver) goes through here so the backend gets the
+      // conversation history — otherwise follow-up questions arrive without
+      // any context and get answered as if they were the first message.
       const aiMsgId = generateId();
       setMessages((m) => [
         ...m,
@@ -332,7 +346,7 @@ export default function ChatTab() {
       const result = await streamChat({
         sessionId: sessionRef.current,
         message: q,
-        type: persona,
+        type: PERSONA_TYPES[persona] || persona,
         signal: abortState,
         onToken: (token) => {
           setMessages((m) =>
@@ -382,9 +396,11 @@ export default function ChatTab() {
   };
 
   const newSession = () => {
-    const newSid = `ai_${user?.id || 'anon'}_${Date.now()}`;
-    setSessionId(newSid);
-    sessionRef.current = newSid;
+    // Clear the session so the backend creates a real one on the next message.
+    // A hand-made id (`ai_<uid>_<ts>`) is not a valid ObjectId, so the server
+    // could never find it and every follow-up message failed with 404.
+    setSessionId(null);
+    sessionRef.current = null;
     setMessages([
       {
         id: generateId(),
