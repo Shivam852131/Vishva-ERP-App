@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Dimensions,
+  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '@/src/components/LinearGradient';
@@ -15,8 +15,6 @@ import { useFetch } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
 import { Card, StatCard, SectionTitle, ProgressBar, AsyncView } from '@/src/ui';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function AnalyticsScreen() {
   const { user } = useAuth();
@@ -47,12 +45,12 @@ export default function AnalyticsScreen() {
 
   return (
     <ErrorBoundary>
-      <SafeAreaView edges={['top']} style={styles.screen}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.screen}>
         {/* Header */}
         <LinearGradient
-          colors={['#022C22', '#064E3B']}
+          colors={['#4F46E5', '#7C3AED']}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
+          end={{ x: 1, y: 1 }}
           style={styles.header}
         >
           <Pressable
@@ -62,15 +60,24 @@ export default function AnalyticsScreen() {
             style={styles.backBtn}
             onPress={() => router.back()}
           >
-            <ArrowLeft size={20} color="#D4AF37" />
+            <ArrowLeft size={20} color="#fff" />
           </Pressable>
-          <Text style={styles.headerTitle}>Analytics</Text>
-          <View style={{ width: 40 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Analytics</Text>
+            <Text style={styles.headerSub}>
+              {user?.role === 'student' ? 'Your academic performance'
+                : user?.role === 'faculty' ? 'Your courses and classes'
+                  : 'Institution-wide insights'}
+            </Text>
+          </View>
+          <View style={styles.headerIcon}>
+            <BarChart3 size={20} color="#fff" />
+          </View>
         </LinearGradient>
 
         <ScrollView
           contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.brandPrimary} />}
           showsVerticalScrollIndicator={false}
         >
           <AsyncView
@@ -216,35 +223,47 @@ export default function AnalyticsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: theme.colors.surfaceInverse },
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: 14,
+    gap: 12,
     paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(212,175,55,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
     borderWidth: 1,
-    borderColor: 'rgba(212,175,55,0.2)',
+    borderColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitle: { color: '#D4AF37', fontSize: 18, fontWeight: '800', letterSpacing: 1 },
-  content: { padding: 20, paddingBottom: 40 },
+  headerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  headerSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
+  content: { padding: 16, paddingBottom: 40 },
 
   ringRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
   ringCard: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 16,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: theme.radius.lg,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: theme.colors.border,
+    ...theme.shadow.xs,
   },
   ringValue: { color: '#0EA5E9', fontSize: 28, fontWeight: '900', marginBottom: 8 },
 
@@ -252,12 +271,12 @@ const styles = StyleSheet.create({
 
   courseRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   courseDot: { width: 8, height: 8, borderRadius: 4 },
-  courseName: { color: '#F8FAFC', fontSize: 14, fontWeight: '700' },
-  courseCode: { color: theme.colors.borderStrong, fontSize: 11, marginTop: 2 },
+  courseName: { color: theme.colors.onSurface, fontSize: 14, fontWeight: '700' },
+  courseCode: { color: theme.colors.muted, fontSize: 11, marginTop: 2 },
 
   metricRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  metricLabel: { color: theme.colors.borderStrong, fontSize: 13, fontWeight: '600' },
-  metricValue: { color: '#F8FAFC', fontSize: 16, fontWeight: '800' },
+  metricLabel: { color: theme.colors.muted, fontSize: 13, fontWeight: '600' },
+  metricValue: { color: theme.colors.onSurface, fontSize: 16, fontWeight: '800' },
 
   alertRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   alertText: { color: theme.colors.warning, fontSize: 13, fontWeight: '600', flex: 1 },

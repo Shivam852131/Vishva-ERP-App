@@ -198,7 +198,7 @@ export default function ExamPrepQuizBuilderScreen() {
   const toggleQuestion = (id: string) => {
     setSelectedIds(s => {
       const ns = new Set(s);
-      ns.has(id) ? ns.delete(id) : ns.add(id);
+      if (ns.has(id)) { ns.delete(id); } else { ns.add(id); }
       return ns;
     });
   };
@@ -311,7 +311,12 @@ export default function ExamPrepQuizBuilderScreen() {
           </View>
 
           {/* Subject filter */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subjectScroll}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.subjectScroll}
+            contentContainerStyle={styles.subjectScrollContent}
+          >
             {['', ...subjects].map(s => (
               <Pressable
                 key={s || 'all'}
@@ -338,9 +343,19 @@ export default function ExamPrepQuizBuilderScreen() {
                 />
               )}
               ListEmptyComponent={
-                <Text style={{ textAlign: 'center', color: theme.colors.textSecondary, marginTop: 40 }}>
-                  No questions found. Add questions to the bank first.
-                </Text>
+                <View style={styles.emptyList}>
+                  <View style={styles.emptyListIcon}>
+                    <Filter size={26} color={theme.colors.brand} />
+                  </View>
+                  <Text style={styles.emptyListTitle}>
+                    {searchQ || subjectFilter ? 'No matching questions' : 'Your question bank is empty'}
+                  </Text>
+                  <Text style={styles.emptyListSub}>
+                    {searchQ || subjectFilter
+                      ? 'Try a different search or clear the subject filter.'
+                      : 'Add questions in the Question Bank, then pick them here.'}
+                  </Text>
+                </View>
               }
             />
           )}
@@ -566,8 +581,9 @@ const styles = StyleSheet.create({
   searchRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8 },
   searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
-  subjectScroll: { paddingHorizontal: 12, marginBottom: 4 },
-  chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border, marginRight: 6, backgroundColor: theme.colors.bg },
+  subjectScroll: { flexGrow: 0, maxHeight: 44 },
+  subjectScrollContent: { alignItems: 'center', paddingHorizontal: 12, gap: 6 },
+  chip: { height: 30, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 15, borderWidth: 1, borderColor: theme.colors.border, marginRight: 6, backgroundColor: theme.colors.surface, flexShrink: 0 },
   chipActive: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },
   chipText: { fontSize: 11, fontWeight: '600', color: theme.colors.textSecondary },
   chipTextActive: { color: '#fff' },
@@ -578,6 +594,11 @@ const styles = StyleSheet.create({
   qMeta: { flexDirection: 'row', gap: 8, marginTop: 4 },
   qSubject: { fontSize: 11, color: theme.colors.textSecondary },
   qDiff: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
+
+  emptyList: { alignItems: 'center', paddingTop: 48, paddingHorizontal: 32, gap: 6 },
+  emptyListIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: theme.colors.brandTertiary, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  emptyListTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.text, textAlign: 'center' },
+  emptyListSub: { fontSize: 13, color: theme.colors.textSecondary, textAlign: 'center', lineHeight: 19 },
 
   configContent: { padding: 16, gap: 14, paddingBottom: 32 },
   input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: theme.colors.text, backgroundColor: theme.colors.surface },

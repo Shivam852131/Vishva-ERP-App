@@ -2,9 +2,12 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Linking, Switch, ActivityIndicator, TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ArrowLeft, Sheet } from 'lucide-react-native';
 import { useRouter } from '@/src/navigation/router';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { subscribeRealtime } from '@/src/realtime/socket';
+import { theme } from '@/src/theme';
 
 type GoogleStatus = {
   sign_in: { configured: boolean };
@@ -128,16 +131,20 @@ export default function GoogleSettingsScreen() {
     : 'Never';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Go back">
-          <Text style={styles.backTxt}>←</Text>
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Google Workspace</Text>
-          <Text style={styles.subtitle}>Sign-in, Meet and live Sheets sync</Text>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
+            <ArrowLeft size={20} color="#0F172A" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Google Workspace</Text>
+            <Text style={styles.subtitle}>Sign-in, Meet and live Sheets sync</Text>
+          </View>
+          <View style={styles.headerIcon}>
+            <Sheet size={20} color="#2563EB" />
+          </View>
         </View>
-      </View>
 
       {loading && !status ? (
         <View style={styles.centered}>
@@ -294,23 +301,25 @@ export default function GoogleSettingsScreen() {
           <View style={{ height: 40 }} />
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#F8FAFC' },
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   content: { padding: 16, paddingBottom: 40 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' },
-  backTxt: { fontSize: 18, color: '#0F172A', fontWeight: '700' },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' },
+  headerIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 20, fontWeight: '800', color: '#0F172A' },
   subtitle: { fontSize: 12, color: '#64748B', marginTop: 2 },
   centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
   errorTxt: { color: '#DC2626', fontSize: 14, fontWeight: '600' },
   retryBtn: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, backgroundColor: '#2563EB' },
   retryTxt: { color: '#fff', fontWeight: '700' },
-  section: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  section: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#E2E8F0', ...theme.shadow.xs },
   sectionTitle: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
   sectionSub: { fontSize: 12, color: '#64748B', marginTop: 2, marginBottom: 12 },
   sectionBody: { gap: 12 },

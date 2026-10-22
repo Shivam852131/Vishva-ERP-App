@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, TextInput, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from '@/src/navigation/router';
 import { Ionicons } from '@/src/components/Ionicons';
 import * as ImagePicker from '@/src/native/image-picker';
@@ -15,6 +16,20 @@ type GeneratedExam = {
   id: string; title: string; subject: string; total_questions: number;
   total_marks: number; difficulty: string; created_at: string; created_by_name: string;
 };
+
+/** Rich empty state — icon in a soft badge, title, sub, and a hint line. */
+function EmptyBlock({ icon, title, sub, hint }: { icon: string; title: string; sub: string; hint?: string }) {
+  return (
+    <View style={styles.emptyWrap}>
+      <View style={styles.emptyIconBox}>
+        <Ionicons name={icon as any} size={30} color="#6366f1" />
+      </View>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptySub}>{sub}</Text>
+      {hint ? <Text style={styles.emptyHint}>{hint}</Text> : null}
+    </View>
+  );
+}
 
 export default function ExamGeneratorScreen() {
   const router = useRouter();
@@ -108,13 +123,15 @@ export default function ExamGeneratorScreen() {
   const getTypeIcon = (t: string) => t === 'mcq' ? 'radio-button-on' : t === 'true_false' ? 'checkmark-circle' : 'create';
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Exam Generator</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Exam Generator</Text>
+          <Text style={styles.headerSub}>Build your question bank and papers</Text>
+        </View>
       </View>
 
       <View style={styles.statsRow}>
@@ -189,7 +206,14 @@ export default function ExamGeneratorScreen() {
                 )}
               </View>
             ))}
-            {filteredQuestions.length === 0 && <Text style={styles.emptyText}>No questions yet. Tap + to add.</Text>}
+            {filteredQuestions.length === 0 && (
+              <EmptyBlock
+                icon="document-text-outline"
+                title="No questions yet"
+                sub={filterSubject ? `Your bank has no ${filterSubject} questions.` : 'Start building your question bank.'}
+                hint="Tap the + button to add your first question."
+              />
+            )}
           </ScrollView>
         </View>
       )}
@@ -267,7 +291,14 @@ export default function ExamGeneratorScreen() {
               </View>
             </View>
           ))}
-          {(!exams || exams.length === 0) && <Text style={styles.emptyText}>No exams generated yet</Text>}
+          {(!exams || exams.length === 0) && (
+            <EmptyBlock
+              icon="documents-outline"
+              title="No exams generated yet"
+              sub="Generate a paper from your question bank."
+              hint="Open the Generate tab to create one."
+            />
+          )}
         </ScrollView>
       )}
 
@@ -354,15 +385,16 @@ export default function ExamGeneratorScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
   headerTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  headerSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
   statsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 16, marginBottom: 12 },
   statBox: { alignItems: 'center', backgroundColor: '#1e293b', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12 },
   statNum: { color: '#6366f1', fontSize: 22, fontWeight: '800' },
@@ -389,7 +421,11 @@ const styles = StyleSheet.create({
   qDot: { color: '#475569', fontSize: 11 },
   optionsPreview: { marginTop: 8, gap: 2 },
   optionText: { color: '#94a3b8', fontSize: 11, paddingLeft: 4 },
-  emptyText: { color: '#64748b', fontSize: 14, textAlign: 'center', marginTop: 40 },
+  emptyWrap: { alignItems: 'center', paddingTop: 48, paddingHorizontal: 32, gap: 6 },
+  emptyIconBox: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(99,102,241,0.12)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  emptyTitle: { color: '#e2e8f0', fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  emptySub: { color: '#94a3b8', fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  emptyHint: { color: '#6366f1', fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 6 },
   sectionTitle: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 4 },
   sectionSub: { color: '#94a3b8', fontSize: 12, marginBottom: 20 },
   label: { color: '#94a3b8', fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 12 },

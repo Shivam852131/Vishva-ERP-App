@@ -156,6 +156,7 @@ const SCREENS: [string, () => any][] = [
   ['college_admin/subscription', () => require('@/app/(college_admin)/subscription').default],
   ['college_admin/academic-management', () => require('@/app/(college_admin)/academic-management').default],
   ['college_admin/academic-enrollment', () => require('@/app/(college_admin)/academic-enrollment').default],
+  ['college_admin/google-settings', () => require('@/app/(college_admin)/google-settings').default],
   ['super_admin/dashboard', () => require('@/app/(super_admin)/dashboard').default],
   ['super_admin/colleges', () => require('@/app/(super_admin)/colleges').default],
   ['super_admin/users', () => require('@/app/(super_admin)/users').default],
