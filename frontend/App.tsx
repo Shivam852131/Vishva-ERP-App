@@ -58,6 +58,8 @@ const AttendanceScreen = LS(() => import('./app/attendance'));
 const AttendanceLiveScreen = LS(() => import('./app/attendance-live'));
 const AttendanceAdvancedScreen = LS(() => import('./app/attendance-advanced'));
 const AttendanceLiveAdvancedScreen = LS(() => import('./app/attendance-live-advanced'));
+const FacultyAttendanceScreen = LS(() => import('./app/faculty-attendance'));
+const FacultyAttendanceCourseScreen = LS(() => import('./app/faculty-attendance-course'));
 const LeaveManagementScreen = LS(() => import('./app/leave-management'));
 const ChatScreen = LS(() => import('./app/chat'));
 const EventsScreen = LS(() => import('./app/events'));
@@ -162,6 +164,8 @@ export default function App() {
                   <RootStack.Screen name="/attendance-live" component={AttendanceLiveScreen} />
                   <RootStack.Screen name="/attendance-advanced" component={AttendanceAdvancedScreen} />
                   <RootStack.Screen name="/attendance-live-advanced" component={AttendanceLiveAdvancedScreen} />
+                  <RootStack.Screen name="/faculty-attendance" component={FacultyAttendanceScreen} />
+                  <RootStack.Screen name="/faculty-attendance-course" component={FacultyAttendanceCourseScreen} />
                   <RootStack.Screen name="/leave-management" component={LeaveManagementScreen} />
                   <RootStack.Screen name="/chat" component={ChatScreen} />
                   <RootStack.Screen name="/events" component={EventsScreen} />

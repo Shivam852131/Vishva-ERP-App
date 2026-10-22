@@ -308,6 +308,12 @@ export default function FacultyDashboard() {
                 color: '#059669',
               },
               {
+                icon: <ClipboardList size={20} color="#fff" />,
+                label: 'Attendance Console',
+                to: '/faculty-attendance',
+                color: '#4338CA',
+              },
+              {
                 icon: <FileText size={20} color="#fff" />,
                 label: 'Exam Generator',
                 to: '/(faculty)/exam-generator',

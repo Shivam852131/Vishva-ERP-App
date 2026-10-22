@@ -202,6 +202,8 @@ const SCREENS: [string, () => any][] = [
   ['face-enroll', () => require('@/app/face-enroll').default],
   ['live-classes', () => require('@/app/live-classes').default],
   ['live-class', () => require('@/app/live-class').default],
+  ['faculty-attendance', () => require('@/app/faculty-attendance').default],
+  ['faculty-attendance-course', () => require('@/app/faculty-attendance-course').default],
   ['skill-assessment', () => require('@/app/skill-assessment').default],
   ['assessment-attempt', () => require('@/app/assessment-attempt').default],
   ['mentorship', () => require('@/app/mentorship').default],

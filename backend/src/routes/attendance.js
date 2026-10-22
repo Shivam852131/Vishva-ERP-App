@@ -1067,6 +1067,388 @@ function createAttendanceRouter(io) {
     res.json({ ok: true, message: 'Face profile deleted' });
   });
 
+  // ── Faculty attendance console ─────────────────────────────────────────
+  // Single source of truth for the shortage line so the console and its UI
+  // agree on one number instead of re-hardcoding 75% across the client.
+  const SHORTAGE_THRESHOLD = 75;
+  const OVERVIEW_RECORD_LIMIT = 20000;
+  const COURSE_RECORD_LIMIT = 50000;
+
+  function percentOf(present, total) {
+    return total > 0 ? Math.round((present / total) * 100) : 0;
+  }
+
+  /**
+   * Consecutive classes a student must attend to climb back over the threshold.
+   * Solving (present + n) / (total + n) >= t for n gives
+   * n >= (t * total - present) / (1 - t).
+   */
+  function classesToRecover(present, total, threshold = SHORTAGE_THRESHOLD) {
+    if (!total) return 0;
+    const t = threshold / 100;
+    if (present >= t * total) return 0;
+    return Math.max(0, Math.ceil((t * total - present) / (1 - t)));
+  }
+
+  function tally(bucket, key, status) {
+    const row = bucket[key] || (bucket[key] = { present: 0, late: 0, absent: 0, total: 0 });
+    row.total += 1;
+    if (status === 'absent') row.absent += 1;
+    else if (status === 'late') row.late += 1;
+    else row.present += 1;
+    return row;
+  }
+
+  function statusOf(record) {
+    if (record.status === 'absent') return 'absent';
+    if (record.status === 'late') return 'late';
+    return 'present';
+  }
+
+  /**
+   * The courses this caller is allowed to manage. Faculty are scoped to what
+   * they teach — that is the boundary keeping this console separate from the
+   * college-wide admin view. Admins and super admins see their whole college.
+   */
+  async function managedCourses(req) {
+    const cf = collegeFilter(req);
+    const facultyOnly = !!(req.user && req.user.role === 'faculty');
+    const taughtIds = facultyOnly ? await getTaughtCourseIds(req, req.user._id) : null;
+    // NB: taughtIds keys off `_id` here because we are querying `courses`; the
+    // dependent queries below key the same values off `courseId`.
+    const courses = await getDB().collection('courses')
+      .find({ ...(taughtIds ? { _id: { $in: taughtIds } } : {}), ...cf })
+      .toArray();
+    return { courses, facultyOnly };
+  }
+
+  /**
+   * GET /attendance/faculty/overview?days=30
+   * Everything the faculty console needs in one call: per-course totals, a
+   * daily trend for the sparkline, students below the shortage line, and the
+   * most recent sessions with turnout.
+   */
+  router.get('/attendance/faculty/overview', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const days = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 30));
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const sinceStr = isoDate(since);
+
+    const cf = collegeFilter(req);
+    const { courses, facultyOnly } = await managedCourses(req);
+    const courseIds = courses.map((c) => c._id);
+    const courseById = new Map(courses.map((c) => [String(c._id), c]));
+
+    const [sessions, records, enrollments] = await Promise.all([
+      db.collection('attendance_sessions')
+        .find({ courseId: { $in: courseIds }, date: { $gte: sinceStr }, ...cf })
+        .sort({ date: -1, createdAt: -1 })
+        .limit(500)
+        .toArray(),
+      db.collection('attendance_records')
+        .find({ courseId: { $in: courseIds }, date: { $gte: sinceStr }, ...cf })
+        .limit(OVERVIEW_RECORD_LIMIT)
+        .toArray(),
+      db.collection('course_enrollments').find({ courseId: { $in: courseIds }, ...cf }).toArray(),
+    ]);
+
+    const enrolledByCourse = {};
+    for (const e of enrollments) {
+      const cid = String(e.courseId);
+      enrolledByCourse[cid] = (enrolledByCourse[cid] || 0) + 1;
+    }
+
+    const sessionsByCourse = {};
+    const presentBySession = {};
+    const statsByCourse = {};
+    const statsByStudent = {};
+    const statsByStudentCourse = {};
+    const statsByDate = {};
+
+    for (const s of sessions) {
+      const cid = String(s.courseId);
+      sessionsByCourse[cid] = (sessionsByCourse[cid] || 0) + 1;
+    }
+
+    for (const r of records) {
+      const status = statusOf(r);
+      const cid = String(r.courseId);
+      const sid = String(r.studentId);
+
+      tally(statsByCourse, cid, status);
+      tally(statsByStudent, sid, status);
+      tally(statsByStudentCourse, `${sid}|${cid}`, status);
+      if (r.date) tally(statsByDate, r.date, status);
+
+      if (r.sessionId) {
+        const key = String(r.sessionId);
+        presentBySession[key] = (presentBySession[key] || 0) + (status === 'absent' ? 0 : 1);
+      }
+    }
+
+    const coursesOut = courses
+      .map((course) => {
+        const cid = String(course._id);
+        const st = statsByCourse[cid] || { present: 0, late: 0, absent: 0, total: 0 };
+        const attended = st.present + st.late;
+        return {
+          id: cid,
+          name: course.name || '',
+          code: course.code || '',
+          department: course.department || '',
+          semester: String(course.semester || ''),
+          enrolled: enrolledByCourse[cid] || 0,
+          sessions: sessionsByCourse[cid] || 0,
+          present: st.present,
+          late: st.late,
+          absent: st.absent,
+          classes_marked: st.total,
+          percentage: percentOf(attended, st.total),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const totals = coursesOut.reduce(
+      (acc, c) => {
+        acc.present += c.present;
+        acc.late += c.late;
+        acc.absent += c.absent;
+        acc.classes_marked += c.classes_marked;
+        acc.sessions += c.sessions;
+        acc.students += c.enrolled;
+        return acc;
+      },
+      { courses: coursesOut.length, sessions: 0, students: 0, present: 0, late: 0, absent: 0, classes_marked: 0, defaulters: 0 },
+    );
+    totals.percentage = percentOf(totals.present + totals.late, totals.classes_marked);
+    // Distinct people, not the sum of per-course seats — otherwise a student
+    // taking two of these courses is counted twice.
+    totals.students = new Set(enrollments.map((e) => String(e.studentId))).size;
+
+    // Lowest-performing course per student, so faculty know which class to fix.
+    function worstCourseFor(studentId) {
+      const prefix = `${studentId}|`;
+      let worst = null;
+      for (const [key, st] of Object.entries(statsByStudentCourse)) {
+        if (!key.startsWith(prefix)) continue;
+        const percentage = percentOf(st.present + st.late, st.total);
+        if (!worst || percentage < worst.percentage) {
+          worst = { course_id: key.slice(prefix.length), percentage };
+        }
+      }
+      return worst;
+    }
+
+    // Students below the shortage line, worst first.
+    const underThreshold = Object.entries(statsByStudent)
+      .map(([studentId, st]) => {
+        const attended = st.present + st.late;
+        return {
+          student_id: studentId,
+          present: st.present,
+          late: st.late,
+          absent: st.absent,
+          total: st.total,
+          percentage: percentOf(attended, st.total),
+          shortfall_classes: classesToRecover(attended, st.total),
+          worst: worstCourseFor(studentId),
+        };
+      })
+      .filter((s) => s.total > 0 && s.percentage < SHORTAGE_THRESHOLD)
+      .sort((a, b) => a.percentage - b.percentage);
+    totals.defaulters = underThreshold.length;
+
+    const defaulterSlice = underThreshold.slice(0, 100);
+    const defaulterIds = defaulterSlice.map((s) => oid(s.student_id)).filter(Boolean);
+    const defaulterUsers = defaulterIds.length
+      ? await db.collection('users').find({ _id: { $in: defaulterIds }, ...cf }).toArray()
+      : [];
+    const userById = new Map(defaulterUsers.map((u) => [String(u._id), u]));
+
+    const defaulters = defaulterSlice.map((s) => {
+      const user = userById.get(s.student_id);
+      const worstCourse = s.worst ? courseById.get(s.worst.course_id) : null;
+      const { worst, ...rest } = s;
+      return {
+        ...rest,
+        name: user?.name || 'Unknown student',
+        student_code: user?.studentCode || '',
+        course_id: worstCourse ? String(worstCourse._id) : '',
+        course_name: worstCourse?.name || '',
+        course_percentage: worst ? worst.percentage : 0,
+      };
+    });
+
+    const trend = Object.keys(statsByDate)
+      .sort()
+      .map((date) => {
+        const st = statsByDate[date];
+        const attended = st.present + st.late;
+        return { date, percentage: percentOf(attended, st.total), marked: st.total };
+      });
+
+    const sessionsOut = sessions.slice(0, 12).map((session) => {
+      const cid = String(session.courseId);
+      const course = courseById.get(cid);
+      const enrolled = enrolledByCourse[cid] || 0;
+      const present = presentBySession[String(session._id)] || 0;
+      return {
+        id: String(session._id),
+        course_id: cid,
+        course_name: course?.name || '',
+        course_code: course?.code || '',
+        date: session.date,
+        method: session.type || 'qr',
+        active: !!session.isActive,
+        present,
+        enrolled,
+        percentage: enrolled ? percentOf(present, enrolled) : 0,
+      };
+    });
+
+    res.json({
+      period_days: days,
+      threshold: SHORTAGE_THRESHOLD,
+      faculty_only: facultyOnly,
+      truncated: records.length >= OVERVIEW_RECORD_LIMIT,
+      totals,
+      courses: coursesOut,
+      defaulters,
+      trend,
+      sessions: sessionsOut,
+    });
+  });
+
+  /**
+   * GET /attendance/faculty/course/:courseId?startDate=&endDate=
+   * Per-student roster for one course: percentage, risk band, how many classes
+   * are needed to recover, and a per-date history for the detail sheet.
+   */
+  router.get('/attendance/faculty/course/:courseId', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const courseId = oid(req.params.courseId);
+    if (!courseId) return sendError(res, 'Course not found.', 404);
+
+    const cf = collegeFilter(req);
+    const course = await db.collection('courses').findOne({ _id: courseId, ...cf });
+    if (!course) return sendError(res, 'Course not found.', 404);
+
+    // Scoping boundary for the console: a faculty member may only open a course
+    // they actually teach. Admins may open any course in their college.
+    if (req.user.role === 'faculty') {
+      const taught = await getTaughtCourseIds(req, req.user._id);
+      if (!taught.some((id) => String(id) === String(courseId))) {
+        return sendError(res, 'You do not teach this course.', 403);
+      }
+    }
+
+    const startDate = req.query.startDate || '2000-01-01';
+    const endDate = req.query.endDate || isoDate();
+
+    const [records, enrollments, sessions] = await Promise.all([
+      db.collection('attendance_records')
+        .find({ courseId, date: { $gte: startDate, $lte: endDate }, ...cf })
+        .limit(COURSE_RECORD_LIMIT)
+        .toArray(),
+      db.collection('course_enrollments').find({ courseId, ...cf }).toArray(),
+      db.collection('attendance_sessions')
+        .find({ courseId, date: { $gte: startDate, $lte: endDate }, ...cf })
+        .sort({ date: -1, createdAt: -1 })
+        .limit(60)
+        .toArray(),
+    ]);
+
+    const stats = {};
+    const presentBySession = {};
+    for (const r of records) {
+      const status = statusOf(r);
+      const row = tally(stats, String(r.studentId), status);
+      if (r.date) row.by_date = { ...(row.by_date || {}), [r.date]: r.status || 'present' };
+      if (r.sessionId) {
+        const key = String(r.sessionId);
+        presentBySession[key] = (presentBySession[key] || 0) + (status === 'absent' ? 0 : 1);
+      }
+    }
+
+    const enrolledIds = enrollments.map((e) => String(e.studentId));
+    const allIds = [...new Set([...enrolledIds, ...Object.keys(stats)])];
+    // Users may be keyed by ObjectId or by raw string, so query both forms —
+    // the same $in pattern used by studentsForCourse().
+    const idValues = [...new Set(allIds.flatMap((id) => {
+      const asOid = oid(id);
+      return asOid ? [asOid, id] : [id];
+    }))];
+    const users = idValues.length ? await db.collection('users').find({ _id: { $in: idValues }, ...cf }).toArray() : [];
+    const userById = new Map(users.map((u) => [String(u._id), u]));
+    const enrolledSet = new Set(enrolledIds);
+
+    const rank = (s) => (s.total === 0 ? 2 : s.percentage < SHORTAGE_THRESHOLD ? 0 : 1);
+
+    const students = allIds
+      .map((studentId) => {
+        const user = userById.get(studentId);
+        const st = stats[studentId] || { present: 0, late: 0, absent: 0, total: 0 };
+        const attended = st.present + st.late;
+        const percentage = percentOf(attended, st.total);
+        return {
+          id: studentId,
+          name: user?.name || 'Unknown student',
+          student_code: user?.studentCode || '',
+          enrolled: enrolledSet.has(studentId),
+          present: st.present,
+          late: st.late,
+          absent: st.absent,
+          total: st.total,
+          percentage,
+          status: st.total === 0 ? 'unmarked' : percentage < SHORTAGE_THRESHOLD ? 'critical' : 'safe',
+          shortfall_classes: classesToRecover(attended, st.total),
+          history: st.by_date || {},
+        };
+      })
+      .sort((a, b) => rank(a) - rank(b) || a.percentage - b.percentage || a.name.localeCompare(b.name));
+
+    const present = students.reduce((n, s) => n + s.present, 0);
+    const late = students.reduce((n, s) => n + s.late, 0);
+    const absent = students.reduce((n, s) => n + s.absent, 0);
+
+    res.json({
+      threshold: SHORTAGE_THRESHOLD,
+      period: { startDate, endDate },
+      course: {
+        id: String(course._id),
+        name: course.name || '',
+        code: course.code || '',
+        department: course.department || '',
+        semester: String(course.semester || ''),
+      },
+      summary: {
+        present,
+        late,
+        absent,
+        classes_marked: records.length,
+        sessions: sessions.length,
+        enrolled: enrollments.length,
+        marked: students.filter((s) => s.total > 0).length,
+        defaulters: students.filter((s) => s.status === 'critical').length,
+        percentage: percentOf(present + late, records.length),
+      },
+      students,
+      sessions: sessions.map((session) => {
+        const checkedIn = presentBySession[String(session._id)] || 0;
+        return {
+          id: String(session._id),
+          date: session.date,
+          method: session.type || 'qr',
+          active: !!session.isActive,
+          present: checkedIn,
+          enrolled: enrollments.length,
+          percentage: enrollments.length ? percentOf(checkedIn, enrollments.length) : 0,
+        };
+      }),
+    });
+  });
+
   return router;
 }
 
