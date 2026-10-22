@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Linking, Switch, ActivityIndicator,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Linking, Switch, ActivityIndicator, TextInput,
 } from 'react-native';
 import { useRouter } from '@/src/navigation/router';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
@@ -8,19 +8,22 @@ import { subscribeRealtime } from '@/src/realtime/socket';
 
 type GoogleStatus = {
   sign_in: { configured: boolean };
-  api: { serviceAccount: boolean };
-  meet: { configured: boolean };
+  api: { serviceAccount: boolean; serviceAccountEmail?: string | null };
+  meet: { configured: boolean; fallback?: string };
   sheets: {
     configured: boolean;
     connected: boolean;
     enabled: boolean;
     spreadsheetId: string | null;
     spreadsheetUrl: string | null;
+    title?: string | null;
+    ownedBy?: string | null;
     lastSyncAt: string | null;
     lastSyncResult: { ok: boolean; rows: number } | null;
     pending: number;
     failed: number;
     syncedTypes: string[];
+    requiresOwnedSheet?: boolean;
   };
 };
 
@@ -48,6 +51,8 @@ export default function GoogleSettingsScreen() {
   const { data: status, loading, error, refresh } = useFetch<GoogleStatus>('/google/status');
   const { mutate, loading: working } = useMutate();
   const [busy, setBusy] = useState<string | null>(null);
+  const [sheetUrl, setSheetUrl] = useState('');
+  const serviceAccountEmail = status?.api?.serviceAccountEmail || null;
 
   // Real-time: refresh when a sync completes elsewhere.
   const lastSyncRef = React.useRef<string | null>(null);
@@ -69,16 +74,21 @@ export default function GoogleSettingsScreen() {
   const connect = () =>
     run('connect', async () => {
       try {
-        const res = (await mutate('/google/sheets/connect', { method: 'POST' })) as { spreadsheetUrl?: string };
+        const url = sheetUrl.trim();
+        const res = (await mutate('/google/sheets/connect', {
+          method: 'POST',
+          body: JSON.stringify(url ? { spreadsheetUrl: url } : {}),
+        })) as { spreadsheetUrl?: string };
         refresh();
-        const url = res?.spreadsheetUrl;
-        if (url) {
+        setSheetUrl('');
+        const opened = res?.spreadsheetUrl;
+        if (opened) {
           Alert.alert(
             'Google Sheets connected',
-            'Live ERP data will now sync to your spreadsheet. Rows appear within seconds of a change.',
+            'Live ERP data will now sync into your spreadsheet. Rows appear within seconds of a change.',
             [
               { text: 'Later', style: 'cancel' },
-              { text: 'Open sheet', onPress: () => Linking.openURL(url).catch(() => {}) },
+              { text: 'Open sheet', onPress: () => Linking.openURL(opened).catch(() => {}) },
             ],
           );
         }
@@ -86,6 +96,11 @@ export default function GoogleSettingsScreen() {
         Alert.alert('Could not connect', e?.message || 'Check the Google service account setup on the server.');
       }
     });
+
+  const copyServiceAccountEmail = () => {
+    if (!serviceAccountEmail) return;
+    Alert.alert('Service account', serviceAccountEmail, [{ text: 'Done' }]);
+  };
 
   const syncNow = () =>
     run('sync', async () => {
@@ -141,12 +156,13 @@ export default function GoogleSettingsScreen() {
           <Section title="Services" subtitle="What the server has configured">
             <View style={styles.statusRow}>
               <StatusPill ok={!!status?.sign_in?.configured} label={status?.sign_in?.configured ? 'Sign-In ready' : 'Sign-In not set'} />
-              <StatusPill ok={!!status?.meet?.configured} label={status?.meet?.configured ? 'Meet ready' : 'Meet not set'} />
+              <StatusPill ok label={status?.meet?.configured ? 'Meet links ready' : 'Live video ready (Jitsi)'} />
               <StatusPill ok={!!sheets?.configured} label={sheets?.configured ? 'Sheets API ready' : 'Sheets API not set'} />
             </View>
             <Text style={styles.hint}>
-              Sign-In uses GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Meet and Sheets use the
-              GOOGLE_SERVICE_ACCOUNT_* credentials.
+              Sign-In uses GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Live video falls back to a free
+              Jitsi room when Google Meet is unavailable, and Sheets uses the GOOGLE_SERVICE_ACCOUNT_*
+              credentials to write into your own spreadsheet.
             </Text>
           </Section>
 
@@ -158,11 +174,34 @@ export default function GoogleSettingsScreen() {
             {!sheets?.connected ? (
               <>
                 <Text style={styles.emptyTxt}>
-                  Connect a spreadsheet for your college. Rows are appended within seconds of a
-                  check-in or payment — no manual export needed.
+                  Rows are appended within seconds of a check-in or payment — no manual export
+                  needed. Because of how Google service accounts work, the sheet must live in
+                  your own Google account:
                 </Text>
+                <View style={styles.stepsBox}>
+                  <Text style={styles.stepTxt}>1. Create a blank spreadsheet in your Google Drive</Text>
+                  <Text style={styles.stepTxt}>2. Share it with the service account below as “Editor”</Text>
+                  <Text style={styles.stepTxt}>3. Paste its link here and connect</Text>
+                </View>
+                {serviceAccountEmail ? (
+                  <TouchableOpacity onPress={copyServiceAccountEmail} style={styles.emailChip} accessibilityLabel="Show service account email">
+                    <Text style={styles.emailTxt} numberOfLines={1}>{serviceAccountEmail}</Text>
+                    <Text style={styles.emailHint}>Tap to view</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TextInput
+                  value={sheetUrl}
+                  onChangeText={setSheetUrl}
+                  placeholder="https://docs.google.com/spreadsheets/d/…"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  style={styles.input}
+                  testID="sheet-url-input"
+                />
                 <TouchableOpacity onPress={connect} style={[styles.primaryBtn, working && { opacity: 0.6 }]} disabled={working}>
-                  {working ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>Connect Google Sheets</Text>}
+                  {working ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>Connect my spreadsheet</Text>}
                 </TouchableOpacity>
                 {!sheets?.configured ? (
                   <Text style={styles.warnTxt}>
@@ -283,6 +322,12 @@ const styles = StyleSheet.create({
   pillTxt: { fontSize: 11, fontWeight: '700' },
   hint: { fontSize: 11, color: '#94A3B8', lineHeight: 16 },
   emptyTxt: { fontSize: 13, color: '#475569', lineHeight: 19 },
+  stepsBox: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, gap: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  stepTxt: { fontSize: 12, color: '#334155', lineHeight: 18 },
+  emailChip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, backgroundColor: '#EFF6FF', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#BFDBFE' },
+  emailTxt: { flex: 1, fontSize: 11, color: '#1D4ED8', fontWeight: '600' },
+  emailHint: { fontSize: 10, color: '#2563EB', fontWeight: '700' },
+  input: { height: 46, borderRadius: 12, borderWidth: 1.5, borderColor: '#E2E8F0', paddingHorizontal: 12, fontSize: 13, color: '#0F172A', backgroundColor: '#fff' },
   warnTxt: { fontSize: 11, color: '#B45309', lineHeight: 16 },
   primaryBtn: { height: 46, borderRadius: 12, backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
   primaryBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },

@@ -18,7 +18,7 @@ const { requireRole, collegeIdOrThrow } = require('../auth');
 const googleAuth = require('../services/googleAuth');
 const { createMeetEvent } = require('../services/googleMeet');
 const {
-  connectSpreadsheet, setSyncEnabled, getSyncStatus, flushSheetSyncQueue, startSheetSyncWorker,
+  connectSpreadsheet, adoptSpreadsheet, setSyncEnabled, getSyncStatus, flushSheetSyncQueue, startSheetSyncWorker,
 } = require('../services/googleSheets');
 
 function createGoogleRouter(io) {
@@ -29,9 +29,17 @@ function createGoogleRouter(io) {
     const sheets = collegeId ? await getSyncStatus(collegeId) : { configured: false, connected: false, pending: 0 };
     res.json({
       sign_in: { configured: googleAuth.isSignInConfigured() },
-      api: { serviceAccount: googleAuth.isServiceAccountConfigured() },
-      meet: { configured: googleAuth.isServiceAccountConfigured() },
-      sheets,
+      api: {
+        serviceAccount: googleAuth.isServiceAccountConfigured(),
+        serviceAccountEmail: googleAuth.SERVICE_ACCOUNT_EMAIL || null,
+      },
+      meet: {
+        configured: googleAuth.isServiceAccountConfigured(),
+        // Google Meet needs a Workspace account, so we always stand a free
+        // Jitsi room up as the fallback.
+        fallback: 'jitsi',
+      },
+      sheets: { ...sheets, requiresOwnedSheet: true },
     });
   });
 
@@ -44,12 +52,18 @@ function createGoogleRouter(io) {
         { _id: oid(collegeId) },
         { projection: { name: 1 } },
       );
-      const config = await connectSpreadsheet(collegeId, college?.name);
+      // Preferred path: a spreadsheet the college already owns and shared with
+      // the service account (the SA cannot own files — no Drive storage).
+      const supplied = req.body?.spreadsheetUrl || req.body?.spreadsheetId;
+      const config = supplied
+        ? await adoptSpreadsheet(collegeId, college?.name, supplied)
+        : await connectSpreadsheet(collegeId, college?.name, { shareWith: req.user?.email || null });
       startSheetSyncWorker();
       res.json({
         connected: true,
         spreadsheetId: config.spreadsheetId,
         spreadsheetUrl: config.spreadsheetUrl,
+        ownedBy: config.ownedBy || 'service_account',
       });
     } catch (err) {
       sendError(res, err.message || 'Could not connect Google Sheets.', err.status && err.status >= 400 ? err.status : 500);
@@ -106,6 +120,7 @@ function createGoogleRouter(io) {
           description: session.description || 'Live class on Vishva ERP',
           startIso: session.scheduledAt,
           durationMinutes: session.durationMinutes,
+          roomSeed: `live-class-${targetId}`,
         });
         await db.collection('live_sessions').updateOne(
           { _id: session._id },
@@ -132,6 +147,7 @@ function createGoogleRouter(io) {
         description: session.agenda || `Mentorship session with ${session.mentorName}`,
         startIso: session.scheduledAt,
         durationMinutes: session.durationMinutes,
+        roomSeed: `mentorship-${targetId}`,
       });
       await db.collection('mentorship_sessions').updateOne(
         { _id: session._id },

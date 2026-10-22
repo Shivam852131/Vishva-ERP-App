@@ -16,7 +16,7 @@
  */
 
 const { getDB, oid } = require('../db');
-const { getGoogleApiAccessToken, isServiceAccountConfigured } = require('./googleAuth');
+const { getGoogleApiAccessToken, isServiceAccountConfigured, SERVICE_ACCOUNT_EMAIL } = require('./googleAuth');
 
 const SHEETS_SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -258,8 +258,18 @@ async function flushSheetSyncQueue() {
   return { processed };
 }
 
-/** Create (or reuse) the college's spreadsheet and switch sync on. */
-async function connectSpreadsheet(collegeId, collegeName) {
+/**
+ * Create (or reuse) the college's spreadsheet and switch sync on.
+ *
+ * The file is created inside the *service account's* Drive, so it must be
+ * explicitly shared with the admin who connects it — otherwise opening the
+ * link lands on Google's "You need access" page.
+ *
+ * @param {string} collegeId
+ * @param {string} [collegeName]
+ * @param {{ shareWith?: string|null }} [options] email to grant Writer access to
+ */
+async function connectSpreadsheet(collegeId, collegeName, { shareWith = null } = {}) {
   if (!isServiceAccountConfigured()) {
     const err = new Error('Google Sheets is not configured. Set the Google service account credentials first.');
     err.code = 'GOOGLE_NOT_CONFIGURED';
@@ -285,9 +295,42 @@ async function connectSpreadsheet(collegeId, collegeName) {
   });
   const created = await createRes.json().catch(() => ({}));
   if (!createRes.ok || !created.id) {
+    // Service accounts have no Drive storage of their own on personal Google
+    // accounts, so creating a file fails with storageQuotaExceeded. Point the
+    // caller at the supported path instead of surfacing a raw Google error.
+    if (created.error?.errors?.some(e => e.reason === 'storageQuotaExceeded')) {
+      const err = new Error(
+        `This Google service account cannot own files. Create a spreadsheet in your own Google account, `
+        + `share it with ${SERVICE_ACCOUNT_EMAIL} as "Editor", then connect it with its link instead.`,
+      );
+      err.code = 'GOOGLE_STORAGE_LIMIT';
+      throw err;
+    }
     throw new Error(created.error?.message || `Could not create the spreadsheet (${createRes.status}).`);
   }
   const spreadsheetId = created.id;
+
+  // Share with the connecting admin (Writer). Non-fatal: if Google refuses we
+  // still finish connecting — the sheet just has to be shared manually later.
+  if (shareWith) {
+    try {
+      const shareRes = await fetch(
+        `${DRIVE_API}/${spreadsheetId}/permissions?sendNotificationEmail=false`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: 'writer', type: 'user', emailAddress: String(shareWith).toLowerCase() }),
+          signal: AbortSignal.timeout(15000),
+        },
+      );
+      if (!shareRes.ok) {
+        const shareErr = await shareRes.json().catch(() => ({}));
+        console.warn('[google-sheets] could not share spreadsheet:', shareErr.error?.message || shareRes.status);
+      }
+    } catch (shareErr) {
+      console.warn('[google-sheets] could not share spreadsheet:', shareErr.message);
+    }
+  }
 
   // Rename the default tab to the first sync type, add the remaining tabs,
   // then write header rows.
@@ -318,6 +361,97 @@ async function connectSpreadsheet(collegeId, collegeName) {
   config = { ...doc, _id: result.insertedId };
   invalidateConfig(collegeId);
   return config;
+}
+
+/** Accept a docs.google.com link or a raw spreadsheet id. */
+function parseSpreadsheetId(input) {
+  const value = String(input || '').trim();
+  if (!value) return null;
+  const fromUrl = value.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]{10,})/);
+  if (fromUrl) return fromUrl[1];
+  return /^[a-zA-Z0-9-_]{10,}$/.test(value) ? value : null;
+}
+
+/**
+ * Connect a spreadsheet the college already owns.
+ *
+ * Service accounts have no Drive storage on personal Google accounts, so the
+ * sheet must live in a human's Drive and be shared with the service account
+ * as Editor. We verify access, set up the sync tabs/headers, and store it.
+ *
+ * @param {string} collegeId
+ * @param {string} [collegeName]
+ * @param {string} spreadsheetUrlOrId  link pasted by the admin (or raw id)
+ */
+async function adoptSpreadsheet(collegeId, collegeName, spreadsheetUrlOrId) {
+  if (!isServiceAccountConfigured()) {
+    const err = new Error('Google Sheets is not configured. Set the Google service account credentials first.');
+    err.code = 'GOOGLE_NOT_CONFIGURED';
+    throw err;
+  }
+  const spreadsheetId = parseSpreadsheetId(spreadsheetUrlOrId);
+  if (!spreadsheetId) {
+    const err = new Error('That does not look like a Google Sheets link. Paste the full docs.google.com URL.');
+    err.status = 400;
+    throw err;
+  }
+
+  const token = await getGoogleApiAccessToken(SHEETS_SCOPES);
+
+  // Prove the service account can actually open it (i.e. it was shared).
+  let title = null;
+  try {
+    const meta = await sheetsFetch(`/${spreadsheetId}?fields=spreadsheetId,properties(title)`, { token });
+    title = meta.properties?.title || null;
+  } catch {
+    const err = new Error(
+      `Could not open that spreadsheet for the service account. `
+      + `Share it with ${SERVICE_ACCOUNT_EMAIL} as "Editor" (File → Share), then try again.`,
+    );
+    err.status = 403;
+    throw err;
+  }
+
+  // Set up the sync tabs, reusing whatever already exists.
+  const typeKeys = Object.keys(SYNC_TYPES);
+  const titles = await knownTabs(spreadsheetId, { fresh: true });
+  const requests = [];
+  if (!titles.has(SYNC_TYPES.attendance.tab)) {
+    requests.push({ updateSheetProperties: { properties: { sheetId: 0, title: SYNC_TYPES.attendance.tab }, fields: 'title' } });
+  }
+  for (const key of typeKeys.slice(1)) {
+    if (!titles.has(SYNC_TYPES[key].tab)) requests.push({ addSheet: { properties: { title: SYNC_TYPES[key].tab } } });
+  }
+  if (requests.length) {
+    await sheetsFetch(`/${spreadsheetId}:batchUpdate`, { method: 'POST', body: { requests }, token });
+    tabMetaCache.delete(spreadsheetId);
+  }
+  for (const key of typeKeys) {
+    await writeHeaders(spreadsheetId, SYNC_TYPES[key]).catch(() => {});
+  }
+
+  const db = getDB();
+  const now = new Date().toISOString();
+  const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+  await db.collection(CONFIGS_COLLECTION).updateOne(
+    { $or: [{ collegeId: oid(collegeId) }, { collegeId: String(collegeId) }] },
+    {
+      $set: {
+        collegeId: oid(collegeId),
+        spreadsheetId,
+        spreadsheetUrl,
+        title,
+        ownedBy: 'college',
+        enabled: true,
+        types: Object.fromEntries(typeKeys.map(k => [k, true])),
+        updatedAt: now,
+      },
+      $setOnInsert: { createdAt: now },
+    },
+    { upsert: true },
+  );
+  invalidateConfig(collegeId);
+  return getConfig(collegeId, { fresh: true });
 }
 
 async function setSyncEnabled(collegeId, enabled, types) {
@@ -376,6 +510,8 @@ module.exports = {
   queueSheetSync,
   flushSheetSyncQueue,
   connectSpreadsheet,
+  adoptSpreadsheet,
+  parseSpreadsheetId,
   setSyncEnabled,
   getSyncStatus,
   startSheetSyncWorker,

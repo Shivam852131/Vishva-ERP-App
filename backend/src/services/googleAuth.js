@@ -158,7 +158,7 @@ async function getGoogleApiAccessToken(scopes) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'urn:oauth:params:grant-type:jwt-bearer',
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion,
     }),
     signal: AbortSignal.timeout(15000),
@@ -187,4 +187,5 @@ module.exports = {
   getGoogleApiAccessToken,
   calendarId,
   GOOGLE_REDIRECT_URI,
+  SERVICE_ACCOUNT_EMAIL: GOOGLE_SERVICE_ACCOUNT_EMAIL,
 };

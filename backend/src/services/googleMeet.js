@@ -13,10 +13,14 @@
  * stable Meet room that participants can rejoin.
  */
 
-const { getGoogleApiAccessToken, isServiceAccountConfigured, calendarId } = require('./googleAuth');
+const { getGoogleApiAccessToken, isServiceAccountConfigured, calendarId, SERVICE_ACCOUNT_EMAIL } = require('./googleAuth');
 
 const CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3';
+
+// Free, account-less video rooms used when Google Meet is unavailable
+// (service accounts on personal Google accounts cannot mint Meet links).
+const JITSI_BASE = 'https://meet.jit.si';
 
 function addMinutes(iso, minutes) {
   const base = new Date(iso);
@@ -25,7 +29,25 @@ function addMinutes(iso, minutes) {
 }
 
 /**
+ * Stable, URL-safe Jitsi room. The same `seed` (e.g. "live_class-6534…")
+ * always yields the same room, so participants can rejoin a session.
+ */
+function jitsiRoomUrl(seed) {
+  const slug = String(seed || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+  return `${JITSI_BASE}/vishva-erp-${slug || Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
  * Create a Calendar event with an embedded Google Meet room.
+ *
+ * Google refuses conference creation for service accounts on personal Google
+ * accounts ("Invalid conference type value"), so if anything Google-side
+ * fails we fall back to a free, permanent Jitsi room instead of blocking the
+ * live class. `source` tells the caller which one it got.
  *
  * @param {object} options
  * @param {string} options.summary        Event title (shown in Meet)
@@ -34,60 +56,64 @@ function addMinutes(iso, minutes) {
  * @param {string} [options.endIso]       End time (defaults to start + durationMinutes)
  * @param {number} [options.durationMinutes]
  * @param {string[]} [options.attendees]  Attendee emails (optional)
- * @returns {Promise<{meetUrl:string, calendarEventId:string, calendarHtmlLink:string|null, source:'google'}>}
+ * @param {string} [options.roomSeed]     Stable id for the Jitsi fallback room
+ * @returns {Promise<{meetUrl:string, calendarEventId:string|null, calendarHtmlLink:string|null, source:'google'|'jitsi'}>}
  */
-async function createMeetEvent({ summary, description, startIso, endIso, durationMinutes, attendees = [] }) {
+async function createMeetEvent({ summary, description, startIso, endIso, durationMinutes, attendees = [], roomSeed = null }) {
   if (!isServiceAccountConfigured()) {
-    const err = new Error('Google Meet is not configured (service account missing).');
-    err.code = 'GOOGLE_NOT_CONFIGURED';
-    throw err;
+    return { meetUrl: jitsiRoomUrl(roomSeed), calendarEventId: null, calendarHtmlLink: null, source: 'jitsi' };
   }
 
-  const token = await getGoogleApiAccessToken(CALENDAR_SCOPES);
-  const body = {
-    summary,
-    description: description || undefined,
-    start: { dateTime: startIso },
-    end: { dateTime: endIso || addMinutes(startIso, Number(durationMinutes) || 60) },
-    conferenceData: {
-      createRequest: {
-        requestId: `vishva-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-        conferenceSolutionKey: { type: 'hangoutsMeet' },
+  try {
+    const token = await getGoogleApiAccessToken(CALENDAR_SCOPES);
+    const body = {
+      summary,
+      description: description || undefined,
+      start: { dateTime: startIso },
+      end: { dateTime: endIso || addMinutes(startIso, Number(durationMinutes) || 60) },
+      conferenceData: {
+        createRequest: {
+          requestId: `vishva-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
       },
-    },
-  };
-  if (Array.isArray(attendees) && attendees.length) {
-    body.attendees = attendees.filter(Boolean).map(email => ({ email }));
+    };
+    if (Array.isArray(attendees) && attendees.length) {
+      body.attendees = attendees.filter(Boolean).map(email => ({ email }));
+    }
+
+    const url = `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId())}/events?conferenceDataVersion=1`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error?.message || `Google Calendar API error ${res.status}.`);
+      err.status = res.status;
+      throw err;
+    }
+
+    const googleMeetUrl = data.hangoutLink
+      || data.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri
+      || null;
+
+    return {
+      meetUrl: googleMeetUrl || jitsiRoomUrl(roomSeed),
+      calendarEventId: data.id || null,
+      calendarHtmlLink: data.htmlLink || null,
+      source: googleMeetUrl ? 'google' : 'jitsi',
+    };
+  } catch (err) {
+    console.warn('[google-meet] Google Meet unavailable, using free Jitsi room:', err.message);
+    return { meetUrl: jitsiRoomUrl(roomSeed), calendarEventId: null, calendarHtmlLink: null, source: 'jitsi' };
   }
-
-  const url = `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId())}/events?conferenceDataVersion=1`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20000),
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data.error?.message || `Google Calendar API error ${res.status}.`);
-    err.status = res.status;
-    throw err;
-  }
-
-  const meetUrl = data.hangoutLink
-    || data.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri
-    || null;
-
-  return {
-    meetUrl,
-    calendarEventId: data.id || null,
-    calendarHtmlLink: data.htmlLink || null,
-    source: 'google',
-  };
 }
 
 /** Remove the backing Calendar event (used when a class/session is deleted). */
