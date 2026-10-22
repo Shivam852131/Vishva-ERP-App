@@ -13,6 +13,7 @@ const { sendError } = require('./utils');
 const authRoutes = require('./routes/auth');
 const { router: dashboardRoutes } = require('./routes/dashboard');
 const academicsRoutes = require('./routes/academics');
+const { createAcademicRouter } = require('./routes/academic-structure');
 const { createAttendanceRouter } = require('./routes/attendance');
 const { createAttendanceAnalyticsRouter } = require('./routes/attendance-analytics');
 const { createFeesRouter } = require('./routes/fees');
@@ -98,6 +99,7 @@ function createApp(io) {
   app.use('/api', authRoutes);
   app.use('/api', dashboardRoutes);
   app.use('/api', academicsRoutes);
+  app.use('/api', createAcademicRouter());
   app.use('/api', createAttendanceRouter(io));
   app.use('/api', createAttendanceAnalyticsRouter(io));
   app.use('/api', createFeesRouter(io));

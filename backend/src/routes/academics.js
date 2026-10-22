@@ -104,17 +104,28 @@ async function getCourseMap(db, courseIds, req) {
 async function getUserCourseIds(db, userId, role, req) {
   const uid = oid(userId);
   const collegeQ = req ? collegeFilter(req) : {};
+
+  let collection = null;
+  let userClause = null;
   if (role === 'student') {
-    const filter = uid ? { $or: [{ studentId: uid }, { studentId: userId }] } : { studentId: userId };
-    const enrollments = await db.collection('course_enrollments').find({ ...filter, ...collegeQ }).toArray();
-    return enrollments.map(e => e.courseId);
+    collection = 'course_enrollments';
+    userClause = uid ? { $or: [{ studentId: uid }, { studentId: userId }] } : { studentId: userId };
+  } else if (role === 'faculty') {
+    collection = 'courses';
+    userClause = uid ? { $or: [{ facultyId: uid }, { facultyId: userId }] } : { facultyId: userId };
+  } else {
+    return null;
   }
-  if (role === 'faculty') {
-    const filter = uid ? { $or: [{ facultyId: uid }, { facultyId: userId }] } : { facultyId: userId };
-    const courses = await db.collection('courses').find({ ...filter, ...collegeQ }).toArray();
-    return courses.map(c => c._id);
-  }
-  return null;
+
+  // The identity clause and the tenant clause both want `$or`; nesting them
+  // under `$and` stops one from silently replacing the other (which previously
+  // made every student of the college resolve to every enrolled course).
+  const andClauses = [userClause];
+  if (collegeQ.$or) andClauses.push({ $or: collegeQ.$or });
+  else if (Object.keys(collegeQ).length) andClauses.push(collegeQ);
+
+  const docs = await db.collection(collection).find({ $and: andClauses }).toArray();
+  return role === 'student' ? docs.map(e => e.courseId) : docs.map(c => c._id);
 }
 
 router.get('/courses', async (req, res) => {
@@ -126,20 +137,13 @@ router.get('/courses', async (req, res) => {
     const deptFilter = req.query.department;
     if (deptFilter) filter.department = deptFilter;
 
-    if (user.role === 'student') {
-      const courseIds = await getUserCourseIds(db, String(user._id), 'student', req);
-      if (courseIds.length) {
-        const oids = courseIds.map(id => oid(id)).filter(Boolean);
-        if (oids.length) filter._id = { $in: oids };
-        else filter._id = { $in: courseIds };
-      }
-    } else if (user.role === 'faculty') {
-      const courseIds = await getUserCourseIds(db, String(user._id), 'faculty', req);
-      if (courseIds.length) {
-        const oids = courseIds.map(id => oid(id)).filter(Boolean);
-        if (oids.length) filter._id = { $in: oids };
-        else filter._id = { $in: courseIds };
-      }
+    if (user.role === 'student' || user.role === 'faculty') {
+      // Scoped roles only ever see their own subjects: enrolled for students,
+      // owned/assigned for faculty. With no linkage the result must be empty
+      // rather than falling back to the whole college's catalogue.
+      const courseIds = await getUserCourseIds(db, String(user._id), user.role, req);
+      const oids = courseIds.map(id => oid(id)).filter(Boolean);
+      filter._id = { $in: oids.length ? oids : courseIds.length ? courseIds : [] };
     }
 
     const courses = await db.collection('courses').find({ ...filter, ...collegeFilter(req) }).toArray();
@@ -155,7 +159,9 @@ router.get('/courses', async (req, res) => {
   }
 });
 
-router.post(['/courses', '/admin/courses'], requireRole('college_admin', 'super_admin', 'faculty'), async (req, res) => {
+// Subjects are managed by college administrators (RBAC 1.3/1.4): faculty are
+// assigned to subjects via /academic/assignments, they do not create them.
+router.post(['/courses', '/admin/courses'], requireRole('college_admin', 'super_admin'), async (req, res) => {
   try {
     const db = getDB();
     const { code, name, department, credits, semester, college } = req.body;
@@ -195,6 +201,19 @@ router.put(['/courses/:id', '/admin/courses/:id'], requireRole('college_admin', 
     const existing = await db.collection('courses').findOne({ _id, ...collegeFilter(req) });
     if (!existing) return sendError(res, 'Course not found.', 404);
 
+    // Faculty may only edit subjects they own or are assigned to teach, and may
+    // never move a subject onto another faculty member — reassignment is an
+    // administrative action through /academic/assignments (RBAC 1.4).
+    if (req.user.role === 'faculty') {
+      const allowed = (await getUserCourseIds(db, String(req.user._id), 'faculty', req)).map(id => String(id));
+      if (!allowed.includes(String(existing._id))) {
+        return sendError(res, 'You can only edit subjects you are assigned to.', 403);
+      }
+      if (req.body.faculty_id && req.body.faculty_id !== String(existing.facultyId || '')) {
+        return sendError(res, 'Only a college administrator can reassign this subject.', 403);
+      }
+    }
+
     const update = {};
     if (req.body.code) update.code = req.body.code;
     if (req.body.name) update.name = req.body.name;
@@ -222,7 +241,26 @@ router.delete(['/courses/:id', '/admin/courses/:id'], requireRole('college_admin
     const _id = oid(req.params.id);
     if (!_id) return sendError(res, 'Invalid course id.', 404);
 
-    const result = await db.collection('courses').deleteOne({ _id });
+    const existing = await db.collection('courses').findOne({ _id, ...collegeFilter(req) });
+    if (!existing) return sendError(res, 'Course not found.', 404);
+
+    // A subject that has history is never destroyed: when attendance, exams,
+    // enrollments, assignments or the timetable reference it, it is deactivated
+    // instead so every historical record still resolves its subject (spec 1.3).
+    const refs = await Promise.all([
+      db.collection('attendance_records').countDocuments({ courseId: { $in: [_id, String(_id)] } }),
+      db.collection('attendance_sessions').countDocuments({ courseId: { $in: [_id, String(_id)] } }),
+      db.collection('exam_results').countDocuments({ courseId: { $in: [_id, String(_id)] } }),
+      db.collection('course_enrollments').countDocuments({ courseId: { $in: [_id, String(_id)] } }),
+      db.collection('timetable_slots').countDocuments({ courseId: { $in: [_id, String(_id)] } }),
+      db.collection('faculty_assignments').countDocuments({ courseId: { $in: [_id, String(_id)] } }),
+    ]);
+    if (refs.some(n => n > 0)) {
+      await db.collection('courses').updateOne({ _id }, { $set: { active: false } });
+      return res.json({ ok: true, deactivated: true });
+    }
+
+    const result = await db.collection('courses').deleteOne({ _id, ...collegeFilter(req) });
     if (!result.deletedCount) return sendError(res, 'Course not found.', 404);
     res.json({ ok: true });
   } catch (e) {
@@ -238,15 +276,15 @@ router.get('/timetable', async (req, res) => {
 
     if (user.role === 'student' || user.role === 'faculty') {
       const courseIds = await getUserCourseIds(db, String(user._id), user.role, req);
-      if (courseIds && courseIds.length) {
-        filter.courseId = { $in: courseIds };
+      if (!courseIds || !courseIds.length) {
+        // No linked subjects means no visible timetable. Never fall back to the
+        // whole college's slots — that would expose other classes' schedules.
+        return res.json([]);
       }
+      filter.courseId = { $in: courseIds };
     }
 
-    let slots = await db.collection('timetable_slots').find({ ...filter, ...collegeFilter(req) }).toArray();
-    if (!slots.length && (user.role === 'student' || user.role === 'faculty')) {
-      slots = await db.collection('timetable_slots').find({ ...collegeFilter(req) }).limit(50).toArray();
-    }
+    const slots = await db.collection('timetable_slots').find({ ...filter, ...collegeFilter(req) }).toArray();
 
     const courseIds = [...new Set(slots.map(s => s.courseId))];
     const courseMap = await getCourseMap(db, courseIds, req);

@@ -51,6 +51,8 @@ const CollegeAdminPlacementsScreen = LS(() => import('./app/(college_admin)/plac
 const CollegeAdminAssessmentsAdminScreen = LS(() => import('./app/(college_admin)/assessments-admin'));
 const CollegeAdminMentorshipAdminScreen = LS(() => import('./app/(college_admin)/mentorship-admin'));
 const CollegeAdminSkillAdminScreen = LS(() => import('./app/(college_admin)/skill-admin'));
+const CollegeAdminAcademicManagementScreen = LS(() => import('./app/(college_admin)/academic-management'));
+const CollegeAdminAcademicEnrollmentScreen = LS(() => import('./app/(college_admin)/academic-enrollment'));
 
 // ── Shared screens ──
 const AnalyticsScreen = LS(() => import('./app/analytics'));
@@ -159,6 +161,8 @@ export default function App() {
                   <RootStack.Screen name="/(college_admin)/assessments-admin" component={CollegeAdminAssessmentsAdminScreen} />
                   <RootStack.Screen name="/(college_admin)/mentorship-admin" component={CollegeAdminMentorshipAdminScreen} />
                   <RootStack.Screen name="/(college_admin)/skill-admin" component={CollegeAdminSkillAdminScreen} />
+                  <RootStack.Screen name="/(college_admin)/academic-management" component={CollegeAdminAcademicManagementScreen} />
+                  <RootStack.Screen name="/(college_admin)/academic-enrollment" component={CollegeAdminAcademicEnrollmentScreen} />
                   <RootStack.Screen name="/analytics" component={AnalyticsScreen} />
                   <RootStack.Screen name="/attendance" component={AttendanceScreen} />
                   <RootStack.Screen name="/attendance-live" component={AttendanceLiveScreen} />

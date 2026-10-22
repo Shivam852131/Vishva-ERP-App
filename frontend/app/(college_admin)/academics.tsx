@@ -4,10 +4,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Plus, X, Trash2, BookOpen, Clock, Calendar, Users, MapPin,
   Copy, CheckCircle, AlertTriangle, ChevronRight, Search, Filter,
-  ArrowUpDown, Eye, Pencil, Zap,
+  ArrowUpDown, Eye, Pencil, Zap, Layers,
 } from 'lucide-react-native';
 import type { Course, TimetableSlot } from '@/src/types';
 import { ErrorBoundary } from '@/src/ErrorBoundary';
+import { useRouter } from '@/src/navigation/router';
 import { useFetch, useMutate } from '@/src/hooks/useFetch';
 import { theme } from '@/src/theme';
 import { ChipBtn, EmptyState, AsyncView, StatCard, Card, ProgressBar } from '@/src/ui';
@@ -24,6 +25,7 @@ const TIME_SLOTS = [
 const COURSE_COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#06B6D4', '#EC4899', '#84CC16'];
 
 export default function Academics() {
+  const router = useRouter();
   const [tab, setTab] = useState<'courses' | 'timetable' | 'analytics'>('courses');
   const [refreshing, setRefreshing] = useState(false);
   const [day, setDay] = useState('Mon');
@@ -31,9 +33,14 @@ export default function Academics() {
   const [q, setQ] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
-  const { data: courses = [], loading: coursesLoading, error: coursesError, refresh: refreshCourses } = useFetch<Course[]>('/courses');
-  const { data: slots = [], loading: slotsLoading, error: slotsError, refresh: refreshSlots } = useFetch<TimetableSlot[]>('/timetable');
-  const { data: faculty = [], loading: facultyLoading, refresh: refreshFaculty } = useFetch<any[]>('/admin/users?role=faculty');
+  const { data: coursesData, loading: coursesLoading, error: coursesError, refresh: refreshCourses } = useFetch<Course[]>('/courses');
+  const { data: slotsData, loading: slotsLoading, error: slotsError, refresh: refreshSlots } = useFetch<TimetableSlot[]>('/timetable');
+  const { data: facultyData, loading: facultyLoading, refresh: refreshFaculty } = useFetch<any[]>('/admin/users?role=faculty');
+  // `data` can legitimately be null (empty API body). Destructuring defaults only
+  // cover undefined, so coerce before anything touches .length/.map.
+  const courses: Course[] = useMemo(() => coursesData || [], [coursesData]);
+  const slots: TimetableSlot[] = useMemo(() => slotsData || [], [slotsData]);
+  const faculty: any[] = useMemo(() => facultyData || [], [facultyData]);
   const { mutate: saveCourseApi, loading: cBusy } = useMutate();
   const { mutate: deleteCourseApi } = useMutate();
   const { mutate: saveSlotApi, loading: sBusy } = useMutate();
@@ -233,6 +240,22 @@ export default function Academics() {
               <Text style={styles.sub}>Manage courses & class schedule</Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable
+                testID="open-academic-management"
+                onPress={() => router.push('/(college_admin)/academic-management')}
+                style={styles.iconBtn}
+                accessibilityLabel="Academic structure"
+              >
+                <Layers color={theme.colors.brand} size={18} />
+              </Pressable>
+              <Pressable
+                testID="open-academic-enrollment"
+                onPress={() => router.push('/(college_admin)/academic-enrollment')}
+                style={styles.iconBtn}
+                accessibilityLabel="Enrollment and faculty assignments"
+              >
+                <Users color={theme.colors.brand} size={18} />
+              </Pressable>
               {tab === 'timetable' && (
                 <Pressable onPress={() => setDupModal(true)} style={styles.iconBtn}>
                   <Copy color={theme.colors.brand} size={18} />
