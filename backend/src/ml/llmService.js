@@ -40,13 +40,14 @@ const GEMINI_MAX_OUTPUT_TOKENS = parseInt(process.env.GEMINI_MAX_OUTPUT_TOKENS |
 // straight through to the canned mock reply.
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
-// When the primary model stays congested, walk a short list of siblings before
-// giving up. Measured during an outage: gemini-3.8-flash returned 503 while
+// Models tried in order when the primary is congested or out of quota.
+// Measured during an outage: gemini-3.8-flash returned 503 while
 // gemini-3.5-flash-lite answered in 1.5s — a fallback turns "no answer" into a
 // real one. Override with GEMINI_FALLBACK_MODELS (comma separated).
 const GEMINI_MODELS = Array.from(new Set([
   GEMINI_MODEL,
-  ...String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.5-flash-lite,gemini-3.6-flash')
+  ...String(process.env.GEMINI_FALLBACK_MODELS
+    || 'gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.5-flash,gemini-flash-lite-latest,gemini-3.1-flash-lite')
     .split(',')
     .map((model) => model.trim())
     .filter(Boolean),
@@ -301,11 +302,17 @@ async function callGemini(contents, systemPrompt, maxOutputTokens) {
 
       if (response.ok) {
         const data = await response.json();
-        return {
-          text: extractGeminiText(data),
-          finishReason: data?.candidates?.[0]?.finishReason || '',
-          model,
-        };
+        const text = extractGeminiText(data);
+        const finishReason = data?.candidates?.[0]?.finishReason || '';
+
+        // A 200 with no visible text (refusal, safety block, or a model that
+        // only produced "thoughts") is not an answer. MAX_TOKENS is handled by
+        // the caller's larger-budget retry, so it is passed through.
+        if (!text && finishReason !== 'MAX_TOKENS') {
+          lastError = new Error(`Gemini ${model} returned an empty response (${finishReason || 'no finish reason'})`);
+          break;
+        }
+        return { text, finishReason, model };
       }
 
       const error = await response.json().catch(() => ({}));
@@ -354,7 +361,11 @@ async function generateWithGemini(type, message, conversationHistory = []) {
     }
   }
 
-  return { response: text || 'I could not generate a response.', model };
+  // Throwing (rather than returning placeholder text) lets generateAIResponse()
+  // continue down the provider cascade to Groq/OpenAI.
+  if (!text) throw new Error('Gemini returned an empty response.');
+
+  return { response: text, model };
 }
 
 // ─── Provider 4: OpenAI (paid) ─────────────────────────────────
@@ -575,166 +586,30 @@ async function generateVisionResponse(type, message, image, userId) {
 }
 
 // ─── Provider 5: Mock fallback (always works) ──────────────────
-function generateMockResponse(type, message) {
-  const topic = message.substring(0, 80).replace(/[?!.]+$/, '').trim();
-  
-  const mockResponses = {
-    doubt_solver: `Based on your question about "${topic}": Let me break this down step by step.
+// Shown to the user when every AI provider failed to answer.
+const PROVIDER_DOWN_NOTICE = '⚠️ The AI service is busy right now, so this is not a real answer to your question. Please retry in a few seconds.';
 
-**1. Core Concept**: This involves understanding the fundamental principles that govern this topic.
-
-**2. Key Insight**: The relationship between the components is crucial — once you grasp this, everything clicks.
-
-**3. Example**: Think of it like building blocks — each concept supports the next. Start with the basics and build up.
-
-**4. Practice**: Try solving similar problems to reinforce your understanding. Start with simpler cases first.
-
-Would you like me to explain any specific part in more detail?`,
-    
-    academic_advisor: `For your academic progress regarding "${topic}":
-
-**Immediate Actions:**
-1. Focus on understanding fundamentals — don't skip basics
-2. Dedicate 2-3 hours daily to this subject
-3. Use standard textbooks + NPTEL/YouTube tutorials
-
-**Weekly Goals:**
-- Solve at least 5 practice problems
-- Take a mini quiz every Friday
-- Form a study group with 2-3 classmates
-
-**Long-term Strategy:**
-- Track your progress weekly
-- Focus on conceptual clarity over memorization
-- Connect this subject to your career goals
-
-Remember: Consistency beats intensity. Small daily progress compounds over time.`,
-    
-    study_coach: `Study optimization tips for "${topic}":
-
-**Active Recall Technique:**
-1. Study for 25 minutes (Pomodoro)
-2. Close your book and write everything you remember
-3. Check what you missed and focus on those gaps
-4. Repeat after 1 day, then 3 days, then 7 days
-
-**Memory Palace Method:**
-- Associate concepts with familiar locations
-- Create a story linking the ideas together
-- Review the mental map before sleep
-
-**Time Management:**
-- Tackle difficult topics when energy is highest (usually morning)
-- Use interleaving: mix different topics in one session
-- Take breaks — your brain consolidates learning during rest
-
-**Pro Tip:** Teaching someone else is the best way to learn. Explain the concept to a friend or even to yourself out loud.`,
-    
-    code_helper: `Here's how to approach "${topic}":
-
-**Approach:**
-1. Understand the problem: What are the inputs and expected outputs?
-2. Break it into smaller functions
-3. Handle edge cases first (empty input, null values, etc.)
-4. Write the main logic
-5. Test with examples
-
-**Example Structure:**
-\`\`\`javascript
-function solve(input) {
-  // 1. Validate input
-  if (!input || input.length === 0) return null;
-  
-  // 2. Process
-  const result = input.map(item => transform(item));
-  
-  // 3. Return formatted output
-  return result.filter(Boolean);
-}
-\`\`\`
-
-**Complexity Analysis:**
-- Time: O(n) for single pass, O(n²) for nested loops
-- Space: O(1) if in-place, O(n) if creating new arrays
-
-**Common Pitfalls:**
-- Off-by-one errors in loops
-- Not handling null/undefined
-- Forgetting to return values
-
-Want me to elaborate on any part?`,
-    
-    assignment_checker: `Assignment Evaluation:
-
-**Score: 78/100**
-
-**Strengths:**
-- Good understanding of core concepts
-- Clear explanation in most sections
-- Proper structure and formatting
-
-**Areas for Improvement:**
-- Section 3 needs more specific examples
-- Some claims lack supporting evidence
-- Consider adding a conclusion that ties everything together
-
-**Detailed Feedback:**
-1. Content Accuracy: 8/10 — Mostly correct, minor gaps
-2. Completeness: 7/10 — Missing 2 required sections
-3. Presentation: 9/10 — Well-organized and readable
-4. Critical Thinking: 7/10 — Could go deeper in analysis
-
-**Recommendation:** Revise sections 3 and 5 with concrete examples, and you'll easily score 90+.`,
-    
-    interview_practice: `Technical Interview Questions:
-
-**Question 1:** Explain the difference between stack and array.
-*Expected answer:* Stack is LIFO with push/pop operations; array is indexed access. Stack is abstract data type, array is data structure.
-
-**Question 2:** What is the time complexity of searching in a sorted array vs unsorted array?
-*Expected answer:* Sorted: O(log n) with binary search. Unsorted: O(n) with linear search.
-
-**Question 3:** Tell me about a challenging project you worked on.
-*Tip:* Use STAR method — Situation, Task, Action, Result. Be specific about YOUR contribution.
-
-**Question 4:** How do you handle disagreements in a team?
-*Tip:* Show maturity — listen first, present data, find compromise, focus on the goal.
-
-**Question 5:** Where do you see yourself in 5 years?
-*Tip:* Show ambition tied to the company's growth. Be realistic but aspirational.
-
-Want me to do a mock interview on any specific topic?`,
-
-    question_generator: `{"question":"Which data structure follows Last-In, First-Out (LIFO) order?","options":["Queue","Stack","Array","Linked List"],"answer":1,"explanation":"A stack operates on LIFO semantics with push and pop operations.","difficulty":"easy"}
+/**
+ * Payload returned when every provider failed.
+ *
+ * Chat types get an honest notice instead of a canned template: a template
+ * cannot address the user's actual question, so serving one reads exactly
+ * like "the AI ignored what I asked" — which is the complaint users raised.
+ *
+ * question_generator / question_extractor are exempt. routes/exam-prep.js
+ * parses their output as raw JSON lines, so question_generator keeps the
+ * machine-readable payload and question_extractor returns an empty string,
+ * which parses to zero questions instead of injecting bogus ones.
+ */
+function generateMockResponse(type) {
+  const key = promptKey(type);
+  if (key === 'question_generator') {
+    return `{"question":"Which data structure follows Last-In, First-Out (LIFO) order?","options":["Queue","Stack","Array","Linked List"],"answer":1,"explanation":"A stack operates on LIFO semantics with push and pop operations.","difficulty":"easy"}
 {"question":"What is the average time complexity of searching an element in a binary search tree?","options":["O(1)","O(n)","O(log n)","O(n log n)"],"answer":2,"explanation":"Each comparison halves the search space in a balanced BST.","difficulty":"medium"}
-{"question":"Which protocol operates at the Transport Layer of the OSI model?","options":["HTTP","IP","TCP","Ethernet"],"answer":2,"explanation":"TCP provides reliable, ordered transport between processes.","difficulty":"medium"}`,
-  };
-  
-  const body = mockResponses[promptKey(type)] || `Thank you for your question about "${topic}".
-
-This is a great topic! Here's my recommendation:
-
-**1. Understand the Basics**
-Make sure you have the fundamentals clear before moving to advanced concepts.
-
-**2. Practice Regularly**
-Apply what you learn through exercises and projects. Theory without practice is incomplete.
-
-**3. Review and Reflect**
-Regular revision helps long-term retention. Take 10 minutes at the end of each study session to summarize what you learned.
-
-**4. Ask Questions**
-Don't hesitate to ask follow-up questions. Curiosity is the engine of learning.
-
-What specific aspect would you like to explore further?`;
-
-  // Never present a canned reply as a real answer: the user asked a specific
-  // question and this template cannot answer it. Say so, so they retry instead
-  // of assuming the AI misunderstood them. Machine-readable types
-  // (question_generator / question_extractor) are exempt — their consumers
-  // parse the body as raw JSON lines and a notice would corrupt it.
-  if (promptKey(type) === 'question_generator' || promptKey(type) === 'question_extractor') return body;
-  return `⚠️ I could not reach the AI service just now, so this is a placeholder — I don't have a real answer to your question yet. Please try again in a few seconds.\n\n---\n\n${body}`;
+{"question":"Which protocol operates at the Transport Layer of the OSI model?","options":["HTTP","IP","TCP","Ethernet"],"answer":2,"explanation":"TCP provides reliable, ordered transport between processes.","difficulty":"medium"}`;
+  }
+  if (key === 'question_extractor') return '';
+  return PROVIDER_DOWN_NOTICE;
 }
 
 // ─── Main function: try providers in order ─────────────────────

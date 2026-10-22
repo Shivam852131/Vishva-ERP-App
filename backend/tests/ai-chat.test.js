@@ -165,6 +165,24 @@ describe('AI chat (/api/ai/chat)', () => {
     expect(res.body.response).toBe('A complete, well-formed answer.');
   });
 
+  it('moves to the next model when one answers 200 with no visible text', async () => {
+    const blank = {
+      ok: true,
+      status: 200,
+      json: async () => ({ candidates: [{ content: { role: 'model', parts: [] }, finishReason: 'STOP', index: 0 }] }),
+    };
+    fetchMock.mockResolvedValueOnce(blank).mockResolvedValueOnce(geminiOk('A real answer.'));
+    const student = await createUser({ role: 'student' });
+
+    const res = await request(app)
+      .post('/api/ai/chat')
+      .set('Authorization', `Bearer ${tokenFor(student)}`)
+      .send({ message: 'Explain polymorphism', type: 'general' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(res.body.response).toBe('A real answer.');
+  });
+
   it('rejects an empty message instead of crashing on .substring', async () => {
     const student = await createUser({ role: 'student' });
     const res = await request(app)
@@ -177,7 +195,16 @@ describe('AI chat (/api/ai/chat)', () => {
 });
 
 describe('mock fallback', () => {
-  it('labels the canned reply so it is never mistaken for a real answer', () => {
+  it('returns only an honest notice — never a canned answer', () => {
+    const reply = llm.generateMockResponse('study_coach', 'What is python?');
+    expect(reply.startsWith('\u26A0')).toBe(true);
+    // The old fallback appended a generic study-tips template under the notice,
+    // which reads as "the AI answered a completely different question".
+    expect(reply).not.toContain('Memory Palace');
+    expect(reply).not.toContain('Active Recall');
+    expect(reply).not.toContain('---');
+    expect(reply.length).toBeLessThan(300);
+
     expect(llm.generateMockResponse('general', 'What is recursion?').startsWith('\u26A0')).toBe(true);
     expect(llm.generateMockResponse('doubt_solver', 'Solve x+2=5').startsWith('\u26A0')).toBe(true);
   });
@@ -186,5 +213,9 @@ describe('mock fallback', () => {
     const jsonl = llm.generateMockResponse('question_generator', 'make questions');
     const first = jsonl.split('\n').find((line) => line.trim());
     expect(() => JSON.parse(first)).not.toThrow();
+  });
+
+  it('returns nothing for question_extractor so no bogus questions are invented', () => {
+    expect(llm.generateMockResponse('question_extractor', 'scan this')).toBe('');
   });
 });

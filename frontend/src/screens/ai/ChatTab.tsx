@@ -48,6 +48,8 @@ interface LocalMsg {
   text: string;
   image?: string;
   timestamp?: string;
+  /** Set when the backend answered with its provider-down notice, not a real reply. */
+  placeholder?: boolean;
 }
 
 interface ChatSession {
@@ -358,9 +360,20 @@ export default function ChatTab() {
 
       if (result.sessionId) sessionRef.current = result.sessionId;
       // Replace with the server-confirmed full text (handles any drift).
+      const providerDown = result.source === 'mock';
       setMessages((m) =>
-        m.map((msg) => (msg.id === aiMsgId ? { ...msg, text: result.response || msg.text } : msg)),
+        m.map((msg) =>
+          msg.id === aiMsgId
+            ? { ...msg, text: result.response || msg.text, placeholder: providerDown || undefined }
+            : msg,
+        ),
       );
+      if (providerDown) {
+        // The bubble holds an honest "provider busy" notice rather than a real
+        // answer — offer a retry instead of leaving the user stuck.
+        setError('The AI provider is busy right now. Please retry in a few seconds.');
+        setRetryMsg(userMsg);
+      }
       refreshSessions();
     } catch (e: any) {
       const errMsg = e?.message || 'Something went wrong. Please try again.';
@@ -383,7 +396,7 @@ export default function ChatTab() {
       const text = retryMsg.text === '(photo attached)' ? '' : retryMsg.text;
       setInput(text);
       setImage(retryMsg.image || null);
-      setMessages((m) => m.filter((msg) => msg.id !== retryMsg.id));
+      setMessages((m) => m.filter((msg) => msg.id !== retryMsg.id && !msg.placeholder));
       setTimeout(() => send(text || undefined), 50);
     }
   };
