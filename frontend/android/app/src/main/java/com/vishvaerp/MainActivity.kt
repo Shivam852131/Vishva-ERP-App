@@ -13,7 +13,7 @@ class MainActivity : ReactActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
-        super.onCreate(savedInstanceState)
+        super.onCreate(null)
     }
 
     override fun createReactActivityDelegate(): ReactActivityDelegate =

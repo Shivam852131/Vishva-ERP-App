@@ -53,8 +53,8 @@ android {
         applicationId "com.vishvaerp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "4.0.1"
+        versionCode 6
+        versionName "4.0.2"
 
         testBuildType System.getProperty("testBuildType", "debug")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

@@ -9,8 +9,6 @@ import com.facebook.react.ReactNativeHost
 import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
-import com.facebook.react.internal.featureflags.ReactNativeFeatureFlags
-import com.facebook.react.internal.featureflags.ReactNativeNewArchitectureFeatureFlagsDefaults
 
 class MainApplication : Application(), ReactApplication {
 
@@ -18,8 +16,7 @@ class MainApplication : Application(), ReactApplication {
         object : DefaultReactNativeHost(this) {
             override fun getPackages(): List<ReactPackage> =
                 PackageList(this).packages.apply {
-                    // Packages that cannot be autolinked yet can be added manually here, for example:
-                    // add(MyReactNativePackage())
+                    // Packages that cannot be autolinked yet can be added manually here
                 }
 
             override fun getJSMainModuleName(): String = "index"
@@ -36,12 +33,5 @@ class MainApplication : Application(), ReactApplication {
     override fun onCreate() {
         super.onCreate()
         loadReactNative(this)
-        ReactNativeFeatureFlags.dangerouslyForceOverride(
-            object : ReactNativeNewArchitectureFeatureFlagsDefaults(true) {
-                override fun useFabricInterop(): Boolean = true
-                override fun useShadowNodeStateOnClone(): Boolean = true
-                override fun useRawPropsJsiValue(): Boolean = true
-            },
-        )
     }
 }
