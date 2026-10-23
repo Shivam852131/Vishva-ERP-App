@@ -52,7 +52,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        # --legacy-peer-deps matches local installs; required by the
+        # Jitsi Meet SDK peer tree added for in-app live classes.
+        run: npm ci --legacy-peer-deps
 
       - name: Run lint check
         working-directory: frontend
