@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, FlatList, Linking,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from '@/src/navigation/router';
@@ -18,6 +18,11 @@ import { ErrorBoundary } from '@/src/ErrorBoundary';
 import { theme } from '@/src/theme';
 import { AsyncView, Button, EmptyState, ProgressBar } from '@/src/ui';
 import { connectRealtime, subscribeRealtime } from '@/src/realtime/socket';
+import {
+  fetchMeetingInfo, isNativeMeetingAvailable, isGoogleMeetUrl, confirmOpenInBrowser,
+} from '@/src/jitsi/meeting';
+import type { MeetingInfo } from '@/src/jitsi/meeting';
+import { JitsiMeetingModal } from '@/src/jitsi/JitsiMeetingModal';
 
 const TABS = [
   { key: 'chat', label: 'Chat', icon: MessageCircle },
@@ -636,6 +641,73 @@ export default function LiveClassRoom() {
   // Listen for status changes (started/ended)
   useEffect(() => subscribeRealtime<{ sessionId: string; status: string }>('live:status', () => refresh()), [refresh]);
 
+  // ── In-app meeting (Jitsi) ──────────────────────────────────────────────
+  const [creatingMeet, setCreatingMeet] = useState(false);
+  const [meetingLoading, setMeetingLoading] = useState(false);
+  const [activeMeeting, setActiveMeeting] = useState<MeetingInfo | null>(null);
+  const meetingBusyRef = useRef(false);
+  const meetingUrl: string | null = data?.meeting_url || null;
+  const isGoogleMeeting = isGoogleMeetUrl(meetingUrl);
+
+  /**
+   * Open this class's meeting *inside* the app.
+   *
+   * Uses the native Jitsi SDK when it is installed. When it is not, it shows
+   * an explicit confirmation before opening a browser — it never silently
+   * redirects to Chrome like the old `Linking.openURL` flow did.
+   */
+  const openMeeting = useCallback(async () => {
+    if (meetingBusyRef.current) return;
+    meetingBusyRef.current = true;
+    setMeetingLoading(true);
+    try {
+      const info = await fetchMeetingInfo(sessionId);
+      if (isNativeMeetingAvailable()) {
+        setActiveMeeting(info);
+      } else {
+        confirmOpenInBrowser(info.room_url, {
+          title: 'Open meeting',
+          message:
+            "In-app video needs the native Jitsi module, which isn't part of this build yet. Open the meeting in your browser instead? You're already signed in — the free Jitsi room needs no second login.",
+        });
+      }
+    } catch (e: any) {
+      Alert.alert('Could not open meeting', e?.message || 'Please try again.');
+    } finally {
+      meetingBusyRef.current = false;
+      setMeetingLoading(false);
+    }
+  }, [sessionId]);
+
+  const openGoogleMeet = useCallback(() => {
+    if (!meetingUrl) return;
+    // Google Meet can never be embedded in-app, so this stays a clearly
+    // labeled, consented browser open — never the default meeting flow.
+    confirmOpenInBrowser(meetingUrl, {
+      title: 'Open Google Meet',
+      message: 'Google Meet can only open in your browser. Continue?',
+    });
+  }, [meetingUrl]);
+
+  const createMeetLink = useCallback(async () => {
+    if (creatingMeet) return;
+    setCreatingMeet(true);
+    try {
+      const res = await api<{ meeting_url: string }>('/google/meet/link', {
+        method: 'POST',
+        body: JSON.stringify({ targetType: 'live_class', targetId: sessionId }),
+      });
+      if (res?.meeting_url) {
+        refresh();
+        Alert.alert('Google Meet ready', 'A Meet link was created for this class and shared with everyone.');
+      }
+    } catch (e: any) {
+      Alert.alert('Could not create link', e?.message || 'Please try again.');
+    } finally {
+      setCreatingMeet(false);
+    }
+  }, [sessionId, creatingMeet, refresh]);
+
   const join = useCallback(async () => {
     if (busy) return;
     setBusy(true);
@@ -644,12 +716,14 @@ export default function LiveClassRoom() {
       setJoined(true);
       joinedRef.current = true;
       refresh();
+      // Student join opens the meeting in-app (requirement 4).
+      await openMeeting();
     } catch (e: any) {
       Alert.alert('Could not join', e?.message || 'Please try again.');
     } finally {
       setBusy(false);
     }
-  }, [sessionId, busy, refresh]);
+  }, [sessionId, busy, refresh, openMeeting]);
 
   const leave = useCallback(async () => {
     try {
@@ -682,6 +756,8 @@ export default function LiveClassRoom() {
     try {
       await api(`/live-classes/${sessionId}/start`, { method: 'POST' });
       refresh();
+      // Teacher start opens the meeting in-app (requirement 3).
+      await openMeeting();
     } catch (e: any) {
       Alert.alert('Could not start', e?.message || 'Please try again.');
     }
@@ -704,36 +780,6 @@ export default function LiveClassRoom() {
       },
     ]);
   };
-
-  // ── Google Meet ──
-  const [creatingMeet, setCreatingMeet] = useState(false);
-  const meetingUrl: string | null = data?.meeting_url || null;
-
-  const openMeet = useCallback(() => {
-    if (!meetingUrl) return;
-    Linking.openURL(meetingUrl).catch(() =>
-      Alert.alert('Could not open meeting', 'No app can handle this link. Try copying it into a browser.'),
-    );
-  }, [meetingUrl]);
-
-  const createMeetLink = useCallback(async () => {
-    if (creatingMeet) return;
-    setCreatingMeet(true);
-    try {
-      const res = await api<{ meeting_url: string }>('/google/meet/link', {
-        method: 'POST',
-        body: JSON.stringify({ targetType: 'live_class', targetId: sessionId }),
-      });
-      if (res?.meeting_url) {
-        refresh();
-        Alert.alert('Google Meet ready', 'A Meet link was created for this class and shared with everyone.');
-      }
-    } catch (e: any) {
-      Alert.alert('Could not create link', e?.message || 'Please try again.');
-    } finally {
-      setCreatingMeet(false);
-    }
-  }, [sessionId, creatingMeet, refresh]);
 
   return (
     <ErrorBoundary>
@@ -808,17 +854,22 @@ export default function LiveClassRoom() {
                 </View>
               )}
 
-              {/* Google Meet */}
+              {/* In-app meeting (Jitsi) + optional Google Meet management */}
               {data.status !== 'ended' && (
                 <View testID="meet-row" style={styles.meetRow}>
-                  {meetingUrl ? (
-                    <Button
-                      label="Join Google Meet"
-                      icon={<Video size={14} color="#fff" />}
-                      onPress={openMeet}
-                      style={{ flex: 1 }}
-                    />
-                  ) : isHost ? (
+                  {/* Always available: the server derives a stable, embeddable
+                      Jitsi room for this session, so teacher and students all
+                      open the same meeting in-app. */}
+                  <Button
+                    label="Open meeting"
+                    icon={<Video size={14} color="#fff" />}
+                    loading={meetingLoading}
+                    onPress={openMeeting}
+                    style={{ flex: 1 }}
+                  />
+                  {/* Preserve Google Meet: a host can still mint a link when
+                      there is none (Google Meet can never be embedded in-app). */}
+                  {isHost && !meetingUrl && (
                     <Button
                       label={creatingMeet ? 'Creating Meet link…' : 'Create Google Meet link'}
                       variant="secondary"
@@ -826,11 +877,10 @@ export default function LiveClassRoom() {
                       onPress={createMeetLink}
                       style={{ flex: 1 }}
                     />
-                  ) : (
-                    <View style={styles.meetPending}>
-                      <Video size={13} color={theme.colors.muted} />
-                      <Text style={styles.meetPendingTxt}>No meeting link shared yet</Text>
-                    </View>
+                  )}
+                  {/* …or explicitly open an existing Google link in a browser. */}
+                  {isHost && isGoogleMeeting && (
+                    <Button label="Google Meet" variant="secondary" onPress={openGoogleMeet} style={{ flex: 1 }} />
                   )}
                 </View>
               )}
@@ -880,6 +930,13 @@ export default function LiveClassRoom() {
             </View>
           )}
         </AsyncView>
+
+        {/* Native Jitsi meeting (rendered only when the native SDK exists). */}
+        <JitsiMeetingModal
+          visible={!!activeMeeting}
+          meeting={activeMeeting}
+          onClose={() => setActiveMeeting(null)}
+        />
       </SafeAreaView>
     </ErrorBoundary>
   );

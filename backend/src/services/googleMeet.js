@@ -14,31 +14,17 @@
  */
 
 const { getGoogleApiAccessToken, isServiceAccountConfigured, calendarId, SERVICE_ACCOUNT_EMAIL } = require('./googleAuth');
+// Room derivation is shared with the in-app meeting endpoint so class
+// creation and in-app joining always agree on the same Jitsi room.
+const { jitsiRoomUrl } = require('./jitsi');
 
 const CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3';
-
-// Free, account-less video rooms used when Google Meet is unavailable
-// (service accounts on personal Google accounts cannot mint Meet links).
-const JITSI_BASE = 'https://meet.jit.si';
 
 function addMinutes(iso, minutes) {
   const base = new Date(iso);
   if (isNaN(base.getTime())) return new Date(Date.now() + 60 * 60 * 1000).toISOString();
   return new Date(base.getTime() + minutes * 60000).toISOString();
-}
-
-/**
- * Stable, URL-safe Jitsi room. The same `seed` (e.g. "live_class-6534…")
- * always yields the same room, so participants can rejoin a session.
- */
-function jitsiRoomUrl(seed) {
-  const slug = String(seed || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
-  return `${JITSI_BASE}/vishva-erp-${slug || Math.random().toString(36).slice(2, 12)}`;
 }
 
 /**
@@ -135,4 +121,4 @@ function meetConfigured() {
   return isServiceAccountConfigured();
 }
 
-module.exports = { createMeetEvent, deleteMeetEvent, meetConfigured };
+module.exports = { createMeetEvent, deleteMeetEvent, meetConfigured, jitsiRoomUrl };

@@ -32,6 +32,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Vishva ERP uses the camera so you can participate with video in live classes.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Vishva ERP uses the microphone so you can speak in live classes.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
 	<key>UILaunchStoryboardName</key>

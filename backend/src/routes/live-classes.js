@@ -3,6 +3,7 @@ const { getDB, oid } = require('../db');
 const { sendError, nowIso, roomForUser, emitToCollege } = require('../utils');
 const { requireRole, collegeFilter } = require('../auth');
 const { createMeetEvent } = require('../services/googleMeet');
+const { inAppRoomForSession, detectMeetingProvider, signJitsiToken } = require('../services/jitsi');
 
 function roomForLive(sessionId) {
   return `live:${String(sessionId)}`;
@@ -205,6 +206,45 @@ function createLiveClassesRouter(io) {
         status: p.status,
         created_at: p.createdAt,
       })),
+    });
+  });
+
+  // ── In-app meeting (Jitsi) ────────────────────────────────────────────────
+  // Everything the app needs to open this class's video meeting INSIDE Vishva
+  // ERP: a stable embeddable room derived from the existing session, the
+  // caller's identity to pre-fill the SDK, and — only when this server is
+  // configured for a secured Jitsi deployment — a short-lived JWT minted here.
+  // No server secret is ever returned to the client.
+  router.get('/:id/meeting', async (req, res) => {
+    const session = await loadSession(req.params.id, req);
+    if (!session) return sendError(res, 'Live class not found.', 404);
+
+    const isHost = ensureHost(session, req.user);
+    const roomUrl = inAppRoomForSession(session);
+
+    res.json({
+      session_id: String(session._id),
+      title: session.title,
+      status: session.status,
+      // Always an in-app-embeddable Jitsi room (Google Meet can never be
+      // embedded, so the in-app flow always uses this room).
+      room_url: roomUrl,
+      // The session's stored meeting link, if any (may be Google Meet).
+      meeting_url: session.meetingUrl || null,
+      meeting_provider: detectMeetingProvider(session.meetingUrl),
+      // Identity for the Jitsi SDK's userInfo.
+      display_name: req.user.name,
+      email: req.user.email || null,
+      role: req.user.role,
+      is_host: isHost,
+      allow_chat: session.allowChat !== false,
+      allow_questions: session.allowQuestions !== false,
+      token: signJitsiToken({
+        room: roomUrl,
+        name: req.user.name,
+        email: req.user.email,
+        moderator: isHost,
+      }),
     });
   });
 
