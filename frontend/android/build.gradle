@@ -1,7 +1,9 @@
 buildscript {
     ext {
         buildToolsVersion = "36.0.0"
-        minSdkVersion = 24
+        // 26 is the floor for the Jitsi Meet SDK (react-native-webrtc + media
+        // services); was 24 before in-app live classes were enabled.
+        minSdkVersion = 26
         compileSdkVersion = 36
         targetSdkVersion = 36
         ndkVersion = "27.1.12297006"
@@ -25,6 +27,10 @@ allprojects {
         google()
         mavenCentral()
         maven { url "$rootDir/../node_modules/react-native/android" }
+        // Jitsi Meet SDK binary artifacts (org.jitsi.react:jitsi-meet-sdk) and
+        // its dependencies that are not on mavenCentral.
+        maven { url "https://github.com/jitsi/jitsi-maven-repository/raw/master/releases" }
+        maven { url "https://jitpack.io" }
     }
 }
 

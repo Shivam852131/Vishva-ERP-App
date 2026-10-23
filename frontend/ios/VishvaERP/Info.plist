@@ -36,6 +36,12 @@
 	<string>Vishva ERP uses the camera so you can participate with video in live classes.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Vishva ERP uses the microphone so you can speak in live classes.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<!-- Keep live-class audio + VoIP alive when the app is backgrounded. -->
+		<string>audio</string>
+		<string>voip</string>
+	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
 	<key>UILaunchStoryboardName</key>

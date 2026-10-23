@@ -45,4 +45,22 @@ const config = {
   },
 };
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+const merged = mergeConfig(getDefaultConfig(__dirname), config);
+
+// Jitsi's RN SDK ships its iconography as `.svg` source assets, so Metro must
+// transform them (react-native-svg) instead of treating them as static files.
+// Applied to the merged config — the partial `config` above is only a
+// resolver-override and does not carry the default asset/source extension lists.
+merged.transformer = {
+  ...merged.transformer,
+  babelTransformerPath: require.resolve('react-native-svg-transformer'),
+};
+merged.resolver = {
+  ...merged.resolver,
+  assetExts: merged.resolver.assetExts.filter(ext => ext !== 'svg'),
+  sourceExts: merged.resolver.sourceExts.includes('svg')
+    ? merged.resolver.sourceExts
+    : [...merged.resolver.sourceExts, 'svg'],
+};
+
+module.exports = merged;

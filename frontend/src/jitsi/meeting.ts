@@ -34,8 +34,13 @@ let sdkCache: any = null;
  * SDK IS installed we get the real module (which exposes `JitsiMeeting`).
  *
  * Kept lazy and cached so importing this file never triggers native module
- * loading, and so Jest (which has no Metro stub) simply fails the require and
- * falls through to `null`.
+ * loading until a meeting is opened, and so environments without the native
+ * modules (Jest has no autolinking and no Metro svg resolution) simply fail
+ * the require and fall through to `null` instead of crashing.
+ *
+ * If the gate ever reads false in a real build where the SDK *is* installed,
+ * this require threw — the dev-only warning below surfaces the exact error
+ * (missing native link, Metro resolution, or a runtime import failure).
  */
 export function getNativeSdk(): any | null {
   if (sdkLoaded) return sdkCache;
@@ -44,7 +49,13 @@ export function getNativeSdk(): any | null {
   try {
     const mod: any = require('@jitsi/react-native-sdk');
     if (mod) sdkCache = mod.default ?? mod;
-  } catch {
+  } catch (e) {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.warn(
+        '[jitsi] native SDK failed to load — meetings will use the browser fallback',
+        e,
+      );
+    }
     sdkCache = null;
   }
   return sdkCache;
