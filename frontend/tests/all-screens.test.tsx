@@ -165,6 +165,7 @@ const SCREENS: [string, () => any][] = [
   ['analytics', () => require('@/app/analytics').default],
   ['attendance', () => require('@/app/attendance').default],
   ['attendance-live', () => require('@/app/attendance-live').default],
+  ['attendance-history', () => require('@/app/attendance-history').default],
   ['chat', () => require('@/app/chat').default],
   ['events', () => require('@/app/events').default],
   ['exam-prep/dashboard', () => require('@/app/exam-prep-dashboard').default],

@@ -41,6 +41,7 @@ import {
   Award,
   Layers,
   Search,
+  History,
 } from 'lucide-react-native';
 import { LinearGradient } from '@/src/components/LinearGradient';
 import { theme } from '@/src/theme';
@@ -131,6 +132,13 @@ export default function CollegeAdminAttendanceScreen() {
           <Text style={styles.headerTitle}>Attendance Command Center</Text>
         </View>
         <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => router.push('/attendance-history')}
+            style={styles.headerIconBtn}
+            accessibilityLabel="Attendance History"
+          >
+            <History size={18} color={theme.colors.text} />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push('/leave-management')}
             style={styles.headerIconBtn}

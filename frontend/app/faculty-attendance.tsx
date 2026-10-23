@@ -5,7 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from '@/src/navigation/router';
 import {
-  BarChart3, BookOpen, Clock, AlertTriangle, ChevronRight, CheckCircle2,
+  BarChart3, BookOpen, Clock, AlertTriangle, ChevronRight, CheckCircle2, History,
 } from 'lucide-react-native';
 import { theme } from '@/src/theme';
 import {
@@ -170,6 +170,18 @@ export default function FacultyAttendanceConsole() {
               <Text style={s.scopeBadgeTxt}>Faculty</Text>
             </View>
           ) : undefined
+        }
+        rightAction={
+          <Pressable
+            testID="open-attendance-history"
+            accessibilityLabel="Attendance history"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => router.push('/attendance-history' as any)}
+            style={s.historyBtn}
+          >
+            <History size={18} color={theme.colors.brandPrimary} />
+          </Pressable>
         }
       />
       <TabSelector tabs={tabs} activeTab={tab} onSelect={setTab} />
@@ -424,6 +436,14 @@ const s = StyleSheet.create({
     borderRadius: theme.radius.pill,
   },
   scopeBadgeTxt: { fontSize: 10, fontWeight: '800', color: theme.colors.onBrandTertiary },
+  historyBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.brandPrimary + '18',
+  },
 
   warnBar: {
     flexDirection: 'row',

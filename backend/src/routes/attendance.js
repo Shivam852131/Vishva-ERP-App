@@ -1660,6 +1660,309 @@ function createAttendanceRouter(io) {
     });
   });
 
+  // ── Attendance history (filterable, paginated, exportable) ───────────────
+  // The history page and its CSV/PDF exports share one filter builder and one
+  // RBAC scope (managedCourses: faculty → taught courses, admins → college),
+  // so what a user sees on screen is exactly what they can export.
+  const HISTORY_SORTS = { date: 'date', status: 'status', student: 'studentId', method: 'method' };
+  const HISTORY_PAGE_MAX = 100;
+  const HISTORY_EXPORT_LIMIT = 5000;
+
+  async function historyFilter(req) {
+    const db = getDB();
+    const cf = collegeFilter(req);
+    const { courses, facultyOnly } = await managedCourses(req);
+    const managedIds = courses.map((c) => c._id);
+    const managedSet = new Set(managedIds.map(String));
+
+    const filter = { ...cf };
+
+    if (req.query.courseId) {
+      const cid = oid(req.query.courseId);
+      if (!cid) return { error: 'Course not found.', code: 404 };
+      const course = await db.collection('courses').findOne({ _id: cid, ...cf });
+      if (!course) return { error: 'Course not found.', code: 404 };
+      if (facultyOnly && !managedSet.has(String(cid))) return { error: 'You do not teach this course.', code: 403 };
+      filter.courseId = cid;
+    } else {
+      filter.courseId = { $in: managedIds };
+    }
+
+    const status = String(req.query.status || '');
+    if (status) {
+      if (!CORRECTION_STATUSES.includes(status)) return { error: 'Unknown status filter.', code: 400 };
+      filter.status = status;
+    }
+
+    // Exact date wins over a from/to window; both ranges are validated so a
+    // malformed filter can never widen into "everything".
+    if (req.query.date) {
+      if (!isIsoDate(req.query.date)) return { error: 'Invalid date filter.', code: 400 };
+      filter.date = String(req.query.date);
+    } else {
+      const from = req.query.from ? String(req.query.from) : '';
+      const to = req.query.to ? String(req.query.to) : '';
+      if (from && !isIsoDate(from)) return { error: 'Invalid start date.', code: 400 };
+      if (to && !isIsoDate(to)) return { error: 'Invalid end date.', code: 400 };
+      if (from && to && from > to) return { error: 'The start date must be on or before the end date.', code: 400 };
+      if (from) filter.date = { $gte: from };
+      if (to) filter.date = { ...(filter.date || {}), $lte: to };
+    }
+
+    if (req.query.studentId) {
+      const sid = oid(req.query.studentId);
+      if (!sid) return { error: 'Student not found.', code: 404 };
+      filter.studentId = { $in: [sid, String(req.query.studentId)] };
+    }
+
+    if (req.query.corrected === 'true') filter.correctedAt = { $exists: true };
+    if (req.query.corrected === 'false') filter.correctedAt = { $exists: false };
+
+    // Free-text search over student names and codes. Applied last (it supersedes
+    // an explicit studentId filter) and bounded so one typo cannot become an
+    // unbounded $in against the users collection.
+    const search = String(req.query.search || '').trim();
+    if (search) {
+      const rx = new RegExp(escapeRegex(search), 'i');
+      const matches = await db.collection('users')
+        // $and, not a spread: collegeFilter() can itself carry an $or (ObjectId
+        // vs string ids), and two $or keys in one literal would drop this one.
+        .find({ $and: [{ $or: [{ name: rx }, { studentCode: rx }] }, cf] })
+        .project({ _id: 1 })
+        .limit(500)
+        .toArray();
+      filter.studentId = { $in: matches.map((u) => u._id) };
+    }
+
+    return { filter };
+  }
+
+  /** Joins student and course names onto records (page or export sized). */
+  async function enrichHistory(db, records, cf) {
+    const sids = [...new Set(records.flatMap((r) => [r.studentId, String(r.studentId)].filter(Boolean)))];
+    const cids = [...new Set(records.flatMap((r) => [r.courseId, String(r.courseId)].filter(Boolean)))];
+    const [users, courses] = await Promise.all([
+      sids.length ? db.collection('users').find({ _id: { $in: sids }, ...cf }).toArray() : Promise.resolve([]),
+      cids.length ? db.collection('courses').find({ _id: { $in: cids }, ...cf }).toArray() : Promise.resolve([]),
+    ]);
+    const byStudent = new Map(users.map((u) => [String(u._id), u]));
+    const byCourse = new Map(courses.map((c) => [String(c._id), c]));
+
+    return records.map((r) => {
+      const student = byStudent.get(String(r.studentId));
+      const course = byCourse.get(String(r.courseId));
+      return {
+        id: String(r._id),
+        date: r.date,
+        status: statusOf(r),
+        method: r.method || '',
+        student_id: String(r.studentId),
+        student_name: student ? student.name : 'Unknown student',
+        student_code: student ? student.studentCode || '' : '',
+        course_id: String(r.courseId),
+        course_name: course ? course.name : '',
+        course_code: course ? course.code || '' : '',
+        corrected: !!r.correctedAt,
+        corrected_at: r.correctedAt || null,
+        corrected_by: r.correctedAt ? r.correctedByName || '' : null,
+        correction_reason: r.correctionReason || null,
+        original_status: r.originalStatus !== undefined ? r.originalStatus : null,
+      };
+    });
+  }
+
+  /** Counts by status over the whole filtered set — the summary cards. */
+  async function historySummary(db, filter) {
+    const rows = await db.collection('attendance_records').aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          corrected: { $sum: { $cond: [{ $ifNull: ['$correctedAt', false] }, 1, 0] } },
+        },
+      },
+    ]).toArray();
+
+    // Unknown legacy statuses fold into "present", matching statusOf() exactly.
+    const summary = { total: 0, present: 0, late: 0, absent: 0, corrected: 0, percentage: 0 };
+    for (const row of rows) {
+      const key = row._id === 'absent' ? 'absent' : row._id === 'late' ? 'late' : 'present';
+      summary[key] += row.count;
+      summary.total += row.count;
+      summary.corrected += row.corrected || 0;
+    }
+    summary.percentage = percentOf(summary.present + summary.late, summary.total);
+    return summary;
+  }
+
+  router.get('/attendance/history', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const { filter, error, code } = await historyFilter(req);
+    if (error) return sendError(res, error, code || 400);
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    // Min 1 so the echoed pageSize always matches what was requested.
+    const pageSize = Math.min(HISTORY_PAGE_MAX, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
+    const sortKey = HISTORY_SORTS[String(req.query.sort || 'date')] || 'date';
+    const order = String(req.query.order || '').toLowerCase() === 'asc' ? 'asc' : 'desc';
+    const dir = order === 'asc' ? 1 : -1;
+
+    const [total, records, summary] = await Promise.all([
+      db.collection('attendance_records').countDocuments(filter),
+      db.collection('attendance_records')
+        .find(filter)
+        .sort({ [sortKey]: dir, _id: 1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .toArray(),
+      historySummary(db, filter),
+    ]);
+
+    const items = await enrichHistory(db, records, collegeFilter(req));
+    res.json({ items, total, page, pageSize, sort: sortKey, order, summary });
+  });
+
+  function csvCell(value) {
+    const s = value == null ? '' : String(value);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  function describeHistoryFilters(query) {
+    const parts = [];
+    if (query.status) parts.push(`status: ${query.status}`);
+    if (query.date) parts.push(`date: ${query.date}`);
+    if (query.from || query.to) parts.push(`from ${query.from || 'beginning'} to ${query.to || 'today'}`);
+    if (query.search) parts.push(`search: "${query.search}"`);
+    if (query.corrected === 'true') parts.push('corrected only');
+    if (query.corrected === 'false') parts.push('uncorrected only');
+    return parts.join(' · ') || 'all marks';
+  }
+
+  router.get('/attendance/history/export', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const { filter, error, code } = await historyFilter(req);
+    if (error) return sendError(res, error, code || 400);
+
+    const format = String(req.query.format || 'csv').toLowerCase() === 'pdf' ? 'pdf' : 'csv';
+    const sortKey = HISTORY_SORTS[String(req.query.sort || 'date')] || 'date';
+    const order = String(req.query.order || '').toLowerCase() === 'asc' ? 'asc' : 'desc';
+    const dir = order === 'asc' ? 1 : -1;
+    const cf = collegeFilter(req);
+
+    const [records, summary] = await Promise.all([
+      db.collection('attendance_records').find(filter).sort({ [sortKey]: dir, _id: 1 }).limit(HISTORY_EXPORT_LIMIT).toArray(),
+      historySummary(db, filter),
+    ]);
+    const items = await enrichHistory(db, records, cf);
+
+    // Optional course label so the file name says what it contains.
+    let courseLabel = '';
+    if (req.query.courseId) {
+      const course = await db.collection('courses').findOne(
+        { _id: oid(req.query.courseId), ...cf },
+        { projection: { code: 1, name: 1 } },
+      );
+      if (course) courseLabel = String(course.code || course.name || '').replace(/[^A-Za-z0-9_-]/g, '');
+    }
+    const stamp = isoDate();
+    const base = `attendance-history${courseLabel ? `-${courseLabel}` : ''}-${stamp}`;
+
+    if (format === 'csv') {
+      const headers = ['Date', 'Student', 'Student ID', 'Course', 'Course Code', 'Status', 'Original Status', 'Method', 'Corrected By', 'Correction Reason'];
+      const lines = [headers.join(',')];
+      for (const it of items) {
+        lines.push([
+          it.date, it.student_name, it.student_code, it.course_name, it.course_code,
+          it.status, it.original_status == null ? '' : it.original_status, it.method,
+          it.corrected_by || '', it.correction_reason || '',
+        ].map(csvCell).join(','));
+      }
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${base}.csv"`);
+      // BOM so spreadsheet apps detect UTF-8 instead of mangling names.
+      res.send(`\uFEFF${lines.join('\r\n')}\r\n`);
+      return;
+    }
+
+    // PDF via pdfkit — required lazily so a missing optional dependency turns
+    // into a clear 503 for this one route instead of crashing the router boot.
+    let PDFDocument;
+    try {
+      PDFDocument = require('pdfkit');
+    } catch (e) {
+      return sendError(res, 'PDF export is not available on this server.', 503);
+    }
+
+    const doc = new PDFDocument({ margin: 32, size: 'A4', layout: 'landscape', bufferPages: true });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.pdf"`);
+    doc.pipe(res);
+
+    const left = doc.page.margins.left;
+    const pageW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const bottom = () => doc.page.height - doc.page.margins.bottom - 8;
+    const cols = [
+      { key: 'date', label: 'Date', w: 62 },
+      { key: 'student_name', label: 'Student', w: 130 },
+      { key: 'student_code', label: 'ID', w: 70 },
+      { key: 'course_name', label: 'Course', w: 130 },
+      { key: 'status', label: 'Status', w: 58 },
+      { key: 'original_status', label: 'Original', w: 58 },
+      { key: 'method', label: 'Method', w: 66 },
+      { key: 'corrected_by', label: 'Corrected by', w: 90 },
+      { key: 'correction_reason', label: 'Reason', w: 113 },
+    ];
+    const rowH = 15;
+    let y = doc.page.margins.top;
+
+    doc.fillColor('#111827').fontSize(16).text('Attendance History', left, y, { width: pageW });
+    y += 22;
+    doc.fillColor('#4b5563').fontSize(8.5).text(
+      `Generated ${stamp} · ${items.length} mark(s) · filters: ${describeHistoryFilters(req.query)} · `
+      + `${summary.present} present, ${summary.late} late, ${summary.absent} absent (${summary.percentage}%)`,
+      left, y, { width: pageW },
+    );
+    y = doc.y + 8;
+
+    const drawHeader = () => {
+      doc.rect(left, y, pageW, rowH + 2).fill('#2b3a67');
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#ffffff');
+      let x = left;
+      for (const c of cols) {
+        doc.text(c.label, x + 4, y + 5, { width: c.w - 8, ellipsis: true, lineBreak: false });
+        x += c.w;
+      }
+      y += rowH + 2;
+      doc.font('Helvetica');
+    };
+
+    const needRoom = (needed) => {
+      if (y + needed > bottom()) {
+        doc.addPage();
+        y = doc.page.margins.top;
+        drawHeader();
+      }
+    };
+
+    drawHeader();
+    doc.fontSize(7.5);
+    items.forEach((it, i) => {
+      needRoom(rowH);
+      doc.rect(left, y, pageW, rowH).fill(i % 2 ? '#f3f5fa' : '#ffffff');
+      let x = left;
+      doc.fillColor('#1f2937');
+      for (const c of cols) {
+        const raw = it[c.key];
+        doc.text(raw == null ? '' : String(raw), x + 4, y + 4, { width: c.w - 8, ellipsis: true, lineBreak: false });
+        x += c.w;
+      }
+      y += rowH;
+    });
+
+    doc.end();
+  });
+
   return router;
 }
 
