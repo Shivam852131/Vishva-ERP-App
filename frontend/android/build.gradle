@@ -6,6 +6,11 @@ buildscript {
         minSdkVersion = 26
         compileSdkVersion = 36
         targetSdkVersion = 36
+        // AGP version used by @jitsi/react-native-sdk's own buildscript
+        // (its android/build.gradle resolves com.android.tools.build:gradle
+        // from this property). Must match the RN gradle plugin's AGP pin
+        // (@react-native/gradle-plugin libs.versions.toml: agp = 8.11.0).
+        gradlePluginVersion = "8.11.0"
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.1.20"
     }
