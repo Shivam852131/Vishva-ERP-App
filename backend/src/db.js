@@ -181,6 +181,9 @@ const INDEX_DEFS = [
   ['attendance_records', { collegeId: 1, courseId: 1, date: 1 }],
   ['attendance_records', { collegeId: 1, date: 1 }],
   ['attendance_records', { collegeId: 1, studentId: 1, date: -1 }],
+  // ── Attendance corrections (immutable audit trail) ──
+  ['attendance_audit_log', { recordId: 1, createdAt: 1 }],
+  ['attendance_audit_log', { collegeId: 1, courseId: 1, date: -1 }],
   ['leave_requests', { collegeId: 1 }],
   ['announcements', { collegeId: 1 }],
   ['books', { collegeId: 1 }],

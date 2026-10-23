@@ -86,6 +86,7 @@ async function resetDb() {
     'attendance_sessions',
     'attendance_roll_entries',
     'attendance_records',
+    'attendance_audit_log',
     'face_profiles',
     'fees',
     'notifications',

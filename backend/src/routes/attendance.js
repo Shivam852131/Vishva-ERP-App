@@ -1449,6 +1449,217 @@ function createAttendanceRouter(io) {
     });
   });
 
+  // ── Attendance correction (immutable audit) ──────────────────────────────
+  // Correcting a mark must never destroy the record of what it used to say.
+  // The mark keeps its identity and gains denormalised pointers
+  // (originalStatus, correctionReason, lastAuditId); every change is appended
+  // ONCE to attendance_audit_log, which is never updated or deleted.
+  const CORRECTION_STATUSES = ['present', 'late', 'absent'];
+
+  function isIsoDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return false;
+    return !Number.isNaN(new Date(`${value}T00:00:00Z`).getTime());
+  }
+
+  function escapeRegex(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /** College-configurable lock window in days. 0 (or unset) = corrections stay open. */
+  async function correctionWindowDays(db, req) {
+    const cid = oid(req.userCollegeId);
+    if (!cid) return 0;
+    const college = await db.collection('colleges').findOne({ _id: cid }, { projection: { settings: 1 } });
+    const days = Number(college && college.settings ? college.settings.attendanceCorrectionWindowDays : 0);
+    return Number.isFinite(days) && days > 0 ? Math.floor(days) : 0;
+  }
+
+  /** One mark addressed by (student, course, date) inside the caller's college. */
+  async function findAttendanceRecord(db, req, { studentId, courseId, date }) {
+    const studentOid = oid(studentId);
+    const courseOid = oid(courseId);
+    return db.collection('attendance_records').findOne({
+      // Marks are keyed by ObjectId, but batch-imported rows can hold the raw
+      // string — match both forms (the same $in pattern the console uses).
+      studentId: studentOid ? { $in: [studentOid, String(studentId)] } : String(studentId),
+      courseId: courseOid ? { $in: [courseOid, String(courseId)] } : String(courseId),
+      date: String(date),
+      ...collegeFilter(req),
+    });
+  }
+
+  /** Faculty may only touch the marks of courses they actually teach. */
+  async function mayManageCourse(req, courseId) {
+    if (!req.user || req.user.role !== 'faculty') return true;
+    const taught = await getTaughtCourseIds(req, req.user._id);
+    return taught.some((id) => String(id) === String(courseId));
+  }
+
+  router.patch('/attendance/records/correct', requireRole('faculty', 'college_admin', 'super_admin'), async (req, res) => {
+    const db = getDB();
+    const body = req.body || {};
+    const status = String(body.status || '').trim();
+    const reason = String(body.reason || '').trim();
+    const date = String(body.date || '');
+
+    if (!isIsoDate(date)) return sendError(res, 'A valid date (YYYY-MM-DD) is required.', 400);
+    if (!CORRECTION_STATUSES.includes(status)) {
+      return sendError(res, `Status must be one of: ${CORRECTION_STATUSES.join(', ')}.`, 400);
+    }
+    // A correction without a stated reason is an unexplainable edit — refuse it.
+    if (reason.length < 5) {
+      return sendError(res, 'A reason of at least 5 characters is required to correct attendance.', 400);
+    }
+
+    const record = await findAttendanceRecord(db, req, body);
+    if (!record) return sendError(res, 'No attendance record exists for that student on that date.', 404);
+    if (!(await mayManageCourse(req, record.courseId))) return sendError(res, 'You do not teach this course.', 403);
+
+    // Lock window (college setting): 0 keeps corrections open, N limits them
+    // to the last N days so old history cannot be rewritten.
+    const windowDays = await correctionWindowDays(db, req);
+    if (windowDays > 0) {
+      const cutoff = new Date();
+      cutoff.setUTCDate(cutoff.getUTCDate() - windowDays);
+      const cutoffIso = cutoff.toISOString().slice(0, 10);
+      if (String(record.date) < cutoffIso) {
+        return sendError(
+          res,
+          `Attendance for ${record.date} is locked. Corrections are allowed for the last ${windowDays} day${windowDays === 1 ? '' : 's'}.`,
+          403,
+        );
+      }
+    }
+
+    const previous = statusOf(record);
+    if (previous === status) return sendError(res, `Attendance for ${record.date} is already marked ${status}.`, 400);
+
+    // Optimistic check — the screen may be showing a stale mark.
+    if (body.expected_status && previous !== String(body.expected_status)) {
+      return sendError(res, 'This mark changed since you loaded it. Reload and try again.', 409);
+    }
+
+    const now = nowIso();
+    const $set = {
+      status,
+      correctedAt: now,
+      correctedBy: oid(req.user._id),
+      correctedByName: req.user.name || '',
+      correctionReason: reason,
+      revision: Number(record.revision || 0) + 1,
+    };
+    // Pin the pristine value on the first correction so every later edit can
+    // still show what the mark originally said.
+    if (record.originalStatus === undefined) $set.originalStatus = previous;
+
+    // Guarded write: only applies if nobody corrected it since we read it.
+    const guard = record.correctedAt ? { correctedAt: record.correctedAt } : { correctedAt: { $exists: false } };
+    const updated = await db.collection('attendance_records').updateOne({ _id: record._id, ...guard }, { $set });
+    if (!updated.modifiedCount) {
+      return sendError(res, 'This mark was changed by someone else. Reload and try again.', 409);
+    }
+
+    // Append the audit entry after the mark committed. The log is insert-only,
+    // and the mark's own fields already preserve the full story if this write
+    // were to fail — which is surfaced as a 500, never silently dropped.
+    let auditId;
+    try {
+      const inserted = await db.collection('attendance_audit_log').insertOne({
+        recordId: record._id,
+        studentId: record.studentId,
+        courseId: record.courseId,
+        date: record.date,
+        previous_status: previous,
+        new_status: status,
+        reason,
+        actorId: oid(req.user._id),
+        actorName: req.user.name || '',
+        actorRole: req.user.role,
+        window_days: windowDays,
+        collegeId: oid(req.userCollegeId),
+        createdAt: now,
+      });
+      auditId = String(inserted.insertedId);
+      await db.collection('attendance_records').updateOne({ _id: record._id }, { $set: { lastAuditId: inserted.insertedId } });
+    } catch (e) {
+      return sendError(res, 'The correction was applied but could not be logged. Please report this to your administrator.', 500);
+    }
+
+    // Tell the student what changed and why. A notification outage must not
+    // fail a correction that has already been committed.
+    try {
+      const course = await db.collection('courses').findOne(
+        { _id: oid(record.courseId), ...collegeFilter(req) },
+        { projection: { name: 1 } },
+      );
+      await pushNotification(req, {
+        audience: 'students',
+        recipientIds: [String(record.studentId)],
+        title: 'Attendance corrected',
+        body: `Your attendance for ${course?.name || 'your course'} on ${record.date} was changed from ${previous} to ${status}. Reason: ${reason}`,
+      });
+    } catch (e) { /* non-fatal: the correction already stands */ }
+
+    res.json({
+      ok: true,
+      audit_id: auditId,
+      record: {
+        id: String(record._id),
+        student_id: String(record.studentId),
+        course_id: String(record.courseId),
+        date: record.date,
+        previous_status: previous,
+        status,
+        reason,
+        corrected_at: now,
+        corrected_by: req.user.name || '',
+        original_status: $set.originalStatus ?? previous,
+        revision: $set.revision,
+      },
+    });
+  });
+
+  // Read-only trail for one mark: staff see marks of courses they manage,
+  // students (and parents) only their own.
+  router.get('/attendance/records/audit', async (req, res) => {
+    const db = getDB();
+    const date = String((req.query && req.query.date) || '');
+    if (!isIsoDate(date)) return sendError(res, 'A valid date (YYYY-MM-DD) is required.', 400);
+
+    const record = await findAttendanceRecord(db, req, req.query || {});
+    if (!record) return sendError(res, 'No attendance record exists for that student on that date.', 404);
+
+    if (['faculty', 'college_admin', 'super_admin'].includes(req.user.role)) {
+      if (!(await mayManageCourse(req, record.courseId))) return sendError(res, 'You do not teach this course.', 403);
+    } else if (String(record.studentId) !== String(req.user._id)) {
+      return sendError(res, 'You may only view your own attendance trail.', 403);
+    }
+
+    const items = await db.collection('attendance_audit_log')
+      .find({ recordId: record._id })
+      .sort({ createdAt: 1 })
+      .limit(200)
+      .toArray();
+
+    res.json({
+      items: items.map((a) => ({
+        id: String(a._id),
+        previous_status: a.previous_status,
+        new_status: a.new_status,
+        reason: a.reason,
+        actor_name: a.actorName || '',
+        actor_role: a.actorRole || '',
+        created_at: a.createdAt,
+      })),
+      total: items.length,
+      current_status: statusOf(record),
+      original_status: record.originalStatus !== undefined ? record.originalStatus : statusOf(record),
+      corrected_at: record.correctedAt || null,
+      corrected_by: record.correctedAt ? record.correctedByName || '' : null,
+      correction_reason: record.correctionReason || null,
+    });
+  });
+
   return router;
 }
 

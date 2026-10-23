@@ -1,15 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, RefreshControl,
+  View, Text, ScrollView, StyleSheet, RefreshControl, Pressable, Modal, TextInput, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from '@/src/navigation/router';
-import { Clock, AlertTriangle, CheckCircle2, Users } from 'lucide-react-native';
+import { Clock, AlertTriangle, CheckCircle2, Users, X } from 'lucide-react-native';
 import { theme } from '@/src/theme';
 import {
-  PageHeader, StatCard, ProgressBar, AsyncView, EmptyState, SearchBar, ChipBtn,
+  PageHeader, StatCard, ProgressBar, AsyncView, EmptyState, SearchBar, ChipBtn, Button,
 } from '@/src/ui';
 import { useFetch } from '@/src/hooks/useFetch';
+import { api } from '@/src/api';
 
 type StudentRow = {
   id: string;
@@ -79,6 +80,36 @@ function fmtDate(iso: string) {
   return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
 }
 
+/** A mark the faculty member tapped, and wants to correct. */
+type CorrectionTarget = {
+  studentId: string;
+  studentName: string;
+  date: string;
+  status: string;
+};
+
+type AuditEntry = {
+  id: string;
+  previous_status: string;
+  new_status: string;
+  reason: string;
+  actor_name: string;
+  created_at: string;
+};
+
+type AuditTrail = {
+  items: AuditEntry[];
+  total: number;
+  current_status: string;
+  original_status: string;
+};
+
+const STATUS_OPTIONS = [
+  { key: 'present', label: 'Present' },
+  { key: 'late', label: 'Late' },
+  { key: 'absent', label: 'Absent' },
+];
+
 export default function FacultyAttendanceCourse() {
   const params = useLocalSearchParams<{ id: string }>();
   const courseId = String(params.id || '');
@@ -89,6 +120,17 @@ export default function FacultyAttendanceCourse() {
   const { data, loading, error, refresh } = useFetch<CourseDetail>(
     courseId ? `/attendance/faculty/course/${courseId}` : null,
   );
+
+  // Correction sheet: which mark is being corrected, the proposed new status,
+  // and the (mandatory) reason. The audit trail for the open mark loads read-only.
+  const [target, setTarget] = useState<CorrectionTarget | null>(null);
+  const [newStatus, setNewStatus] = useState('present');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const auditPath = target
+    ? `/attendance/records/audit?courseId=${encodeURIComponent(courseId)}&studentId=${encodeURIComponent(target.studentId)}&date=${target.date}`
+    : null;
+  const { data: audit, refresh: refreshAudit } = useFetch<AuditTrail>(auditPath);
 
   const threshold = data?.threshold ?? 75;
   const summary = data?.summary;
@@ -108,6 +150,64 @@ export default function FacultyAttendanceCourse() {
     setRefreshing(true);
     await refresh();
     setRefreshing(false);
+  };
+
+  const openCorrection = (row: StudentRow, date: string, status: string) => {
+    // Preselect the current mark so "Save" stays disabled until something
+    // actually changes — a no-op correction is refused by the server anyway.
+    setTarget({ studentId: row.id, studentName: row.name, date, status });
+    setNewStatus(status);
+    setReason('');
+  };
+
+  const submitCorrection = () => {
+    if (!target) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 5) {
+      Alert.alert('Reason required', 'Give a reason of at least 5 characters for the correction.');
+      return;
+    }
+    if (newStatus === target.status) {
+      Alert.alert('No change', `That mark is already ${newStatus}.`);
+      return;
+    }
+
+    Alert.alert(
+      'Correct attendance?',
+      `${target.studentName} · ${fmtDate(target.date)}\n${target.status} → ${newStatus}. The student will be notified with your reason, and the original mark stays in the audit trail.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Correct',
+          onPress: async () => {
+            setSaving(true);
+            try {
+              await api('/attendance/records/correct', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                  courseId,
+                  studentId: target.studentId,
+                  date: target.date,
+                  status: newStatus,
+                  reason: trimmed,
+                  // Optimistic guard: the server refuses if the mark moved since.
+                  expected_status: target.status,
+                }),
+              });
+              setTarget(null);
+              refreshAudit(); // drop the cached trail so the next open is fresh
+              await refresh(); // roster, percentages and dots reflect the new mark
+              Alert.alert('Attendance corrected', `${target.studentName} is now marked ${newStatus}.`);
+            } catch (e: any) {
+              if (e?.status === 409) await refresh(); // stale screen — reload it
+              Alert.alert('Correction failed', e?.message || 'Could not correct attendance.');
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const counts = {
@@ -245,9 +345,13 @@ export default function FacultyAttendanceCourse() {
                 {dots.length > 0 && (
                   <View style={s.dotsRow}>
                     {dots.map(([date, status]) => (
-                      <View
+                      <Pressable
                         key={date}
+                        testID={`course-dot-${row.id}-${date}`}
                         accessibilityLabel={`${fmtDate(date)}: ${status}`}
+                        accessibilityRole="button"
+                        hitSlop={4}
+                        onPress={() => openCorrection(row, date, status)}
                         style={[s.dot, { backgroundColor: dotColor(status) }]}
                       />
                     ))}
@@ -258,6 +362,100 @@ export default function FacultyAttendanceCourse() {
           })}
         </ScrollView>
       </AsyncView>
+
+      <Modal visible={!!target} transparent animationType="slide" onRequestClose={() => setTarget(null)}>
+        <View style={s.backdrop}>
+          <View style={s.sheet}>
+            <View style={s.sheetHead}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.sheetKicker}>Correct attendance</Text>
+                <Text style={s.sheetTitle} numberOfLines={1}>{target?.studentName}</Text>
+                <Text style={s.sheetSub}>{target ? `${fmtDate(target.date)} · ${target.date}` : ''}</Text>
+              </View>
+              <Pressable
+                testID="correction-close"
+                accessibilityLabel="Close"
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => setTarget(null)}
+              >
+                <X size={22} color={theme.colors.muted} />
+              </Pressable>
+            </View>
+
+            {target && (
+              <View style={s.currentRow}>
+                <View style={[s.statusTag, { backgroundColor: dotColor(target.status) + '20' }]}>
+                  <Text style={[s.statusTagTxt, { color: dotColor(target.status) }]}>{target.status}</Text>
+                </View>
+                <Text style={s.currentTxt}>currently marked</Text>
+              </View>
+            )}
+
+            <Text style={s.label}>Change to</Text>
+            <View style={s.statusRow}>
+              {STATUS_OPTIONS.map((opt) => (
+                <ChipBtn
+                  key={opt.key}
+                  label={opt.label}
+                  active={newStatus === opt.key}
+                  onPress={() => setNewStatus(opt.key)}
+                  testID={`correction-status-${opt.key}`}
+                />
+              ))}
+            </View>
+
+            <Text style={s.label}>Reason (required)</Text>
+            <TextInput
+              testID="correction-reason"
+              accessibilityLabel="Correction reason"
+              value={reason}
+              onChangeText={setReason}
+              placeholder="Why is this mark being changed? (min 5 characters)"
+              placeholderTextColor={theme.colors.muted}
+              multiline
+              style={s.reasonInput}
+            />
+            <Text style={s.hint}>
+              The student is notified with this reason, and the original mark is kept in the audit trail.
+            </Text>
+
+            {audit && audit.total > 0 && (
+              <View style={s.trail} testID="correction-trail">
+                <Text style={s.trailTitle}>Audit trail ({audit.total})</Text>
+                {audit.items.map((entry) => (
+                  <Text key={entry.id} style={s.trailItem} testID={`audit-entry-${entry.id}`}>
+                    {fmtDate(String(entry.created_at || '').slice(0, 10))}: {entry.previous_status} → {entry.new_status}
+                    {' · '}{entry.actor_name} — {entry.reason}
+                  </Text>
+                ))}
+              </View>
+            )}
+
+            <View style={s.sheetActions}>
+              <Button
+                label="Cancel"
+                variant="ghost"
+                onPress={() => setTarget(null)}
+                testID="correction-cancel"
+                style={{ flex: 1 }}
+              />
+              <Button
+                label="Save correction"
+                onPress={submitCorrection}
+                loading={saving}
+                disabled={
+                  reason.trim().length < 5 ||
+                  !target ||
+                  newStatus === target.status
+                }
+                testID="correction-save"
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -305,4 +503,57 @@ const s = StyleSheet.create({
 
   dotsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   dot: { width: 9, height: 9, borderRadius: 5 },
+
+  // ── Correction sheet ──
+  backdrop: { flex: 1, backgroundColor: 'rgba(15, 18, 26, 0.55)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
+    padding: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
+    gap: theme.spacing.sm,
+    maxHeight: '88%',
+  },
+  sheetHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  sheetKicker: {
+    fontSize: 11, fontWeight: '800', color: theme.colors.brandPrimary,
+    textTransform: 'uppercase', letterSpacing: 1,
+  },
+  sheetTitle: { fontSize: 17, fontWeight: '900', color: theme.colors.onSurface, marginTop: 2 },
+  sheetSub: { fontSize: 12, color: theme.colors.muted, marginTop: 2 },
+
+  currentRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statusTag: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: theme.radius.pill },
+  statusTagTxt: { fontSize: 11, fontWeight: '800', textTransform: 'capitalize' },
+  currentTxt: { fontSize: 11, color: theme.colors.muted, fontWeight: '600' },
+
+  label: { fontSize: 12, fontWeight: '800', color: theme.colors.onSurface, marginTop: 4 },
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  reasonInput: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
+    minHeight: 76,
+    fontSize: 13,
+    color: theme.colors.onSurface,
+    backgroundColor: theme.colors.surfaceSecondary,
+    textAlignVertical: 'top',
+  },
+  hint: { fontSize: 11, color: theme.colors.muted },
+
+  trail: {
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    gap: 4,
+  },
+  trailTitle: { fontSize: 11, fontWeight: '800', color: theme.colors.onSurface },
+  trailItem: { fontSize: 11, color: theme.colors.onSurfaceSecondary },
+
+  sheetActions: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
 });
