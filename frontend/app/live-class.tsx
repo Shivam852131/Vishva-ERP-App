@@ -42,6 +42,58 @@ function elapsed(startIso: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+/** "Tue, 22 Oct · 6:57 PM" — readable schedule time (empty for bad input). */
+function formatWhen(iso: string) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Friendly countdown: "in 5 min" / "in 2h 10m" / "starting soon". */
+function untilText(iso: string) {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (isNaN(ms)) return '';
+  if (ms <= 0) return 'starting soon';
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'in under a min';
+  if (m < 60) return `in ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `in ${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24);
+  return `in ${d}d ${h % 24}h`;
+}
+
+/** Compact status chip for the header; the stage card carries the full context. */
+function StatusPill({ status }: { status?: string }) {
+  if (status === 'live') {
+    return (
+      <View style={styles.pillLive} accessibilityLabel="Live now">
+        <View style={styles.pillLiveDot} />
+        <Text style={styles.pillLiveText}>LIVE</Text>
+      </View>
+    );
+  }
+  if (status === 'ended') {
+    return (
+      <View style={styles.pillNeutral}>
+        <Text style={styles.pillNeutralText}>ENDED</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.pillScheduled}>
+      <Clock size={10} color={theme.colors.onBrandTertiary} />
+      <Text style={styles.pillScheduledText}>SCHEDULED</Text>
+    </View>
+  );
+}
+
 // ─── Chat Panel ──────────────────────────────────────────────────
 function ChatPanel({ sessionId, initial, canPost }: {
   sessionId: string;
@@ -641,6 +693,15 @@ export default function LiveClassRoom() {
   // Listen for status changes (started/ended)
   useEffect(() => subscribeRealtime<{ sessionId: string; status: string }>('live:status', () => refresh()), [refresh]);
 
+  // Refresh the countdown ("in 5 min") and elapsed labels every 30s instead
+  // of only when a socket event happens to arrive.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!data || data.status === 'ended') return;
+    const timer = setInterval(() => tick(v => v + 1), 30000);
+    return () => clearInterval(timer);
+  }, [data]);
+
   // ── In-app meeting (Jitsi) ──────────────────────────────────────────────
   const [creatingMeet, setCreatingMeet] = useState(false);
   const [meetingLoading, setMeetingLoading] = useState(false);
@@ -648,6 +709,10 @@ export default function LiveClassRoom() {
   const meetingBusyRef = useRef(false);
   const meetingUrl: string | null = data?.meeting_url || null;
   const isGoogleMeeting = isGoogleMeetUrl(meetingUrl);
+  // Exactly one primary CTA per state: Start/Join own it before the class is
+  // running; "Open meeting" owns it once the host is live or the student has
+  // joined (before that, joining is what records attendance, so it leads).
+  const meetIsPrimary = (isHost && data?.status === 'live') || (!isHost && !!joined);
 
   /**
    * Open this class's meeting *inside* the app.
@@ -668,7 +733,7 @@ export default function LiveClassRoom() {
         confirmOpenInBrowser(info.room_url, {
           title: 'Open meeting',
           message:
-            "In-app video needs the native Jitsi module, which isn't part of this build yet. Open the meeting in your browser instead? You're already signed in — the free Jitsi room needs no second login.",
+            "Live video plays inside the app, but the native video module didn't start in this run — open the meeting in your browser instead? You're already signed in, and the free Jitsi room needs no second login.",
         });
       }
     } catch (e: any) {
@@ -791,17 +856,11 @@ export default function LiveClassRoom() {
           </Pressable>
           <View style={styles.headerInfo}>
             <Text style={styles.headerTitle} numberOfLines={1}>{data?.title || 'Live class'}</Text>
-            <View style={styles.headerMeta}>
-              {data?.status === 'live' && <View style={styles.liveDot} />}
-              <Text style={styles.headerSub}>
-                {data?.status === 'live'
-                  ? `Live \u00B7 ${data?.active_count || 0} watching`
-                  : data?.status === 'ended' ? 'Ended' : 'Not started yet'}
-              </Text>
-              {data?.status === 'live' && data?.started_at && (
-                <Text style={styles.headerElapsed}>{elapsed(data.started_at)}</Text>
-              )}
-            </View>
+            {data && (
+              <View style={styles.headerMeta}>
+                <StatusPill status={data.status} />
+              </View>
+            )}
           </View>
           {joined && data?.status === 'live' && !isHost && (
             <Pressable
@@ -817,73 +876,113 @@ export default function LiveClassRoom() {
         <AsyncView loading={loading && !data} error={error} onRetry={refresh} empty={false}>
           {data && (
             <View style={styles.roomBody}>
-              {/* Status Banner */}
-              {data.status !== 'live' && (
-                <View style={[styles.banner, data.status === 'ended' && styles.bannerEnded]}>
-                  {data.status === 'ended' ? (
-                    <CheckCircle2 size={14} color={theme.colors.muted} />
+              {/* Class stage: status → live stats → actions → meeting entry,
+                  in one card so the room reads top-to-bottom as "what is
+                  happening, then what to do about it". */}
+              <View style={styles.stageCard}>
+                {/* Status strip */}
+                <View style={[styles.stageStatus, data.status === 'ended' && styles.stageStatusSolo]}>
+                  {data.status === 'live' ? (
+                    <>
+                      <View style={styles.pillLive} accessibilityLabel="Live now">
+                        <View style={styles.pillLiveDot} />
+                        <Text style={styles.pillLiveText}>LIVE</Text>
+                      </View>
+                      <Text style={styles.stageStatusText}>Class in session</Text>
+                    </>
+                  ) : data.status === 'ended' ? (
+                    <>
+                      <CheckCircle2 size={14} color={theme.colors.muted} />
+                      <Text style={[styles.stageStatusText, styles.stageStatusMuted]}>
+                        This class has ended. You can still read the chat and Q&A.
+                      </Text>
+                    </>
                   ) : (
-                    <Video size={14} color={theme.colors.brandPrimary} />
-                  )}
-                  <Text style={[styles.bannerText, data.status === 'ended' && styles.bannerTextEnded]}>
-                    {data.status === 'ended'
-                      ? 'This class has ended. You can still read the chat and Q&A.'
-                      : `Starts ${new Date(data.scheduled_at).toLocaleString()}`}
-                  </Text>
-                </View>
-              )}
-
-              {/* Action Bar */}
-              {isHost && data.status === 'scheduled' && (
-                <View style={styles.actionBar}>
-                  <Button label="Start class" icon={<Radio size={14} color="#fff" />} onPress={startClass} style={{ flex: 1 }} />
-                </View>
-              )}
-              {isHost && data.status === 'live' && (
-                <View style={styles.actionBar}>
-                  <Button label="End class" variant="secondary" onPress={endClass} style={{ flex: 1 }} />
-                </View>
-              )}
-              {!isHost && data.status !== 'ended' && (
-                <View style={styles.actionBar}>
-                  {joined ? (
-                    <Button label="Leave class" variant="secondary" onPress={leave} style={{ flex: 1 }} />
-                  ) : (
-                    <Button label="Join class" loading={busy} onPress={join} style={{ flex: 1 }} />
+                    <>
+                      <CalendarDays size={14} color={theme.colors.brandPrimary} />
+                      <Text style={styles.stageStatusText}>Starts {formatWhen(data.scheduled_at)}</Text>
+                      {untilText(data.scheduled_at) ? (
+                        <View style={styles.countChip}>
+                          <Text style={styles.countChipText}>{untilText(data.scheduled_at)}</Text>
+                        </View>
+                      ) : null}
+                    </>
                   )}
                 </View>
-              )}
 
-              {/* In-app meeting (Jitsi) + optional Google Meet management */}
-              {data.status !== 'ended' && (
-                <View testID="meet-row" style={styles.meetRow}>
-                  {/* Always available: the server derives a stable, embeddable
-                      Jitsi room for this session, so teacher and students all
-                      open the same meeting in-app. */}
-                  <Button
-                    label="Open meeting"
-                    icon={<Video size={14} color="#fff" />}
-                    loading={meetingLoading}
-                    onPress={openMeeting}
-                    style={{ flex: 1 }}
-                  />
-                  {/* Preserve Google Meet: a host can still mint a link when
-                      there is none (Google Meet can never be embedded in-app). */}
-                  {isHost && !meetingUrl && (
+                {/* Live stats */}
+                {data.status === 'live' && (
+                  <View style={styles.statsRow}>
+                    <View style={styles.statChip}>
+                      <Users size={12} color={theme.colors.brandPrimary} />
+                      <Text style={styles.statText}>{data.active_count || 0} watching</Text>
+                    </View>
+                    {data.started_at ? (
+                      <View style={styles.statChip}>
+                        <Clock size={12} color={theme.colors.brandPrimary} />
+                        <Text style={styles.statText}>{elapsed(data.started_at)} elapsed</Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.statChip}>
+                      <Radio size={12} color={theme.colors.brandPrimary} />
+                      <Text style={styles.statText}>{isHost ? 'Host' : joined ? 'Joined' : 'Not joined'}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Action Bar */}
+                {isHost && data.status === 'scheduled' && (
+                  <View style={styles.stageActions}>
+                    <Button label="Start class" icon={<Radio size={14} color="#fff" />} onPress={startClass} style={{ flex: 1 }} />
+                  </View>
+                )}
+                {isHost && data.status === 'live' && (
+                  <View style={styles.stageActions}>
+                    <Button label="End class" variant="secondary" onPress={endClass} style={{ flex: 1 }} />
+                  </View>
+                )}
+                {!isHost && data.status !== 'ended' && (
+                  <View style={styles.stageActions}>
+                    {joined ? (
+                      <Button label="Leave class" variant="secondary" onPress={leave} style={{ flex: 1 }} />
+                    ) : (
+                      <Button label="Join class" loading={busy} onPress={join} style={{ flex: 1 }} />
+                    )}
+                  </View>
+                )}
+
+                {/* In-app meeting (Jitsi) + optional Google Meet management */}
+                {data.status !== 'ended' && (
+                  <View testID="meet-row" style={styles.meetRow}>
+                    {/* Always available: the server derives a stable, embeddable
+                        Jitsi room for this session, so teacher and students all
+                        open the same meeting in-app. */}
                     <Button
-                      label={creatingMeet ? 'Creating Meet link…' : 'Create Google Meet link'}
-                      variant="secondary"
-                      loading={creatingMeet}
-                      onPress={createMeetLink}
+                      label="Open meeting"
+                      variant={meetIsPrimary ? 'primary' : 'secondary'}
+                      icon={<Video size={14} color={meetIsPrimary ? '#fff' : theme.colors.brandPrimary} />}
+                      loading={meetingLoading}
+                      onPress={openMeeting}
                       style={{ flex: 1 }}
                     />
-                  )}
-                  {/* …or explicitly open an existing Google link in a browser. */}
-                  {isHost && isGoogleMeeting && (
-                    <Button label="Google Meet" variant="secondary" onPress={openGoogleMeet} style={{ flex: 1 }} />
-                  )}
-                </View>
-              )}
+                    {/* Preserve Google Meet: a host can still mint a link when
+                        there is none (Google Meet can never be embedded in-app). */}
+                    {isHost && !meetingUrl && (
+                      <Button
+                        label={creatingMeet ? 'Creating Meet link…' : 'Create Google Meet link'}
+                        variant="secondary"
+                        loading={creatingMeet}
+                        onPress={createMeetLink}
+                        style={{ flex: 1 }}
+                      />
+                    )}
+                    {/* …or explicitly open an existing Google link in a browser. */}
+                    {isHost && isGoogleMeeting && (
+                      <Button label="Google Meet" variant="secondary" onPress={openGoogleMeet} style={{ flex: 1 }} />
+                    )}
+                  </View>
+                )}
+              </View>
 
               {/* Tab Bar */}
               <View style={styles.tabBar}>
@@ -950,37 +1049,47 @@ const styles = StyleSheet.create({
   backBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   headerInfo: { flex: 1, marginHorizontal: theme.spacing.md },
   headerTitle: { fontSize: 15, fontWeight: '800', color: theme.colors.onSurface },
-  headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#DC2626' },
-  headerSub: { fontSize: 11, color: theme.colors.muted, fontWeight: '500' },
-  headerElapsed: { fontSize: 11, color: '#DC2626', fontWeight: '700' },
+  headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
   handBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FDE68A' },
   handBtnActive: { backgroundColor: theme.colors.warning, borderColor: theme.colors.warning },
+
+  // Status pills (header + stage card)
+  pillLive: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: theme.radius.pill, backgroundColor: '#DC2626' },
+  pillLiveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#fff' },
+  pillLiveText: { fontSize: 9, fontWeight: '900', color: '#fff', letterSpacing: 0.6 },
+  pillNeutral: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceTertiary, borderWidth: 1, borderColor: theme.colors.border },
+  pillNeutralText: { fontSize: 9, fontWeight: '800', color: theme.colors.muted, letterSpacing: 0.6 },
+  pillScheduled: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: theme.radius.pill, backgroundColor: theme.colors.brandTertiary },
+  pillScheduledText: { fontSize: 9, fontWeight: '800', color: theme.colors.onBrandTertiary, letterSpacing: 0.6 },
 
   // Room body
   roomBody: { flex: 1 },
 
-  // Banner
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.brandTertiary, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
-  bannerEnded: { backgroundColor: theme.colors.surfaceTertiary },
-  bannerText: { flex: 1, fontSize: 12, color: theme.colors.onBrandTertiary, fontWeight: '600' },
-  bannerTextEnded: { color: theme.colors.muted },
+  // Class stage card (status → stats → actions → meeting)
+  stageCard: { marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, overflow: 'hidden', ...theme.shadow.sm },
+  stageStatus: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.md },
+  stageStatusSolo: { paddingBottom: theme.spacing.lg },
+  stageStatusText: { flex: 1, fontSize: 12, color: theme.colors.onSurface, fontWeight: '600' },
+  stageStatusMuted: { color: theme.colors.muted, fontWeight: '500' },
+  countChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: theme.radius.pill, backgroundColor: theme.colors.brandTertiary },
+  countChipText: { fontSize: 10, fontWeight: '800', color: theme.colors.onBrandTertiary },
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.md },
+  statChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: theme.radius.pill, backgroundColor: theme.colors.brandTertiary },
+  statText: { fontSize: 11, fontWeight: '700', color: theme.colors.onBrandTertiary },
 
-  // Action bar
-  actionBar: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  // Action bar inside the card (exactly one primary CTA per state)
+  stageActions: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
 
-  // Google Meet row. flexDirection must stay 'row': the Button inside is given
+  // Meeting row. flexDirection must stay 'row': the Button inside is given
   // flex:1 to fill the width, and flex:1 means flexBasis:0 — inside a column
-  // that collapses the row to just its paddingBottom, hiding the button behind
-  // the tab bar.
-  meetRow: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  meetPending: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceTertiary },
-  meetPendingTxt: { fontSize: 12, color: theme.colors.muted, fontWeight: '600' },
+  // that collapses the row to just its paddingBottom (live-class-layout
+  // regression test). Inside the card it carries no background of its own.
+  meetRow: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.lg },
 
-  // Tab bar
-  tabBar: { flexDirection: 'row', backgroundColor: theme.colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive: { borderBottomColor: theme.colors.brandPrimary },
+  // Tab bar (segmented pills; active tab gets a tinted background)
+  tabBar: { flexDirection: 'row', gap: theme.spacing.xs, marginHorizontal: theme.spacing.lg, marginVertical: theme.spacing.sm, padding: 4, backgroundColor: theme.colors.surfaceTertiary, borderRadius: theme.radius.pill },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: theme.radius.pill },
+  tabActive: { backgroundColor: theme.colors.surfaceSecondary, ...theme.shadow.xs },
   tabLabel: { fontSize: 12, color: theme.colors.muted, fontWeight: '600' },
   tabLabelActive: { color: theme.colors.brandPrimary, fontWeight: '700' },
 
