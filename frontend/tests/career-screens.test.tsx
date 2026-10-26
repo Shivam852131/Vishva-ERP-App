@@ -1,6 +1,14 @@
 import React from 'react';
 import { render, waitFor } from '@testing-library/react-native';
 
+// Native-only TurboModule (`RNCWebViewModule`) resolved at import time; the
+// jest environment has no native binary for it. `app/live-class` now imports
+// the in-app meeting surface, which pulls this package in at module scope.
+jest.mock('react-native-webview', () => {
+  const { View } = require('react-native');
+  return { WebView: View };
+});
+
 jest.mock('@/src/api', () => ({
   api: jest.fn(() => Promise.resolve(null)),
   apiUrl: (p: string) => p,

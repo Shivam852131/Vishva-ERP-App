@@ -19,7 +19,7 @@ import { theme } from '@/src/theme';
 import { AsyncView, Button, EmptyState, ProgressBar } from '@/src/ui';
 import { connectRealtime, subscribeRealtime } from '@/src/realtime/socket';
 import {
-  fetchMeetingInfo, isNativeMeetingAvailable, isGoogleMeetUrl, confirmOpenInBrowser,
+  fetchMeetingInfo, requestMeetingPermissions, isGoogleMeetUrl, confirmOpenInBrowser,
 } from '@/src/jitsi/meeting';
 import type { MeetingInfo } from '@/src/jitsi/meeting';
 import { JitsiMeetingModal } from '@/src/jitsi/JitsiMeetingModal';
@@ -717,9 +717,11 @@ export default function LiveClassRoom() {
   /**
    * Open this class's meeting *inside* the app.
    *
-   * Uses the native Jitsi SDK when it is installed. When it is not, it shows
-   * an explicit confirmation before opening a browser — it never silently
-   * redirects to Chrome like the old `Linking.openURL` flow did.
+   * The Jitsi room renders on a full-screen in-app surface — the native SDK
+   * when its runtime is linked, an in-app WebView otherwise — so the meeting
+   * never leaves the app. Only a provider that genuinely cannot be embedded
+   * (Google Meet) falls through to the explicit confirmation dialog; nothing
+   * here silently redirects to Chrome like the old `Linking.openURL` flow did.
    */
   const openMeeting = useCallback(async () => {
     if (meetingBusyRef.current) return;
@@ -727,14 +729,15 @@ export default function LiveClassRoom() {
     setMeetingLoading(true);
     try {
       const info = await fetchMeetingInfo(sessionId);
-      if (isNativeMeetingAvailable()) {
-        setActiveMeeting(info);
-      } else {
+      if (isGoogleMeetUrl(info.room_url)) {
         confirmOpenInBrowser(info.room_url, {
           title: 'Open meeting',
-          message:
-            "Live video plays inside the app, but the native video module didn't start in this run — open the meeting in your browser instead? You're already signed in, and the free Jitsi room needs no second login.",
+          message: 'Google Meet can only open in your browser. Continue?',
         });
+      } else {
+        // Ask before the in-app surface triggers its own permission prompts.
+        await requestMeetingPermissions();
+        setActiveMeeting(info);
       }
     } catch (e: any) {
       Alert.alert('Could not open meeting', e?.message || 'Please try again.');
@@ -1030,7 +1033,7 @@ export default function LiveClassRoom() {
           )}
         </AsyncView>
 
-        {/* Native Jitsi meeting (rendered only when the native SDK exists). */}
+        {/* In-app meeting: native SDK when linked, in-app WebView otherwise. */}
         <JitsiMeetingModal
           visible={!!activeMeeting}
           meeting={activeMeeting}

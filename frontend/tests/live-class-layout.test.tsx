@@ -5,6 +5,14 @@ import LiveClassRoom from '@/app/live-class';
 import { api } from '@/src/api';
 import { clearFetchCache } from '@/src/hooks/useFetch';
 
+// Native-only TurboModule (`RNCWebViewModule`) resolved at import time; the
+// jest environment has no native binary for it. `app/live-class` now imports
+// the in-app meeting surface, which pulls this package in at module scope.
+jest.mock('react-native-webview', () => {
+  const { View } = require('react-native');
+  return { WebView: View };
+});
+
 // Regression test for the room header clipping its second button behind the
 // tab bar.
 //

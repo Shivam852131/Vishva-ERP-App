@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, waitFor } from '@testing-library/react-native';
+import { clearFetchCache } from '@/src/hooks/useFetch';
 
 // Mirrors tests/career-screens.test.tsx, widened to every screen in app/.
 // A null API payload exercises the loading -> empty path a brand-new user hits,
@@ -23,14 +24,38 @@ jest.mock('@/src/realtime/socket', () => ({
   reconnectRealtime: jest.fn(),
 }));
 
-jest.mock('@/src/navigation/router', () => ({
-  router: { push: jest.fn(), replace: jest.fn(), back: jest.fn() },
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: jest.fn() }),
-  useLocalSearchParams: () => ({ id: 'session-1', attemptId: 'attempt-1', sid: 's1' }),
-}));
+// Only app/localshare-transfer.jsx reads `sessionData` out of the route params
+// - it parses it into local state and renders `null` until then, so the mock
+// has to hand it a real payload or that screen never mounts at all.
+jest.mock('@/src/navigation/router', () => {
+  const session = {
+    id: 'session-1',
+    session_id: 'session-1',
+    status: 'active',
+    title: 'Physics Chapter 4',
+    share_code: 'ABC123',
+    teacher_name: 'Prof. Test',
+    files: [],
+  };
+  return {
+    router: { push: jest.fn(), replace: jest.fn(), back: jest.fn() },
+    useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: jest.fn() }),
+    useLocalSearchParams: () => ({
+      id: 'session-1',
+      attemptId: 'attempt-1',
+      sid: 's1',
+      sessionId: 'session-1',
+      sessionData: JSON.stringify(session),
+    }),
+  };
+});
 
-jest.mock('@/src/providers/AuthContext', () => ({
-  useAuth: () => ({
+// NOTE: return a *hoisted* auth value. The old factory handed back a fresh
+// object literal from useAuth() on every render, so `user` got a new identity
+// each time; effects with a [user] dependency (app/resume-builder.tsx) then
+// called setState forever and the whole 60-screen suite spun at 100% CPU.
+jest.mock('@/src/providers/AuthContext', () => {
+  const auth = {
     user: {
       id: 'u1',
       name: 'Test User',
@@ -44,9 +69,12 @@ jest.mock('@/src/providers/AuthContext', () => ({
     login: jest.fn(),
     logout: jest.fn(),
     refreshUser: jest.fn(),
-  }),
-  AuthProvider: ({ children }: any) => children,
-}));
+  };
+  return {
+    useAuth: () => auth,
+    AuthProvider: ({ children }: any) => children,
+  };
+});
 
 // Native-only module with no JS fallback; absent in the jest environment.
 jest.mock('react-native-view-shot', () => ({
@@ -102,9 +130,50 @@ jest.mock('react-native-document-picker', () => ({
   },
 }));
 
+// @react-native-community/geolocation builds a NativeEventEmitter at import
+// time and throws "package doesn't seem to be linked" when no native module is
+// registered. react-native-vision-camera pulls in react-native-nitro-modules'
+// installWorkletsSupport for the same reason. Neither is exercised by a mount
+// test, so stub the surface src/native/{location,camera} call.
+jest.mock('@react-native-community/geolocation', () => ({
+  getCurrentPosition: jest.fn(),
+  watchPosition: jest.fn(() => 1),
+  clearWatch: jest.fn(),
+  requestAuthorization: jest.fn(),
+  setRNConfiguration: jest.fn(),
+  startObserving: jest.fn(),
+  stopObserving: jest.fn(),
+}));
+
+jest.mock('react-native-vision-camera', () => ({
+  // null device sends src/native/camera.tsx down its `!device` placeholder
+  // branch, so <Camera> never renders - it only has to exist as an export.
+  Camera: () => null,
+  useCameraDevice: () => null,
+  useCameraPermission: () => ({
+    hasPermission: true,
+    requestPermission: jest.fn(() => Promise.resolve(true)),
+  }),
+  usePhotoOutput: () => null,
+  useObjectOutput: () => null,
+}));
+
 jest.mock('@/src/localshare/hooks/useLocalShare', () => ({
   useLocalShare: () => ({
-    session: null, sessions: [], loading: false, error: null,
+    // An active session, not null: localshare-active.jsx:138 and
+    // localshare-transfer.jsx:74 return null when there is none, and the
+    // suite's `toBeTruthy()` assertion correctly rejects an empty render.
+    // The screens that keep `sessions: []` below still exercise the empty path.
+    session: {
+      id: 'session-1',
+      session_id: 'session-1',
+      status: 'active',
+      title: 'Physics Chapter 4',
+      share_code: 'ABC123',
+      teacher_name: 'Prof. Test',
+      files: [],
+    },
+    sessions: [], loading: false, error: null,
     createSession: jest.fn(), fetchSessions: jest.fn(), fetchSession: jest.fn(),
     joinSession: jest.fn(), endSession: jest.fn(), deleteSession: jest.fn(),
     logDownload: jest.fn(), submitFeedback: jest.fn(),
@@ -224,6 +293,9 @@ const SCREENS: [string, () => any][] = [
 describe('every screen mounts on an empty API', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // The hook memoises responses by path for 60s; without this, screen B
+    // inherits screen A's cached payload instead of this describe's own.
+    clearFetchCache();
     (api as jest.Mock).mockResolvedValue(null);
   });
 
@@ -238,6 +310,7 @@ describe('every screen mounts on an empty API', () => {
 describe('every screen mounts when the API errors', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    clearFetchCache();
     (api as jest.Mock).mockRejectedValue(new Error('network down'));
   });
 

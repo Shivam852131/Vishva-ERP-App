@@ -1,24 +1,12 @@
 @echo off
-setlocal
-
-set "REAL=C:\Users\shiva\OneDrive\Desktop\vishva ERP app\frontend"
-set "LOG=%REAL%\build-log.txt"
-
-subst Z: /D >nul 2>&1
-subst Z: "%REAL%" || exit /b 1
-
-cd /d Z:\android
-call Z:\android\gradlew.bat assembleProductionRelease --no-daemon > "%LOG%" 2>&1
-set GRADLE_EXIT=%ERRORLEVEL%
-
-cd /d "%REAL%"
-subst Z: /D >nul 2>&1
-
-if %GRADLE_EXIT% neq 0 (
-    echo BUILD FAILED - see build-log.txt
-    exit /b %GRADLE_EXIT%
-)
-
-copy /y "%REAL%\android\app\build\outputs\apk\productionRelease\app-production-release.apk" "%REAL%\app-release.apk" >nul
-echo BUILD OK - app-release.apk
-exit /b 0
+REM ============================================================
+REM  Vishva ERP - quick rebuild after a fix (no clean)
+REM
+REM  This used to copy from outputs\productionRelease\ (a path that
+REM  does not exist) and still print "BUILD OK" - the copy failure is
+REM  now caught by build.bat's artifact check.
+REM
+REM  Same as: scripts\build.bat apk --no-clean
+REM ============================================================
+call "%~dp0build.bat" apk --no-clean
+exit /b %ERRORLEVEL%

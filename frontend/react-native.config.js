@@ -19,9 +19,28 @@
 //
 // We keep Reanimated's `react-native-worklets` (the app depends on it
 // directly) and stop autolinking Jitsi's `react-native-worklets-core` native
-// code. The worklets API surface Jitsi imports at the JS level stays resolved;
-// only the duplicate native registration is dropped. Live-class video/audio
-// (react-native-webrtc and the Jitsi SDK itself) is unaffected.
+// code.
+//
+// IMPORTANT — this is NOT free at runtime, and it is what made "Open meeting"
+// kill the app. `@jitsi/react-native-sdk` statically imports
+// `react/features/base/lib-jitsi-meet/functions.native.ts`, which imports
+// `react-native-worklets-core`, whose `src/NativeWorklets.ts` calls
+// `TurboModuleRegistry.getEnforcing('Worklets')` *at module scope* — and that
+// file then calls `Worklets.createContext('ConfigParser')` at module scope.
+// Reanimated's `react-native-worklets` registers a different module
+// ("WorkletsModule"), so it cannot satisfy that lookup. With this override the
+// 'Worklets' module simply does not exist in the binary, so importing the SDK
+// dies inside native module evaluation — uncatchable by JS try/catch.
+//
+// `src/jitsi/meeting.ts` therefore gates the SDK import behind a runtime probe
+// for `TurboModuleRegistry.get('Worklets')`; while this override is in place
+// that probe fails, `getNativeSdk()` returns null and `JitsiMeetingModal`
+// renders the in-app WebView surface instead — meetings stay inside the app
+// either way, and the browser is only reached behind an explicit button press.
+// Reverting to the native SDK means removing this override AND resolving the
+// `WorkletsPackage` ambiguity (e.g. by upgrading/deduping the two worklets
+// packages) — then the probe flips on by itself and the WebView is bypassed.
+// Check scripts/check-jitsi-import-graph.js to re-verify the import graph.
 module.exports = {
   dependencies: {
     'react-native-worklets-core': {

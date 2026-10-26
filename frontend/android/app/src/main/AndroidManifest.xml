@@ -19,6 +19,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Audio, Bluetooth & Call permissions for WebRTC & Jitsi Meet -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+
+    <!-- Foreground Service types for Android 14+ (API 34+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
     <!-- Firebase Cloud Messaging -->
     <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
 
@@ -60,6 +72,22 @@
           android:exported="false">
           <intent-filter>
               <action android:name="com.google.firebase.MESSAGING_EVENT" />
+          </intent-filter>
+      </service>
+
+      <!-- Jitsi Ongoing Conference Foreground Service -->
+      <service
+          android:name="org.jitsi.meet.sdk.JMOngoingConferenceService"
+          android:foregroundServiceType="mediaPlayback|microphone"
+          android:exported="false" />
+
+      <!-- Jitsi Connection Service for Android Telecom call routing -->
+      <service
+          android:name="org.jitsi.meet.sdk.ConnectionService"
+          android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+          android:exported="true">
+          <intent-filter>
+              <action android:name="android.telecom.ConnectionService" />
           </intent-filter>
       </service>
 
