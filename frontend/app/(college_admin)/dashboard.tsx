@@ -22,12 +22,20 @@ export default function AdminDashboard() {
   const router = useRouter();
   const { user } = useAuth();
   const { data: dash, loading: dashLoading, refresh: refreshDash } = useFetch<AdminDashboardData>('/dashboard/admin');
-  const { data: analytics, loading: anaLoading, refresh: refreshAna } = useFetch<any>('/analytics/admin');
-  const { data: announcements = [], loading: annLoading, refresh: refreshAnn } = useFetch<Announcement[]>('/announcements');
+  const { data: analyticsRaw, loading: anaLoading, refresh: refreshAna } = useFetch<any>('/analytics/admin');
+  const { data: announcementsRaw, loading: annLoading, refresh: refreshAnn } = useFetch<Announcement[]>('/announcements');
   const { data: subscription, loading: subLoading, refresh: refreshSub } = useFetch<any>('/subscription/current');
-  const { data: notifications = [] } = useFetch<any[]>('/notifications');
-  const { data: attendanceData } = useFetch<any>('/attendance/daily');
-  const { data: schedules = [] } = useFetch<any[]>('/schedules');
+  const { data: notificationsRaw } = useFetch<any[]>('/notifications');
+  const { data: attendanceDataRaw } = useFetch<any>('/attendance/daily');
+  const { data: schedulesRaw } = useFetch<any[]>('/schedules');
+  // A destructuring default only fires on `undefined`; useFetch stores exactly
+  // what the endpoint returned, and an empty account can come back as `null`.
+  // Coerce once here so every .filter/.length/.field below is safe.
+  const analytics = analyticsRaw ?? {};
+  const announcements = announcementsRaw ?? [];
+  const notifications = notificationsRaw ?? [];
+  const attendanceData = attendanceDataRaw ?? {};
+  const schedules = schedulesRaw ?? [];
   const { mutate: sendAnnouncement, loading: annBusy } = useMutate();
   const [refreshing, setRefreshing] = useState(false);
   const [annVisible, setAnnVisible] = useState(false);

@@ -22,12 +22,19 @@ const DATE_RANGES = [
 
 export default function Reports() {
   const { data: dash, loading: dashLoading, refresh: refreshDash } = useFetch<AdminDashboardData>('/dashboard/admin');
-  const { data: analytics, loading: anaLoading, refresh: refreshAna } = useFetch<any>('/analytics/admin');
-  const { data: attendanceReport, loading: attLoading, refresh: refreshAtt } = useFetch<any>('/attendance/reports?days=30');
+  const { data: analyticsRaw, loading: anaLoading, refresh: refreshAna } = useFetch<any>('/analytics/admin');
+  const { data: attendanceReportRaw, loading: attLoading, refresh: refreshAtt } = useFetch<any>('/attendance/reports?days=30');
   const { data: fees } = useFetch<any[]>('/fees/all');
-  const { data: users = [] } = useFetch<any[]>('/admin/users');
+  const { data: usersRaw } = useFetch<any[]>('/admin/users');
   const { data: courses = [] } = useFetch<any[]>('/courses');
-  const { data: schedules = [] } = useFetch<any[]>('/schedules');
+  const { data: schedulesRaw } = useFetch<any[]>('/schedules');
+  // A destructuring default only fires on `undefined`; useFetch stores exactly
+  // what the endpoint returned, and an empty account can come back as `null`.
+  // Coerce once here so every .length/.filter/.map below is safe.
+  const analytics = analyticsRaw ?? {};
+  const attendanceReport = attendanceReportRaw ?? { by_course: [], low_attendance: [], patterns: [] };
+  const users = usersRaw ?? [];
+  const schedules = schedulesRaw ?? [];
   const [refreshing, setRefreshing] = useState(false);
   const [dateRange, setDateRange] = useState('month');
   const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'finance' | 'users'>('overview');

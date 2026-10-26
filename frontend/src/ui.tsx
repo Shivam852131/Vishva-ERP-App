@@ -436,8 +436,7 @@ export function ChipBtn({ label, active, onPress, testID, icon, badge }: any) {
 const chipStyles = StyleSheet.create({
   chip: {
     paddingHorizontal: 16,
-    height: 36,
-    maxHeight: 36,
+    minHeight: 38,
     justifyContent: 'center',
     borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceSecondary,
@@ -613,6 +612,10 @@ export function TabSelector({ tabs, activeTab, onSelect, style, options, selecte
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      // RN's ScrollView defaults to flexGrow: 1, which makes this row swallow
+      // every spare pixel of vertical space and stretch the pills into tall
+      // capsules. Pin it to its content height instead.
+      style={tabSelectorStyles.scroll}
       contentContainerStyle={[tabSelectorStyles.container, style]}
     >
       {items.map((t: any) => {
@@ -648,8 +651,16 @@ export function TabSelector({ tabs, activeTab, onSelect, style, options, selecte
 }
 
 const tabSelectorStyles = StyleSheet.create({
+  // Override ScrollView's built-in flexGrow: 1 / flexShrink: 1 so the row is
+  // exactly as tall as its pills instead of filling leftover screen height.
+  scroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
   container: {
     flexDirection: 'row',
+    // Keep pills centred even if something forces the row to be taller.
+    alignItems: 'center',
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: 8,
     gap: 8,
@@ -657,6 +668,7 @@ const tabSelectorStyles = StyleSheet.create({
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'center',
     gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 8,

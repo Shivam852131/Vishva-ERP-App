@@ -48,7 +48,11 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function UserManagement() {
   const { user: me } = useAuth();
-  const { data: users = [], loading, refresh: load } = useFetch<any[]>('/admin/users');
+  const { data: usersRaw, loading, refresh: load } = useFetch<any[]>('/admin/users');
+  // A destructuring default only fires on `undefined`; useFetch stores exactly
+  // what the endpoint returned, and an empty account can come back as `null`.
+  // Coerce once here so every .length/.filter below is safe.
+  const users = usersRaw ?? [];
   const { mutate: updateStatus } = useMutate();
   const { mutate: deleteUser } = useMutate();
   const { mutate: sendMsg } = useMutate();

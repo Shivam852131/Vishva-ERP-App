@@ -250,11 +250,22 @@ function AIGenerateTab({ onSaved }: { onSaved: () => void }) {
       const result = await api('/exam-prep/generate-ai', {
         method: 'POST',
         body: JSON.stringify({ subject, topic, difficulty, count: parseInt(count, 10), education_level: level }),
+        // Generation is a full synchronous LLM round-trip (plus a parse retry)
+        // and 20 questions can take minutes — well past the default 30s.
+        timeoutMs: 180000,
       });
       setGeneratedQs(result.questions || []);
       setSelected(new Set((result.questions || []).map((_: any, i: number) => i)));
     } catch (e: any) {
-      Alert.alert('AI Error', e.message || 'Generation failed. Check your AI provider config.');
+      // A timeout surfaces from fetch as a bare "Aborted" — turn it into
+      // something the faculty member can actually act on.
+      const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError' || /abort|timed?\s*out/i.test(e?.message || '');
+      Alert.alert(
+        'AI Error',
+        timedOut
+          ? 'The AI took too long to respond. Please try again, or generate fewer questions at a time.'
+          : (e.message || 'Generation failed. Check your AI provider config.'),
+      );
     } finally {
       setGenerating(false);
     }

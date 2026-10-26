@@ -1,5 +1,5 @@
 import { renderHook, waitFor, act } from '@testing-library/react-native';
-import { useFetch } from '@/src/hooks/useFetch';
+import { useFetch, clearFetchCache } from '@/src/hooks/useFetch';
 
 jest.mock('@/src/api', () => ({
   api: jest.fn(),
@@ -10,6 +10,10 @@ const { api } = jest.requireMock('@/src/api');
 describe('useFetch', () => {
   beforeEach(() => {
     api.mockReset();
+    // Every test below uses the same path and the hook caches by path for 60s,
+    // so without this each test read the previous test's cached value instead
+    // of its own freshly mocked response.
+    clearFetchCache();
   });
 
   it('resolves data and clears the loading flag', async () => {

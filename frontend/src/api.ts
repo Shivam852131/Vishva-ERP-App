@@ -87,6 +87,16 @@ export async function api<T = any>(path: string, opts: RequestInit & { timeoutMs
     return payload as T;
   } catch (error) {
     clearTimeout(timeoutId);
+    // Our own timeout fired — fetch rejects with a bare "Aborted" that means
+    // nothing to the user, so translate it into an actionable message.
+    if (controller.signal.aborted) {
+      const seconds = Math.round((timeoutMs ?? 30000) / 1000);
+      const timeoutError: ApiError = new Error(
+        `Request timed out after ${seconds}s. Please try again.`,
+      );
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
     const status = (error as ApiError)?.status;
     if (status === 401) {
       onUnauthorized?.();
